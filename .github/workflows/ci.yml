@@ -1,0 +1,82 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  UV_FROZEN: "1"
+
+jobs:
+  quality:
+    name: ruff + mypy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: Install
+        run: uv sync --all-extras --all-groups
+
+      - name: ruff check
+        run: uv run ruff check src tests
+
+      - name: ruff format
+        run: uv run ruff format --check .
+
+      - name: mypy --strict
+        run: uv run mypy --strict src
+
+  test:
+    name: pytest (${{ matrix.os }}, jit=${{ matrix.jit }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        jit: ["on"]
+        include:
+          # The NUMBA_DISABLE_JIT path has to keep working, or nothing is debuggable.
+          - os: ubuntu-latest
+            jit: "off"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: Install
+        run: uv sync --all-extras --all-groups
+
+      - name: pytest
+        env:
+          NUMBA_DISABLE_JIT: ${{ matrix.jit == 'off' && '1' || '0' }}
+        run: uv run pytest -q
+
+  pre-commit:
+    name: pre-commit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - run: uv sync --all-extras --all-groups
+      - name: pre-commit
+        env:
+          # ruff/mypy/pytest have their own jobs above; this one covers the file hooks.
+          SKIP: mypy,pytest
+        run: uv run pre-commit run --all-files --show-diff-on-failure
