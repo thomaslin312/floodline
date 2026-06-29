@@ -33,14 +33,15 @@ Stated first, on purpose. HAND is a screening model, not a hydraulic one.
 
 ## Status
 
-Phase 0 (scaffold) and the depression-filling half of Phase 1 (terrain core) are
-done. Nothing has been run against real Lismore data yet, so this README contains
-no results. It will not contain any that were not actually produced.
+Phase 0 (scaffold) is done, and Phase 1 (terrain core) has depression filling and
+D8 flow direction. Nothing has been run against real Lismore data yet, so this
+README contains no results. It will not contain any that were not actually
+produced.
 
 | Phase | Scope | State |
 |---|---|---|
 | 0 | Scaffold, config, raster I/O, synthetic fixture, CLI, CI | done |
-| 1 | `fill`, `flowdir`, `flowacc`, `streams`, `hand` — numba, property-tested | `fill` done; `flowdir` next |
+| 1 | `fill`, `flowdir`, `flowacc`, `streams`, `hand` — numba, property-tested | `fill`, `flowdir` done; `flowacc` next |
 | 2 | Stage handling, inundation, buildings and population | not started |
 | 3 | Depth–damage curves, costs, Monte Carlo | not started |
 | 4 | SAR validation, resolution and population experiments | not started |
@@ -72,6 +73,29 @@ spec, hand-built surfaces whose answer is obvious by inspection, and a different
 test against [pysheds](https://github.com/mdbartos/pysheds), which fills by
 morphological reconstruction — a completely different algorithm. The two agree to
 1e-9 on random grids, on the synthetic catchment, and across nodata.
+
+D8 flow direction ranks neighbours by *slope* — drop divided by centre-to-centre
+distance — so a diagonal must be sqrt(2) times further down to beat a cardinal
+one, and anisotropic cells are ranked correctly. Output is ESRI direction codes
+plus three explicit sentinels: nodata, "drains off the edge of the data", and
+"flat, D8 undefined here". 1024 x 1024 in about 22 ms, 512 x 512 in about 6 ms.
+
+Two policies worth knowing, because they are where we differ from pysheds:
+
+- **Flats are reported, not guessed.** Filling with `fill_epsilon = 0` leaves
+  filled depressions perfectly flat, and a cell in the middle of one has no
+  strictly lower neighbour — D8 is genuinely undefined. Setting
+  `terrain.fill_epsilon > 0` gives those surfaces a gradient, after which every
+  interior cell has exactly one downstream neighbour.
+- **Ties break to the lowest ESRI direction code.** When two neighbours offer the
+  same steepest slope either answer is correct; ours is written down next to the
+  loop that implements it. pysheds prefers north.
+
+The differential test asserts that every cell where we disagree with pysheds falls
+into one of three documented categories — edge of the data, flat, or tied steepest
+descent — and that the categories are identified independently of both
+implementations. On the synthetic catchment there are no unexplained
+disagreements.
 
 pysheds is an oracle for the tests only. Nothing under `src/` imports it.
 
