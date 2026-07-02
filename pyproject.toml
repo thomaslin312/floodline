@@ -34,6 +34,7 @@ dev = [
     "ruff>=0.8",
     "mypy>=1.13",
     "pre-commit>=4.0",
+    "types-geopandas>=1.1.4.20260807",
 ]
 # Differential-test oracle only. Never imported by src/; the pipeline must not
 # depend on it. Tests that use it skip when it is not installed.

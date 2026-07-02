@@ -111,3 +111,41 @@ def test_condition_refuses_a_geographic_dem(tmp_path: Path) -> None:
     result = runner.invoke(app, ["condition", str(path), str(tmp_path / "o.tif")])
     assert result.exit_code != 0
     assert isinstance(result.exception, Exception)
+
+
+def test_streams_writes_a_geoparquet(tmp_path: Path) -> None:
+    import geopandas as gpd
+
+    raw, filled = tmp_path / "raw.tif", tmp_path / "filled.tif"
+    net, mask = tmp_path / "net.parquet", tmp_path / "mask.tif"
+    cfg = tmp_path / "c.toml"
+    cfg.write_text("[floodline.terrain]\nfill_epsilon = 1e-4\nstream_threshold_cells = 200\n")
+
+    assert runner.invoke(app, ["synth", str(raw), "--rows", "120", "--cols", "90"]).exit_code == 0
+    assert (
+        runner.invoke(app, ["condition", str(raw), str(filled), "--config", str(cfg)]).exit_code
+        == 0
+    )
+    result = runner.invoke(
+        app,
+        ["streams", str(filled), str(net), "--raster-out", str(mask), "--config", str(cfg)],
+    )
+    assert result.exit_code == 0, result.stdout
+    assert "links" in result.stdout
+
+    frame = gpd.read_parquet(net)
+    assert frame.crs.to_epsg() == 7856
+    assert len(frame) > 0
+    assert {"link_id", "strahler", "acc_outflow", "length_m"} <= set(frame.columns)
+    with rasterio.open(mask) as src:
+        assert src.dtypes[0] == "uint8"
+
+
+def test_streams_warns_when_water_drains_into_flats(tmp_path: Path) -> None:
+    """An epsilon-free fill strands water in flats; the CLI must say so."""
+    raw, filled = tmp_path / "raw.tif", tmp_path / "filled.tif"
+    runner.invoke(app, ["synth", str(raw), "--rows", "80", "--cols", "60"])
+    runner.invoke(app, ["condition", str(raw), str(filled)])
+    result = runner.invoke(app, ["streams", str(filled), str(tmp_path / "n.parquet")])
+    assert result.exit_code == 0, result.stdout
+    assert "drain into flats" in result.stderr
