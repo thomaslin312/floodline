@@ -114,3 +114,46 @@ def pysheds_accumulation() -> Callable[..., np.ndarray]:
         return np.asarray(grid.accumulation(fdir), dtype=np.float64)
 
     return accumulate
+
+
+@pytest.fixture(scope="session")
+def pysheds_hand() -> Callable[..., np.ndarray]:
+    """Return a function computing HAND with pysheds, or skip the test.
+
+    pysheds derives its own flow directions from the DEM, so this is a comparison
+    of the whole chain (fill -> flowdir -> HAND), not of the HAND step alone. The
+    caller supplies the stream mask so at least the drainage network is identical.
+    """
+    pytest.importorskip("pysheds", reason="oracle not installed (uv sync --group oracle)")
+    _restore_numpy_in1d()
+    import pyproj
+    from affine import Affine
+    from pysheds.grid import Grid
+    from pysheds.view import Raster as PyshedsRaster
+    from pysheds.view import ViewFinder
+
+    def compute(dem: np.ndarray, mask: np.ndarray, cellsize: float = 1.0) -> np.ndarray:
+        data = np.ascontiguousarray(dem, dtype=np.float64)
+        finder = ViewFinder(
+            affine=Affine(cellsize, 0.0, 0.0, 0.0, -cellsize, 0.0),
+            shape=data.shape,
+            nodata=np.float64(np.nan),
+            crs=pyproj.Proj("EPSG:7856"),
+        )
+        raster = PyshedsRaster(data, viewfinder=finder)
+        grid = Grid(viewfinder=finder)
+        fdir = grid.flowdir(raster, flats=-1, pits=-2)
+        # The mask needs its own viewfinder: pysheds validates that nodata is
+        # representable in the array's dtype, and NaN is not a bool.
+        mask_finder = ViewFinder(
+            affine=finder.affine,
+            shape=finder.shape,
+            nodata=np.bool_(False),
+            crs=finder.crs,
+        )
+        mask_raster = PyshedsRaster(np.ascontiguousarray(mask, dtype=bool), viewfinder=mask_finder)
+        return np.asarray(
+            grid.compute_hand(fdir, raster, mask_raster, nodata_out=np.nan), dtype=np.float64
+        )
+
+    return compute
