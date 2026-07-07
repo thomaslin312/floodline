@@ -157,3 +157,39 @@ existed; they are recorded here so the review has one place to look.
   given.** Why: the command is usable from a conditioned DEM alone, which is what
   the integration test and the eventual figures need. It reports on stderr how many
   cells have no drainage.
+
+### flats
+
+- **Flat resolution writes to a separate integer `flat_mask`, never to the DEM.**
+  Why: an epsilon fill perturbs the elevations, so HAND inherits a few millimetres
+  of fictional relief per flat cell and every depth derived from it carries that.
+  Keeping the artificial gradient out of the elevation array keeps the artefact out
+  of the results. Alternative: epsilon filling, which is cheaper and still
+  supported via `fill_epsilon` — both now reach a fully draining grid, and a test
+  asserts they do.
+- **`flat_height` is the global maximum `d_high`, not a per-flat label.** Why: the
+  term enters as `(flat_height - d_high)` and only its *differences between
+  adjacent cells* matter to the descent guarantee, so a single constant works and
+  saves a connected-component labelling pass. Alternative: Barnes' per-flat labels
+  — rejected as machinery that changes no output here. Worth revisiting if a
+  future use needs the per-flat height itself.
+- **A flat cell never routes into higher non-flat ground.** Why: the first version
+  treated *any* non-flat neighbour as an exit, so a flat could drain uphill into a
+  cell whose own direction pointed straight back — 188 cells ended up in cycles on
+  the first run. The exit test now requires `dem[neighbour] <= dem[cell]`, and the
+  comment at that branch says why.
+- **`terrain.resolve_flats` defaults to True.** Why: with it off and
+  `fill_epsilon = 0` — the previous defaults — 26% of the plain synthetic catchment
+  and 92% of the rough one never reached an outlet. A default that silently strands
+  most of the grid is the wrong default. Alternative: default `fill_epsilon` to a
+  non-zero value instead — rejected because it moves the artefact into the
+  elevations.
+- **The composition lives in a new `terrain/route.py`, not in `flowdir`.** Why:
+  `flats` imports from `flowdir`, so putting the chain in either would make the
+  import circular. It also gives the CLI, the integration test and the benchmark
+  one definition of "the terrain chain" so they cannot drift. Alternative: repeat
+  the six calls at each call site — rejected.
+- **Measured result of step 4** (epsilon-free fill, `resolve_flats` on): plain
+  120x90, 386 flat cells, all resolved, drain-to-flats 2829 -> 0; rough 90x70, 680
+  resolved, 5805 -> 0; rough 200x160, 5717 resolved, 31014 -> 0. No cycles in any
+  case. Every cell reaches an outlet.
