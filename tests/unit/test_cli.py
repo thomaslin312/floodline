@@ -52,12 +52,11 @@ def test_synth_writes_a_cog(tmp_path: Path) -> None:
         assert src.nodata is not None
 
 
-@pytest.mark.parametrize("stage", ["inundate", "exposure", "damage"])
+@pytest.mark.parametrize("stage", ["exposure", "damage"])
 def test_unimplemented_stages_exit_2(stage: str, tmp_path: Path) -> None:
     dummy = tmp_path / "in.tif"
     dummy.write_bytes(b"")
     args = {
-        "inundate": [stage, str(dummy), "10.5", str(tmp_path / "o.tif")],
         "exposure": [stage, str(dummy), str(dummy), str(tmp_path / "o.parquet")],
         "damage": [stage, str(dummy), str(tmp_path / "o.parquet")],
     }[stage]
@@ -182,3 +181,119 @@ def test_hand_writes_a_raster(tmp_path: Path) -> None:
         assert src.crs.to_epsg() == 7856
         values = src.read(1, masked=True)
     assert values.min() >= 0.0, "HAND must never be negative"
+
+
+def _prepare_conditioned(tmp_path: Path, cfg_text: str) -> tuple[Path, Path]:
+    raw, filled = tmp_path / "raw.tif", tmp_path / "filled.tif"
+    cfg = tmp_path / "c.toml"
+    cfg.write_text(cfg_text)
+    runner.invoke(app, ["synth", str(raw), "--rows", "120", "--cols", "90"])
+    assert (
+        runner.invoke(app, ["condition", str(raw), str(filled), "--config", str(cfg)]).exit_code
+        == 0
+    )
+    return filled, cfg
+
+
+def test_inundate_refuses_without_a_gauge_datum(tmp_path: Path) -> None:
+    """The headline safeguard: no datum, no run."""
+    filled, cfg = _prepare_conditioned(
+        tmp_path, "[floodline.terrain]\nstream_threshold_cells = 200\n"
+    )
+    result = runner.invoke(
+        app,
+        [
+            "inundate",
+            str(filled),
+            "3.0",
+            str(tmp_path / "d.tif"),
+            "--gauge-row",
+            "60",
+            "--gauge-col",
+            "45",
+            "--config",
+            str(cfg),
+        ],
+    )
+    assert result.exit_code != 0
+    assert isinstance(result.exception, ValueError)
+    assert "gauge_datum_offset_m is not set" in str(result.exception)
+
+
+def test_inundate_writes_a_depth_raster(tmp_path: Path) -> None:
+    import numpy as np
+
+    filled, cfg = _prepare_conditioned(
+        tmp_path,
+        "[floodline.terrain]\nstream_threshold_cells = 200\n"
+        "[floodline.hydraulics]\ngauge_datum_offset_m = 0.0\n",
+    )
+    # find a stream cell to put the gauge on
+    from floodline.io.raster import read_raster
+    from floodline.terrain.route import route_terrain
+
+    raster = read_raster(filled)
+    chain = route_terrain(raster.data, cellsize=raster.cellsize, stream_threshold=200)
+    row, col = np.argwhere(chain.streams)[len(np.argwhere(chain.streams)) // 2]
+    reading = float(chain.filled[row, col]) + 4.0
+
+    out = tmp_path / "depth.tif"
+    result = runner.invoke(
+        app,
+        [
+            "inundate",
+            str(filled),
+            str(reading),
+            str(out),
+            "--gauge-row",
+            str(int(row)),
+            "--gauge-col",
+            str(int(col)),
+            "--config",
+            str(cfg),
+        ],
+    )
+    assert result.exit_code == 0, result.stdout
+    assert "cells wet" in result.stdout
+    assert "m AHD" in result.stdout
+
+    with rasterio.open(out) as src:
+        depth = src.read(1, masked=True)
+        assert src.dtypes[0] == "float32"
+    assert depth.min() >= 0.0
+    assert depth.max() <= 4.0 + 1e-3
+
+
+def test_inundate_warns_when_the_gauge_is_off_the_network(tmp_path: Path) -> None:
+    import numpy as np
+
+    filled, cfg = _prepare_conditioned(
+        tmp_path,
+        "[floodline.terrain]\nstream_threshold_cells = 200\n"
+        "[floodline.hydraulics]\ngauge_datum_offset_m = 0.0\n",
+    )
+    from floodline.io.raster import read_raster
+    from floodline.terrain.route import route_terrain
+
+    raster = read_raster(filled)
+    chain = route_terrain(raster.data, cellsize=raster.cellsize, stream_threshold=200)
+    row, col = np.argwhere(~chain.streams)[0]
+    reading = float(chain.filled[row, col]) + 2.0
+
+    result = runner.invoke(
+        app,
+        [
+            "inundate",
+            str(filled),
+            str(reading),
+            str(tmp_path / "d.tif"),
+            "--gauge-row",
+            str(int(row)),
+            "--gauge-col",
+            str(int(col)),
+            "--config",
+            str(cfg),
+        ],
+    )
+    assert result.exit_code == 0, result.stdout
+    assert "not a stream cell" in result.stderr

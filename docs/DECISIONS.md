@@ -193,3 +193,34 @@ existed; they are recorded here so the review has one place to look.
   120x90, 386 flat cells, all resolved, drain-to-flats 2829 -> 0; rough 90x70, 680
   resolved, 5805 -> 0; rough 200x160, 5717 resolved, 31014 -> 0. No cycles in any
   case. Every cell reaches an outlet.
+
+### hydraulics
+
+- **`gauge_datum_offset_m` has no default and `require_gauge_datum()` raises when
+  it is None.** Why: the user asked for exactly this, and it is right — a gauge
+  reading is relative to that gauge's own zero, which is not recoverable from the
+  reading. Defaulting to 0.0 would put the whole modelled flood at the wrong
+  elevation and every downstream number would be confidently wrong. 0.0 remains a
+  legitimate value; it just has to be chosen. The error message names the Lismore
+  gauge and where to get the offset.
+- **A gauge reading below the channel bed is an error, not a zero depth.** Why: it
+  is the commonest symptom of a wrong datum offset or a gauge snapped to the wrong
+  cell, and silently clamping to zero would hide both.
+- **The stage is a water *depth above the local channel bed*, not an AHD
+  elevation.** Why: HAND thresholds on height above the nearest drainage, so the
+  gauge's AHD stage has to be converted by subtracting the conditioned elevation of
+  the gauge's own channel cell. Alternative: threshold HAND against an absolute
+  elevation — wrong, it would flood by altitude rather than by depth.
+- **`slope` stage propagation uses signed along-network distance from the gauge and
+  clips at zero.** Why: it is a screening approximation, not a backwater solution,
+  and far enough upstream the linear adjustment would imply a negative water depth.
+  `constant` remains the default, since that is the plain HAND assumption the
+  method is honest about. Cells the gauge's network never touches keep the gauge
+  depth unchanged, there being no distance to adjust by.
+- **`inundate` treats NaN HAND as permanently dry.** Why: those cells have no
+  nearest drainage, so the model has nothing to say about them; wetting them would
+  be inventing a result. They stay NaN in the depth raster rather than becoming 0,
+  so "dry" and "unknown" remain distinguishable.
+- **The connectivity filter needs an explicit stream mask and errors without one.**
+  Why: "connected to a stream" is undefined otherwise. Alternative: fall back to
+  no filtering — rejected as silently changing the result.
