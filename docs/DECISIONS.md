@@ -235,3 +235,14 @@ existed; they are recorded here so the review has one place to look.
   Why: priority-flood is global and holds ~25 bytes of scratch per cell, so it
   cannot be tiled without a boundary merge. Time scales fine; memory is what will
   decide whether the full 1 m tile set runs in one pass.
+
+### 2026-09-03 (late) — a bug the JIT-off path caught
+
+- **`downstream_index` now bounds-checks and returns -1 for a direction pointing
+  off the raster.** Why: it previously assumed every direction code pointed at an
+  in-bounds neighbour, which is true of `flow_direction` output but not of a
+  hand-built or externally supplied direction grid. Callers then indexed past the
+  end of their arrays. numba does not bounds-check by default, so under JIT this
+  was a silent out-of-bounds write; it only raised with `NUMBA_DISABLE_JIT=1`,
+  which is exactly why the spec insists that path keeps working. Found by running
+  the suite both ways after step 7. Two regression tests pin it.

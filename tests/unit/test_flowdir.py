@@ -189,3 +189,32 @@ def test_catchment_flow_converges_on_the_valley(catchment: SyntheticCatchment) -
                 moved_closer += 1
     assert checked > 0
     assert moved_closer == checked
+
+
+def test_downstream_index_is_total_over_arbitrary_direction_grids() -> None:
+    """A direction pointing off the raster gives -1, not an out-of-bounds index.
+
+    flow_direction never emits such a code, but a hand-built or externally sourced
+    direction raster can. Without the bounds check every caller indexes past the
+    end of its arrays -- which numba does not catch, so it corrupted memory
+    silently under JIT and only raised under NUMBA_DISABLE_JIT=1.
+    """
+    fdir = np.zeros((3, 3), dtype=np.int16)
+    fdir[2, :] = S  # bottom row points off the bottom edge
+    fdir[:, 2] = E  # right column points off the right edge
+    fdir[0, 0] = NW  # top-left points off the corner
+
+    receiver = downstream_index(fdir)
+    assert np.all(receiver[2, :] == -1)
+    assert np.all(receiver[:, 2] == -1)
+    assert receiver[0, 0] == -1
+    assert np.all(receiver < fdir.size)
+
+
+def test_off_raster_directions_do_not_break_accumulation() -> None:
+    from floodline.terrain.flowacc import flow_accumulation
+
+    fdir = np.zeros((4, 4), dtype=np.int16)
+    fdir[:, 1] = S  # a column draining off the bottom edge
+    result = flow_accumulation(fdir)
+    assert result.accumulation[3, 1] == 4.0
