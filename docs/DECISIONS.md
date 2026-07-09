@@ -224,3 +224,14 @@ existed; they are recorded here so the review has one place to look.
 - **The connectivity filter needs an explicit stream mask and errors without one.**
   Why: "connected to a stream" is undefined otherwise. Alternative: fall back to
   no filtering — rejected as silently changing the result.
+
+### benchmarks
+
+- **The full-chain benchmark runs at 1024² and 4096², not on the small fixtures.**
+  Why: 4096² is ~17 M cells, the order of a Lismore 1 m tile set, so it is the
+  number that says whether the resolution experiment can be run repeatedly.
+  Measured: 176 ms and 3.36 s, 166 and 201 ns/cell, peak RSS 421 MB and 2.1 GB.
+- **Memory is reported alongside runtime, and named as the binding constraint.**
+  Why: priority-flood is global and holds ~25 bytes of scratch per cell, so it
+  cannot be tiled without a boundary merge. Time scales fine; memory is what will
+  decide whether the full 1 m tile set runs in one pass.

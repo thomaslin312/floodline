@@ -33,16 +33,17 @@ Stated first, on purpose. HAND is a screening model, not a hydraulic one.
 
 ## Status
 
-Phase 0 (scaffold) is done, and Phase 1 (terrain core) has depression filling and
-D8 flow direction. Nothing has been run against real Lismore data yet, so this
-README contains no results. It will not contain any that were not actually
-produced.
+Phase 0 (scaffold) and Phase 1 (terrain core) are done, and Phase 2's hydraulics
+half — stage handling and inundation — is in. Nothing has been run against real
+Lismore data yet, so this README contains no flood results. It will not contain
+any that were not actually produced. The numbers below are runtimes and
+synthetic-fixture diagnostics, measured on this machine.
 
 | Phase | Scope | State |
 |---|---|---|
 | 0 | Scaffold, config, raster I/O, synthetic fixture, CLI, CI | done |
-| 1 | `fill`, `flowdir`, `flowacc`, `streams`, `hand` — numba, property-tested | `fill`, `flowdir` done; `flowacc` next |
-| 2 | Stage handling, inundation, buildings and population | not started |
+| 1 | `fill`, `flowdir`, `flowacc`, `streams`, `hand` — numba, property-tested | done, plus flat resolution |
+| 2 | Stage handling, inundation, buildings and population | hydraulics done; exposure needs data |
 | 3 | Depth–damage curves, costs, Monte Carlo | not started |
 | 4 | SAR validation, resolution and population experiments | not started |
 | 5 | Rendered report and write-up | not started |
@@ -97,7 +98,49 @@ descent — and that the categories are identified independently of both
 implementations. On the synthetic catchment there are no unexplained
 disagreements.
 
+Filled depressions are flat, and D8 is undefined in the middle of a flat, so
+`flowdir` reports `FLOW_FLAT` there rather than inventing a direction. That is not
+a corner case: with an epsilon-free fill, **26% of the plain synthetic catchment
+and 92% of the rough one** drained into a flat and never reached an outlet.
+`terrain/flats.py` implements Barnes et al. (2014b), which gives each flat an
+artificial gradient in a *separate* integer field, so the elevations — and
+therefore HAND, and every depth derived from it — stay exactly as filling left
+them. With it on (the default) the flat-drainage count is zero on every fixture.
+
+`hydraulics/` turns a gauge reading into an extent. There is no default gauge
+datum: a reading is relative to that gauge's own zero, so `require_gauge_datum()`
+refuses to run without one rather than silently placing the whole flood at the
+wrong elevation. The connectivity filter drops wet regions with no path to a
+stream cell, which is what stops the map showing flooded paddocks a kilometre from
+the channel.
+
 pysheds is an oracle for the tests only. Nothing under `src/` imports it.
+
+## Performance
+
+Apple M-series, float32 input, single-threaded, measured by `pytest-benchmark`.
+The full chain is fill → flow direction → flat resolution → accumulation →
+streams → HAND.
+
+| Stage | 512² (0.26 M) | 1024² (1.0 M) | 4096² (16.8 M) |
+|---|---:|---:|---:|
+| Depression fill | 20 ms | 85 ms | — |
+| D8 flow direction | 5.6 ms | 22 ms | — |
+| **Full terrain chain** | — | **176 ms** | **3.36 s** |
+| Peak RSS, full chain | — | 421 MB | 2.1 GB |
+| Time per cell | — | 166 ns | 201 ns |
+
+16× the cells costs 19× the time, so the chain is near-linear; the drift is the
+priority queue's log factor and cache pressure. 4096² is about 17 million cells,
+the order of a Lismore 1 m tile set. Memory is the binding constraint, not time:
+priority-flood is global and holds roughly 25 bytes of scratch per cell, so it
+cannot be tiled without a merge step across tile boundaries.
+
+Reproduce with:
+
+```bash
+uv run pytest tests/integration -q --benchmark-only
+```
 
 Every threshold, tolerance, CRS and curve choice is a field on a pydantic model in
 [`config.py`](src/floodline/config.py). Point any command at a TOML file with
