@@ -289,3 +289,66 @@ existed; they are recorded here so the review has one place to look.
 - **The survey-foot counter-example in the CRS tests changed from EPSG:2277 to
   EPSG:6588.** Why: 6588 is the US-survey-foot twin of the new analysis CRS, so it is
   the specific mistake most likely to be made on this project. 2277 is kept too.
+
+### io/sources.py
+
+- **Every source is a `Source` in one registry, with the event parameters on
+  `CaseConfig`.** Why: swapping to Lismore is then a config change, not a code
+  change, and `--list` can tell you what exists and what each needs. Alternative:
+  a script per dataset — rejected; there would be no single place to see what the
+  project depends on.
+- **Credentials come from named environment variables and are never read, stored
+  or logged by this module.** A source declares `credential_env`; `CredentialError`
+  names the variable when it is missing. Alternative: a `.env` file or a config
+  field — rejected, because both end up in the repo eventually.
+- **Retry with exponential backoff, on transport errors and 429/5xx only.** Why:
+  the TNM products endpoint returned a 500 on a real run minutes after serving the
+  identical query, and a single attempt is not a fair test of whether a dataset is
+  reachable. A 404 or 400 is *not* retried — the first version caught
+  `httpx.HTTPError`, which `raise_for_status` raises for a 404 too, so it retried
+  permanent failures three times before giving up. A test caught that.
+- **Downloads land on a `.part` file and are renamed only when the stream
+  completes.** Why: an interrupted fetch would otherwise leave a truncated GeoTIFF
+  that looks finished, and the next run would reuse it. Cleaned up on failure and
+  on `KeyboardInterrupt`, both tested.
+- **A DEM fetch over budget is refused, and `--dry-run` reports the size first.**
+  Why: the full AOI at 1 m is **158 tiles and 56.6 GB**, which is easy to start by
+  accident, and at roughly 125 bytes of peak memory per cell is far past what the
+  global priority-flood can hold in one pass. `case.dem_max_download_gb` defaults
+  to 10 GB. Alternative: just download it — rejected.
+- **1/9 arc-second (~3 m) is mapped but dropped from the default resolutions.**
+  Why: it returns **zero tiles** over Houston. That is a property of 3DEP coverage,
+  not of the query, so the source raises rather than silently skipping. The
+  resolution experiment runs at 1, 10 and 30 m.
+- **OpenFEMA is paged.** Why: the API caps a response at 10,000 records and the
+  first run returned exactly 10,000 — which looked plausible. Paging returns
+  **90,779 claims**. Taking the first page would have made the damage validation
+  nine times too small, silently.
+- **Tests run against `httpx.MockTransport`, never the network.** Why: a suite that
+  needs the internet fails for reasons unrelated to the code. The real code paths —
+  streaming, hashing, `.part` rename, retry, paging, the budget — are all exercised.
+- **The manifest lists sources that failed, not just those that succeeded.** Why: a
+  manifest that silently omits what did not arrive reads as a complete record.
+
+### what the real data revealed
+
+- **`hydraulics.gauge_reading_unit` is now required, like the datum.** Why: USGS
+  NWIS reports gauge height in **feet**. The real Harvey peak at Buffalo Bayou is
+  41.90 ft = 12.77 m; feeding 41.9 to a model that assumes metres would have put
+  three times the water over Houston, and nothing downstream would have complained.
+  This is the same class of un-guessable, catastrophic-if-wrong input as the datum,
+  so it gets the same treatment: no default, and a `require_` accessor that refuses.
+  `GaugeStage.reading_m`/`ahd_m` became `reading`/`datum_elevation_m`, since neither
+  is AHD any more and the reading is not necessarily in metres.
+- **The datum chain was verified end to end against real data.** NWIS states
+  `alt_datum_cd = NAVD88` and `alt_va = 0.00` (method `L`, levelled, ±0.1 ft) for
+  all three Houston gauges, so gage zero is surveyed at 0.00 ft NAVD88 and stage is
+  NAVD88 elevation directly. Cross-check: peak 41.90 ft on 2017-08-28 01:00 (the
+  correct Harvey timing) against a 30 m DEM ground elevation of 10.00 m (32.8 ft) at
+  the gauge — about 9 ft of water over the surrounding land, which is plausible and
+  consistent. `gauge_datum_offset_m = 0.0` is therefore correct here, on evidence
+  rather than by default.
+- **Open item: the 3DEP tiles arrive in EPSG:4269, a geographic CRS.** `read_raster`
+  correctly refuses them, which is the CRS policy working exactly as intended, but
+  it means conditioning needs a reprojection step before any of this data reaches
+  the terrain core. Not built yet; it is the next piece of work.

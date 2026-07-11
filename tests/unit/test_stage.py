@@ -7,7 +7,7 @@ from floodline.config import Config, HydraulicsConfig
 from floodline.hydraulics.stage import (
     GaugeStage,
     constant_stage,
-    gauge_reading_to_ahd,
+    gauge_reading_to_datum,
     resolve_gauge,
     slope_stage,
     stage_field,
@@ -15,7 +15,7 @@ from floodline.hydraulics.stage import (
 from floodline.synthetic import SyntheticCatchment
 from floodline.terrain.route import route_terrain
 
-DATUM = {"hydraulics": {"gauge_datum_offset_m": 10.0}}
+DATUM = {"hydraulics": {"gauge_datum_offset_m": 10.0, "gauge_reading_unit": "m"}}
 
 
 # --- the datum, which is the whole point of this module ---------------------------
@@ -26,25 +26,58 @@ def test_unset_datum_refuses_to_run() -> None:
         HydraulicsConfig().require_gauge_datum()
 
 
-def test_unset_datum_blocks_conversion() -> None:
+def test_unset_reading_unit_refuses_to_run() -> None:
+    """NWIS reports feet; 41.9 ft read as metres is three times the water."""
+    with pytest.raises(ValueError, match="gauge_reading_unit is not set"):
+        HydraulicsConfig().require_gauge_reading_unit()
+
+
+def test_conversion_needs_both_the_unit_and_the_datum() -> None:
+    with pytest.raises(ValueError, match="gauge_reading_unit is not set"):
+        gauge_reading_to_datum(14.4)
+
+    unit_only = Config.model_validate({"hydraulics": {"gauge_reading_unit": "ft"}})
     with pytest.raises(ValueError, match="gauge_datum_offset_m is not set"):
-        gauge_reading_to_ahd(14.4)
+        gauge_reading_to_datum(14.4, config=unit_only)
+
+
+def test_feet_are_converted_before_the_datum_is_applied() -> None:
+    """The real Harvey peak at Buffalo Bayou: 41.90 ft, gage zero at 0.00 ft NAVD88."""
+    cfg = Config.model_validate(
+        {"hydraulics": {"gauge_reading_unit": "ft", "gauge_datum_offset_m": 0.0}}
+    )
+    assert gauge_reading_to_datum(41.90, config=cfg) == pytest.approx(12.771, abs=1e-3)
+
+
+def test_us_survey_foot_differs_from_the_international_foot() -> None:
+    """Two parts per million: irrelevant for a stage, fatal for a state plane grid."""
+    intl = Config.model_validate(
+        {"hydraulics": {"gauge_reading_unit": "ft", "gauge_datum_offset_m": 0.0}}
+    )
+    survey = Config.model_validate(
+        {"hydraulics": {"gauge_reading_unit": "usft", "gauge_datum_offset_m": 0.0}}
+    )
+    assert gauge_reading_to_datum(1e6, config=survey) > gauge_reading_to_datum(1e6, config=intl)
 
 
 def test_zero_is_a_legitimate_but_deliberate_datum() -> None:
-    cfg = Config.model_validate({"hydraulics": {"gauge_datum_offset_m": 0.0}})
+    cfg = Config.model_validate(
+        {"hydraulics": {"gauge_datum_offset_m": 0.0, "gauge_reading_unit": "m"}}
+    )
     assert cfg.hydraulics.require_gauge_datum() == 0.0
-    assert gauge_reading_to_ahd(14.4, config=cfg) == pytest.approx(14.4)
+    assert gauge_reading_to_datum(14.4, config=cfg) == pytest.approx(14.4)
 
 
 def test_datum_is_applied() -> None:
     cfg = Config.model_validate(DATUM)
-    assert gauge_reading_to_ahd(14.4, config=cfg) == pytest.approx(24.4)
+    assert gauge_reading_to_datum(14.4, config=cfg) == pytest.approx(24.4)
 
 
 def test_negative_datum_is_allowed() -> None:
-    cfg = Config.model_validate({"hydraulics": {"gauge_datum_offset_m": -3.25}})
-    assert gauge_reading_to_ahd(10.0, config=cfg) == pytest.approx(6.75)
+    cfg = Config.model_validate(
+        {"hydraulics": {"gauge_datum_offset_m": -3.25, "gauge_reading_unit": "m"}}
+    )
+    assert gauge_reading_to_datum(10.0, config=cfg) == pytest.approx(6.75)
 
 
 # --- resolving a gauge against a channel cell --------------------------------------
@@ -59,8 +92,8 @@ def test_resolve_gauge_gives_the_channel_depth() -> None:
     gauge = resolve_gauge(14.4, dem, (2, 2), config=cfg)
 
     assert isinstance(gauge, GaugeStage)
-    assert gauge.reading_m == pytest.approx(14.4)
-    assert gauge.ahd_m == pytest.approx(24.4)
+    assert gauge.reading == pytest.approx(14.4)
+    assert gauge.datum_elevation_m == pytest.approx(24.4)
     assert gauge.bed_elevation_m == pytest.approx(21.0)
     assert gauge.depth_m == pytest.approx(3.4)
     assert gauge.cell == (2, 2)
@@ -77,9 +110,11 @@ def test_reading_below_the_bed_is_refused() -> None:
 def test_resolve_gauge_depth_arithmetic() -> None:
     dem = np.full((5, 5), 10.0)
     dem[2, 2] = 4.0
-    cfg = Config.model_validate({"hydraulics": {"gauge_datum_offset_m": 2.0}})
+    cfg = Config.model_validate(
+        {"hydraulics": {"gauge_datum_offset_m": 2.0, "gauge_reading_unit": "m"}}
+    )
     gauge = resolve_gauge(5.0, dem, (2, 2), config=cfg)
-    assert gauge.ahd_m == pytest.approx(7.0)
+    assert gauge.datum_elevation_m == pytest.approx(7.0)
     assert gauge.depth_m == pytest.approx(3.0)
 
 
@@ -115,7 +150,13 @@ def test_slope_stage_falls_upstream_and_rises_downstream(
     catchment: SyntheticCatchment,
 ) -> None:
     cfg = Config.model_validate(
-        {"hydraulics": {"gauge_datum_offset_m": 0.0, "water_surface_slope": 0.001}}
+        {
+            "hydraulics": {
+                "gauge_datum_offset_m": 0.0,
+                "gauge_reading_unit": "m",
+                "water_surface_slope": 0.001,
+            }
+        }
     )
     chain = route_terrain(
         catchment.dem.astype(np.float64),
@@ -144,7 +185,7 @@ def test_stage_field_dispatches_on_config(catchment: SyntheticCatchment) -> None
     stream_cells = np.argwhere(chain.streams)
     row, col = stream_cells[len(stream_cells) // 2]
 
-    base = {"gauge_datum_offset_m": 0.0}
+    base = {"gauge_datum_offset_m": 0.0, "gauge_reading_unit": "m"}
     const_cfg = Config.model_validate({"hydraulics": {**base, "stage_method": "constant"}})
     slope_cfg = Config.model_validate({"hydraulics": {**base, "stage_method": "slope"}})
     gauge = resolve_gauge(
@@ -170,7 +211,13 @@ def test_stage_field_dispatches_on_config(catchment: SyntheticCatchment) -> None
 def test_slope_stage_is_never_negative(catchment: SyntheticCatchment) -> None:
     """Far enough upstream the adjustment would go negative; it must clip at zero."""
     cfg = Config.model_validate(
-        {"hydraulics": {"gauge_datum_offset_m": 0.0, "water_surface_slope": 0.5}}
+        {
+            "hydraulics": {
+                "gauge_datum_offset_m": 0.0,
+                "gauge_reading_unit": "m",
+                "water_surface_slope": 0.5,
+            }
+        }
     )
     chain = route_terrain(catchment.dem.astype(np.float64), cellsize=(catchment.cellsize,) * 2)
     stream_cells = np.argwhere(chain.streams)

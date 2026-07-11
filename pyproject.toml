@@ -18,6 +18,7 @@ dependencies = [
     "pydantic>=2.9",
     "pyproj>=3.6",
     "typer>=0.15",
+    "httpx>=0.28.1",
 ]
 
 [project.optional-dependencies]

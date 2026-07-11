@@ -99,6 +99,71 @@ def synth(
     typer.echo(f"wrote {path} ({rows}x{cols}, {len(catchment.pits)} pits)")
 
 
+@app.command("fetch")
+def fetch_data(
+    sources: Annotated[
+        list[str] | None,
+        typer.Argument(help="Source names. Defaults to every automatable source."),
+    ] = None,
+    dest: Annotated[
+        Path | None, typer.Option(help="Download directory. Defaults to paths.raw.")
+    ] = None,
+    manifest: Annotated[Path, typer.Option(help="Manifest to regenerate.")] = Path(
+        "data/MANIFEST.md"
+    ),
+    limit: Annotated[
+        int | None, typer.Option(help="Cap files per source, for a smoke run.")
+    ] = None,
+    dry_run: Annotated[
+        bool, typer.Option("--dry-run", help="Report what would be fetched, and how big.")
+    ] = False,
+    show: Annotated[bool, typer.Option("--list", help="List sources and exit.")] = False,
+    config: ConfigOption = None,
+) -> None:
+    """Download the case's input data, with checksums, into data/raw."""
+    from floodline.io import sources as src
+
+    resolved = load_config(config)
+
+    if show:
+        for source in src.list_sources():
+            need = ""
+            if source.credential_env:
+                need = f"  [needs ${source.credential_env}]"
+            elif source.manual_note:
+                need = f"  [manual: {source.manual_note}]"
+            typer.echo(f"{source.name:20s} {source.description}{need}")
+        return
+
+    results = src.fetch(
+        sources or None,
+        config=resolved,
+        dest=dest,
+        limit=limit,
+        dry_run=dry_run,
+    )
+
+    failed = 0
+    for result in results:
+        if result.note.startswith("FAILED"):
+            failed += 1
+            typer.secho(f"{result.source:20s} {result.note}", fg=typer.colors.RED, err=True)
+            continue
+        typer.echo(
+            f"{result.source:20s} {len(result.artifacts):>4} file(s)  "
+            f"{result.total_bytes / 1e6:>10.1f} MB"
+            + (f"  ({result.reused} reused)" if result.reused else "")
+            + ("  [dry run]" if dry_run else "")
+        )
+
+    if not dry_run:
+        path = src.write_manifest(manifest, results, config=resolved)
+        typer.echo(f"wrote {path}")
+
+    if failed:
+        raise typer.Exit(code=1)
+
+
 @app.command()
 def condition(
     dem: Annotated[Path, typer.Argument(exists=True, dir_okay=False, help="Input DEM.")],
@@ -284,7 +349,9 @@ def inundate(
     )
     path = write_cog(out, raster.with_data(result.depth), config=resolved, dtype="float32")
     typer.echo(
-        f"wrote {path} (stage {gauge.reading_m} m = {gauge.ahd_m:.2f} m AHD = "
+        f"wrote {path} (stage {gauge.reading}"
+        f"{resolved.hydraulics.require_gauge_reading_unit().value} = "
+        f"{gauge.datum_elevation_m:.2f} m on datum = "
         f"{gauge.depth_m:.2f} m above bed; {result.n_wet} cells wet, "
         f"{result.area_m2 / 1e6:.3f} km2, max depth {result.max_depth_m:.2f} m; "
         f"{result.n_removed_by_connectivity} cells dropped as disconnected)"
