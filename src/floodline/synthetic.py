@@ -22,8 +22,8 @@ from floodline.io.raster import Raster
 
 __all__ = ["Pit", "SyntheticCatchment", "make_synthetic_catchment"]
 
-DEFAULT_CRS_EPSG = 7856
-"""GDA2020 / MGA zone 56 — the analysis CRS for the Lismore case."""
+DEFAULT_CRS_EPSG = 6587
+"""NAD83(2011) / Texas South Central — the analysis CRS for the Harvey case."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -114,7 +114,7 @@ def make_synthetic_catchment(
     roughness_m: float = 0.0,
     nodata_border_cells: int = 0,
     nodata: float = -9999.0,
-    origin_xy: tuple[float, float] = (500_000.0, 6_800_000.0),
+    origin_xy: tuple[float, float] = (3_000_000.0, 13_800_000.0),
     epsg: int = DEFAULT_CRS_EPSG,
     seed: int = 0,
 ) -> SyntheticCatchment:

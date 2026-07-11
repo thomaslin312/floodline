@@ -136,7 +136,7 @@ def test_network_carries_the_analysis_crs(catchment: SyntheticCatchment) -> None
     fdir, acc = _routed(catchment.dem.astype(np.float64), catchment.cellsize)
     mask = prune_stream_mask(stream_mask(acc, fdir, threshold=200), fdir, min_length=5)
     net = stream_network(mask, fdir, acc, catchment.transform, catchment.crs)
-    assert net.crs.to_epsg() == 7856
+    assert net.crs.to_epsg() == 6587
     assert (net.geometry.geom_type == "LineString").all()
 
 

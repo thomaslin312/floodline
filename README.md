@@ -6,7 +6,8 @@ Given a lidar DEM, a stream network and a water level at a river gauge, floodlin
 produces an inundation extent and depth raster (HAND method), intersects it with
 building footprints and population grids, and estimates people affected and direct
 economic damage using published depth–damage curves — with a Monte Carlo uncertainty
-band, validated against the Lismore, NSW flood of 28 February 2022.
+band, validated against Hurricane Harvey over Houston, Texas, 26 August – 1
+September 2017.
 
 **The claim being tested:** a screening-grade flood damage model built from open data
 can reproduce the extent of a real major flood to within a stated CSI and put the
@@ -21,15 +22,20 @@ Stated first, on purpose. HAND is a screening model, not a hydraulic one.
 
 - **HAND assumes the water surface is parallel to the drainage line.** It has no
   representation of backwater, levees, culverts, or flow routed across a catchment
-  boundary. Lismore's CBD levee (overtopping around 10.6 m) is a good demonstration
-  of where the assumption breaks and where it holds.
+  boundary. The Addicks and Barker reservoir releases during Harvey are a sharp
+  demonstration: water arrived downstream by a controlled release that no
+  terrain-following model can infer.
 - **One gauge is not one stage for a whole reach.** A single stage applied to every
   reach is an approximation whose error grows with distance from the gauge.
 - **Sentinel-1 is a lower bound on urban extent.** SAR misses water under tree canopy
   and in dense urban areas (double bounce), so agreement metrics against it are not
-  symmetric in meaning.
+  symmetric in meaning. That is why the primary reference here is 2,298 surveyed
+  high-water marks, with SAR as a secondary check.
 - **Population grids disagree with each other by tens of percent** in small towns.
-  floodline reports mesh blocks, WorldPop and HRSL rather than picking one.
+  floodline reports Census block groups, WorldPop and HRSL rather than picking one —
+  but they agree far better across a metro the size of Houston than they would in a
+  small town, so this comparison is weaker here than it would have been at Lismore.
+  That is the main thing given up by choosing Harvey as the primary case.
 
 ## Status
 
@@ -43,7 +49,7 @@ synthetic-fixture diagnostics, measured on this machine.
 |---|---|---|
 | 0 | Scaffold, config, raster I/O, synthetic fixture, CLI, CI | done |
 | 1 | `fill`, `flowdir`, `flowacc`, `streams`, `hand` — numba, property-tested | done, plus flat resolution |
-| 2 | Stage handling, inundation, buildings and population | hydraulics done; exposure needs data |
+| 2 | Stage handling, inundation, buildings and population | hydraulics done; exposure next |
 | 3 | Depth–damage curves, costs, Monte Carlo | not started |
 | 4 | SAR validation, resolution and population experiments | not started |
 | 5 | Rendered report and write-up | not started |
@@ -146,9 +152,14 @@ Every threshold, tolerance, CRS and curve choice is a field on a pydantic model 
 [`config.py`](src/floodline/config.py). Point any command at a TOML file with
 `--config` to change them; unknown keys are an error rather than a silent no-op.
 
-A geographic CRS as the analysis CRS is refused, not warned about — cell sizes in
-degrees make every slope, area and distance in the terrain code wrong. The Lismore
-work is in GDA2020 / MGA zone 56 (EPSG:7856).
+Three kinds of CRS are refused outright, not warned about. Geographic, because cell
+sizes in degrees make every slope, area and distance wrong. Projected-but-not-metres
+(US survey feet), because lengths silently rescale. And whole-world Mercator
+(EPSG:3857 and friends), whose axis unit is nominally the metre but whose scale
+factor is 1/cos(latitude) — about 15% too long at Houston, with areas out by 30%.
+That last one matters in practice: both the USGS 3DEP and the NSW elevation image
+services serve 3857 natively, so it is the CRS a fetched raster is most likely to
+arrive in. The Harvey work is in NAD83(2011) / Texas South Central (EPSG:6587).
 
 ## Development
 

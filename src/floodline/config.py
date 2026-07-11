@@ -66,15 +66,30 @@ class CurveFamily(StrEnum):
 
 
 def validate_projected_crs(value: str | int | CRS) -> CRS:
-    """Return `value` as a `CRS`, refusing anything that is not projected in metres.
+    """Return `value` as a `CRS`, refusing anything not projected in true metres.
 
-    A geographic CRS as the analysis CRS is an error, not a warning: cell sizes in
-    degrees make every distance, area and slope in the terrain code wrong.
+    Three refusals, in increasing subtlety:
+
+    * **Geographic** CRSs. Cell sizes in degrees make every distance, area and
+      slope in the terrain code wrong.
+    * **Non-metre axes.** A projected CRS in US survey feet (EPSG:6588, say) would
+      pass a naive "is it projected" check and then silently scale every length.
+    * **Whole-world Mercator.** EPSG:3857 and friends are projected and their axis
+      unit is nominally the metre, but it is not a *ground* metre: the scale factor
+      is 1/cos(latitude), so at Houston's 29.8 deg N a "metre" is about 15% too
+      long, and at Lismore's 28.8 deg S about 14%. Areas are out by the square of
+      that. Both the USGS 3DEP and NSW elevation image services serve 3857
+      natively, so this is the CRS a fetched raster is most likely to arrive in --
+      which is exactly why it has to be refused here rather than trusted.
+
+    Transverse Mercator (UTM, MGA) is fine and is not caught: its scale factor is
+    referenced to a central meridian, not the equator.
 
     Raises
     ------
     ValueError
-        If the value is not a parseable CRS, is geographic, or has non-metre axes.
+        If the value is not a parseable CRS, is geographic, has non-metre axes, or
+        is a whole-world Mercator.
     """
     try:
         crs = CRS.from_user_input(value)
@@ -84,7 +99,7 @@ def validate_projected_crs(value: str | int | CRS) -> CRS:
     if crs.is_geographic:
         raise ValueError(
             f"{crs.to_string()} is a geographic CRS. floodline requires a projected CRS "
-            "in metres (for Lismore: EPSG:7856, GDA2020 / MGA zone 56)."
+            "in metres (for Houston: EPSG:6587, NAD83(2011) / Texas South Central)."
         )
     if not crs.is_projected:
         raise ValueError(f"{crs.to_string()} is not a projected CRS.")
@@ -94,6 +109,17 @@ def validate_projected_crs(value: str | int | CRS) -> CRS:
     if not units <= allowed:
         raise ValueError(
             f"{crs.to_string()} has axis units {sorted(units)}; floodline requires metres."
+        )
+
+    operation = crs.coordinate_operation
+    method = operation.method_name if operation is not None else ""
+    if "Mercator" in method and "Transverse" not in method:
+        raise ValueError(
+            f"{crs.to_string()} is a whole-world Mercator ({method}). Its axis unit "
+            "is the metre but its scale factor is 1/cos(latitude), so distances are "
+            "inflated by roughly 15% at Houston and areas by 30%. Reproject to a "
+            "local projected CRS in true metres - EPSG:6587 (NAD83(2011) / Texas "
+            "South Central) for the Harvey case, or the appropriate UTM zone."
         )
     return crs
 
@@ -116,8 +142,9 @@ class CrsConfig(Frozen):
     model_config = ConfigDict(frozen=True, extra="forbid", arbitrary_types_allowed=True)
 
     analysis: ProjectedCRS = Field(
-        default_factory=lambda: CRS.from_epsg(7856),
-        description="Analysis CRS. Must be projected, in metres. Default GDA2020 / MGA zone 56.",
+        default_factory=lambda: CRS.from_epsg(6587),
+        description="Analysis CRS. Must be projected, in true metres. Default "
+        "NAD83(2011) / Texas South Central, the Houston/Harvey case.",
     )
     allow_reprojection: bool = Field(
         default=False,
