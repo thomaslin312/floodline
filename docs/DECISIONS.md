@@ -352,3 +352,66 @@ existed; they are recorded here so the review has one place to look.
   correctly refuses them, which is the CRS policy working exactly as intended, but
   it means conditioning needs a reprojection step before any of this data reaches
   the terrain core. Not built yet; it is the next piece of work.
+
+### io/ingest.py, and the first real run
+
+- **Ingest is the one module allowed to read a raster in a CRS the policy refuses.**
+  Why: 3DEP publishes EPSG:4269, so `read_raster` rejects every tile — correctly.
+  Something has to be permitted to open them, and confining that permission to one
+  module whose entire job is to hand back an analysis-CRS raster is better than
+  loosening the check. Alternative: relax `read_raster` — rejected; the refusal is
+  the feature.
+- **Tiles are grouped by bounds, not by filename, and the default vintage is the
+  survey nearest the event.** Why: 3DEP publishes several surveys of the same
+  ground — Houston has 2018, 2020, 2024 and 2026 versions — and modelling a 2017
+  flood on 2026 terrain routes water over land that did not exist yet. On the real
+  tiles this collapses 13 files to 4 footprints, choosing 2018–2020. Grouping by
+  bounds means a change in USGS naming cannot silently split one footprint into
+  several. `case.dem_vintage` can be set to `newest` instead.
+- **`WarpedVRT` per tile, then merge.** Why: the warp then happens lazily per block
+  rather than materialising each tile at full size first. Alternative: reproject
+  each tile to a temporary file — rejected as slower and needing scratch disk.
+- **Output is clipped to the AOI and refused above `max_cells`.** Why: the tiles
+  cover four degrees for an AOI of less than one, and depression filling is global.
+  Measured: the AOI is 6.1M cells at 30 m, 54.6M at 10 m, and **5.46 billion at 1 m
+  (~683 GB peak)**. The 1 m run needs a much smaller AOI regardless of disk space.
+- **Vertical datum is not transformed, and the docstring says so.** 3DEP and USGS
+  gauge datums are both NAVD88 here, so they are already consistent. A case mixing
+  vertical datums would need a step that does not exist.
+
+### first real result, and what it says
+
+Ran end to end on real Houston terrain at 30 m. The pipeline works; the *model*, as
+configured, does not, and the number says so:
+
+- Terrain chain: 6.1M cells in **1.7 s**. 20% of cells raised by filling, and
+  **1,328,007 flat cells (22% of the grid)** — against 386 on the synthetic
+  fixture. Houston's coastal plain is the case flat resolution was built for. All
+  resolved; the grid drains completely.
+- Inundation at the real Harvey peak (Buffalo Bayou 08074000, 41.90 ft on
+  2017-08-28 01:00, = 12.77 m NAVD88, 7.97 m above the modelled bed) floods
+  **5,067 km² of a 5,464 km² AOI — 93% of greater Houston.** That is plainly wrong.
+- Against the 192 quality-1/2 surveyed high-water marks: 97% "hit rate", but the
+  modelled water surface sits **+5.4 m above the surveyed marks (RMSE 5.86 m)**, and
+  only 2% are within a metre. A high hit rate here means "flooded everything",
+  not "got it right" — which is exactly why hit rate alone is a bad metric and why
+  the spec asks for CSI and bias too.
+
+Diagnosed rather than guessed. Restricting the stage to the gauge's own contributing
+area (528,617 cells = 476 km², against a published drainage area of 870 km²) brings
+the extent to a plausible 447 km², but the residual inside that catchment is still
++4.5 m. So there are two distinct problems, and the second is the interesting one:
+
+1. **One gauge is being applied to a whole metropolitan region** of independent
+   bayous, which the spec already names as a known failure mode. Scoping the stage
+   to gauged catchments fixes the extent.
+2. **At 30 m the channels are not resolved.** HAND is measured to whichever cell the
+   accumulation threshold called drainage, and on a flat coastal plain at 30 m that
+   is often a shallow tributary whose bed sits metres above the main channel.
+   Adding the main channel's 8 m depth to that reference over-predicts everywhere.
+
+Both are method limits, not implementation bugs, and both are what the resolution
+experiment and the multi-gauge stage work exist to quantify. The spec predicted the
+first half of this: "SRTM 30 m is much worse — which is what most global flood
+products use." It is worth stating in the write-up that a 97% hit rate accompanied
+a 5.9 m RMSE.

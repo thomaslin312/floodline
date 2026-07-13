@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any
 
 import pytest
 import rasterio
@@ -346,3 +347,29 @@ def test_fetch_writes_a_manifest_and_reports_failures(
     assert "FAILED" in result.stderr
     assert manifest.exists()
     assert "Sources that did not fetch" in manifest.read_text()
+
+
+def test_ingest_reprojects_a_geographic_tile(tmp_path: Path, geographic_tile_writer: Any) -> None:
+    """The CLI half of the step that makes 3DEP tiles usable."""
+    tiles = tmp_path / "tiles"
+    tiles.mkdir()
+    geographic_tile_writer(tiles / "USGS_1_x_20180510.tif", west=-95.6, south=29.7)
+    geographic_tile_writer(tiles / "USGS_1_x_20260623.tif", west=-95.6, south=29.7)
+
+    out = tmp_path / "dem.tif"
+    result = runner.invoke(app, ["ingest", str(tiles), str(out), "--resolution", "60"])
+    assert result.exit_code == 0, result.stdout
+    assert "2 tiles -> 1 footprints" in result.stdout
+    assert "EPSG:6587" in result.stdout
+
+    with rasterio.open(out) as src:
+        assert src.crs.to_epsg() == 6587
+        assert src.res == (60.0, 60.0)
+
+
+def test_ingest_errors_on_an_empty_directory(tmp_path: Path) -> None:
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    result = runner.invoke(app, ["ingest", str(empty), str(tmp_path / "o.tif")])
+    assert result.exit_code == 1
+    assert "no .tif files" in result.stderr

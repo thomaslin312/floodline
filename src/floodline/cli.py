@@ -165,6 +165,58 @@ def fetch_data(
 
 
 @app.command()
+def ingest(
+    tiles: Annotated[Path, typer.Argument(exists=True, help="Directory of downloaded DEM tiles.")],
+    out: Annotated[Path, typer.Argument(help="Output DEM (COG, analysis CRS).")],
+    resolution: Annotated[float, typer.Option(help="Output cell size in metres.")] = 30.0,
+    no_clip: Annotated[
+        bool, typer.Option("--no-clip", help="Keep the full tile extent instead of the AOI.")
+    ] = False,
+    config: ConfigOption = None,
+) -> None:
+    """Reproject, mosaic and clip fetched DEM tiles into one analysis-ready raster.
+
+    Downloaded 3DEP tiles are in EPSG:4269, a geographic CRS the rest of the
+    pipeline refuses. This is the step that makes them usable.
+    """
+    from floodline.io.ingest import ingest_dem, select_tiles
+    from floodline.io.raster import write_cog
+
+    resolved = load_config(config)
+    paths = sorted(tiles.glob("*.tif")) if tiles.is_dir() else [tiles]
+    if not paths:
+        typer.secho(f"no .tif files under {tiles}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=1)
+
+    groups = select_tiles(paths, config=resolved)
+    dropped = sum(len(g.rejected) for g in groups)
+    if dropped:
+        typer.echo(
+            f"{len(paths)} tiles -> {len(groups)} footprints "
+            f"({dropped} superseded by vintage: {resolved.case.dem_vintage.value})"
+        )
+    undated = [g for g in groups if g.chosen_date is None]
+    if undated:
+        typer.secho(
+            f"warning: {len(undated)} footprint(s) had no survey date in the filename; "
+            "vintage was chosen by name order, not by date.",
+            fg=typer.colors.YELLOW,
+            err=True,
+        )
+
+    dem = ingest_dem(paths, resolution_m=resolution, config=resolved, clip_to_aoi=not no_clip)
+    path = write_cog(out, dem, config=resolved, dtype="float32")
+    import numpy as np
+
+    valid = np.isfinite(dem.data)
+    typer.echo(
+        f"wrote {path} ({dem.shape[1]} x {dem.shape[0]} at {resolution:g} m, "
+        f"{dem.crs.to_string()}, {valid.mean():.1%} valid, "
+        f"{np.nanmin(dem.data):.1f}..{np.nanmax(dem.data):.1f} m)"
+    )
+
+
+@app.command()
 def condition(
     dem: Annotated[Path, typer.Argument(exists=True, dir_okay=False, help="Input DEM.")],
     out: Annotated[Path, typer.Argument(help="Output filled DEM.")],

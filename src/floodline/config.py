@@ -185,6 +185,15 @@ class RasterConfig(Frozen):
     )
     overview_resampling: str = Field(default="average", description="Overview resampling method.")
     bigtiff: bool = Field(default=True, description="Write BigTIFF so >4 GB outputs are legal.")
+    warp_resampling: str = Field(
+        default="bilinear",
+        description="Resampling used when reprojecting continuous surfaces such as "
+        "elevation. Nearest would introduce stair-stepping that the terrain code "
+        "would then route water along.",
+    )
+    warp_memory_limit_mb: Positive = Field(
+        default=512.0, description="Working memory GDAL may use per warp operation."
+    )
 
 
 class TerrainConfig(Frozen):
@@ -416,6 +425,13 @@ class SourcesConfig(Frozen):
     )
 
 
+class TileVintage(StrEnum):
+    """How to choose between DEM tiles covering the same ground at different dates."""
+
+    NEAREST_TO_EVENT = "nearest_to_event"
+    NEWEST = "newest"
+
+
 class CaseConfig(Frozen):
     """The event being modelled: area, dates, and the identifiers each source needs.
 
@@ -463,6 +479,13 @@ class CaseConfig(Frozen):
         "AOI at 1 m is about 57 GB, which is easy to start by accident and, at "
         "roughly 125 bytes per cell of peak memory, far past what the global "
         "priority-flood can hold in one pass. Raise it deliberately, or shrink the AOI.",
+    )
+    dem_vintage: TileVintage = Field(
+        default=TileVintage.NEAREST_TO_EVENT,
+        description="3DEP publishes several vintages of the same tile footprint - "
+        "Houston has 2018, 2024 and 2026 versions of the same ground. Modelling a "
+        "2017 flood on 2026 terrain would put the water over land that did not exist "
+        "yet, so the default picks the survey closest to the event.",
     )
     overture_release: str = Field(
         default="2026-08-19.0", description="Overture Maps release to read buildings from."

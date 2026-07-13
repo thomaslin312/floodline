@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from pathlib import Path
 
 import numpy as np
 import numpy.typing as npt
@@ -114,3 +115,44 @@ def lower_neighbour_counts() -> Callable[[FloatGrid, BoolGrid], npt.NDArray[np.i
 @pytest.fixture(scope="session")
 def steepest_tie_mask() -> Callable[[FloatGrid, BoolGrid, float], BoolGrid]:
     return _steepest_tie_mask
+
+
+@pytest.fixture(scope="session")
+def geographic_tile_writer() -> Callable[..., Path]:
+    """Return a helper that writes a tile in a geographic CRS.
+
+    USGS 3DEP delivers EPSG:4269, which `read_raster` refuses, so several suites
+    need to fabricate one to exercise the ingest path.
+    """
+    import rasterio
+    from rasterio.crs import CRS as RioCRS
+    from rasterio.transform import from_origin
+
+    def write(
+        path: Path,
+        *,
+        west: float,
+        south: float,
+        size: float = 0.2,
+        res: float = 0.01,
+        value: float = 10.0,
+        epsg: int = 4269,
+        nodata: float = -999999.0,
+    ) -> Path:
+        n = round(size / res)
+        with rasterio.open(
+            path,
+            "w",
+            driver="GTiff",
+            height=n,
+            width=n,
+            count=1,
+            dtype="float32",
+            crs=RioCRS.from_epsg(epsg),
+            transform=from_origin(west, south + size, res, res),
+            nodata=nodata,
+        ) as dst:
+            dst.write(np.full((n, n), value, dtype=np.float32), 1)
+        return path
+
+    return write
