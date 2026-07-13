@@ -480,6 +480,17 @@ class CaseConfig(Frozen):
         "roughly 125 bytes per cell of peak memory, far past what the global "
         "priority-flood can hold in one pass. Raise it deliberately, or shrink the AOI.",
     )
+    huc_level: int = Field(
+        default=10,
+        description="Watershed level to use as the unit of work. Flow accumulation "
+        "depends on the whole upstream catchment, so terrain products computed over "
+        "an arbitrary box are wrong near its edges; a HUC is hydrologically complete. "
+        "10 (~540 km2 here) fits comfortably at 10 m; 12 is the smaller subwatershed.",
+    )
+    huc_codes: tuple[str, ...] = Field(
+        default=(),
+        description="Specific HUCs to work on. Empty means every one intersecting the AOI.",
+    )
     dem_vintage: TileVintage = Field(
         default=TileVintage.NEAREST_TO_EVENT,
         description="3DEP publishes several vintages of the same tile footprint - "
@@ -504,6 +515,8 @@ class CaseConfig(Frozen):
             raise ValueError("event_start must not be after event_end")
         if self.peak_start > self.peak_end:
             raise ValueError("peak_start must not be after peak_end")
+        if self.huc_level not in {2, 4, 6, 8, 10, 12, 14, 16}:
+            raise ValueError(f"huc_level must be an even number from 2 to 16, got {self.huc_level}")
         return self
 
 

@@ -9,7 +9,12 @@ import rasterio
 from rasterio.transform import from_origin
 
 from floodline.config import Config
-from floodline.io.ingest import estimate_cells, ingest_dem, select_tiles
+from floodline.io.ingest import (
+    estimate_cells,
+    ingest_dem,
+    load_watersheds,
+    select_tiles,
+)
 from floodline.io.raster import CrsError, read_raster, write_cog
 
 # A small patch of the Houston AOI, in the geographic CRS 3DEP actually publishes in.
@@ -166,3 +171,105 @@ def test_grouping_is_by_bounds_not_by_filename(tmp_path: Path, write_geographic_
     )
     b = write_geographic_tile(tmp_path / "USGS_1_n30w096_20260623.tif", west=-95.6, south=29.7)
     assert len(select_tiles([a, b], config=Config())) == 1
+
+
+# --- watersheds: the correct unit of work -------------------------------------------
+
+
+def _watershed_geojson(path: Path, *, huc: str = "1204010407") -> Path:
+    """A square watershed inside the Houston AOI, in EPSG:4326 as WBD serves it."""
+    import json
+
+    path.write_text(
+        json.dumps(
+            {
+                "type": "FeatureCollection",
+                "features": [
+                    {
+                        "type": "Feature",
+                        "properties": {"huc10": huc, "name": "Test Bayou", "areasqkm": 500.0},
+                        "geometry": {
+                            "type": "Polygon",
+                            "coordinates": [
+                                [
+                                    [-95.60, 29.70],
+                                    [-95.40, 29.70],
+                                    [-95.40, 29.86],
+                                    [-95.60, 29.86],
+                                    [-95.60, 29.70],
+                                ]
+                            ],
+                        },
+                    },
+                    {
+                        "type": "Feature",
+                        "properties": {"huc10": "9999999999", "name": "Small", "areasqkm": 20.0},
+                        "geometry": {
+                            "type": "Polygon",
+                            "coordinates": [
+                                [
+                                    [-95.30, 29.70],
+                                    [-95.28, 29.70],
+                                    [-95.28, 29.72],
+                                    [-95.30, 29.72],
+                                    [-95.30, 29.70],
+                                ]
+                            ],
+                        },
+                    },
+                ],
+            }
+        )
+    )
+    return path
+
+
+def test_watersheds_load_into_the_analysis_crs(tmp_path: Path) -> None:
+    sheds = load_watersheds(_watershed_geojson(tmp_path / "w.geojson"), config=Config())
+    assert [w.huc for w in sheds] == ["1204010407", "9999999999"], "sorted by area, largest first"
+    west, south, east, north = sheds[0].bounds
+    # projected metres, not degrees
+    assert abs(east - west) > 1000
+    assert abs(north - south) > 1000
+
+
+def test_cells_at_scales_with_resolution(tmp_path: Path) -> None:
+    shed = load_watersheds(_watershed_geojson(tmp_path / "w.geojson"), config=Config())[0]
+    assert shed.cells_at(10.0) == pytest.approx(shed.cells_at(30.0) * 9, rel=0.02)
+    assert shed.cells_at(1.0) > shed.cells_at(10.0)
+
+
+def test_empty_watershed_file_is_an_error(tmp_path: Path) -> None:
+    path = tmp_path / "empty.geojson"
+    path.write_text('{"type": "FeatureCollection", "features": []}')
+    with pytest.raises(ValueError, match="no watershed features"):
+        load_watersheds(path, config=Config())
+
+
+def test_clipping_to_a_watershed_masks_outside_the_boundary(
+    tmp_path: Path, write_geographic_tile: Any
+) -> None:
+    """Cells beyond the divide become nodata, so routing treats them as the domain edge.
+
+    That is the point: water leaving the watershed has left the domain, and the
+    filler and router should say so rather than inventing a downstream.
+    """
+    tile = write_geographic_tile(tmp_path / "t.tif", west=-95.7, south=29.6, size=0.4, res=0.002)
+    shed = load_watersheds(_watershed_geojson(tmp_path / "w.geojson"), config=Config())[0]
+
+    boxed = ingest_dem([tile], resolution_m=100.0, config=Config())
+    clipped = ingest_dem([tile], resolution_m=100.0, config=Config(), watershed=shed)
+
+    inside = np.isfinite(clipped.data)
+    assert 0.0 < inside.mean() < 1.0, "some of the bounding box must fall outside the boundary"
+    # the watershed is smaller than the AOI, so fewer valid cells
+    assert inside.sum() < np.isfinite(boxed.data).sum()
+
+
+def test_watershed_clipping_respects_the_cell_cap(
+    tmp_path: Path, write_geographic_tile: Any
+) -> None:
+    tile = write_geographic_tile(tmp_path / "t.tif", west=-95.7, south=29.6, size=0.4, res=0.01)
+    shed = load_watersheds(_watershed_geojson(tmp_path / "w.geojson"), config=Config())[0]
+    with pytest.raises(ValueError, match=r"over the .* cap"):
+        ingest_dem([tile], resolution_m=1.0, config=Config(), watershed=shed, max_cells=1000)

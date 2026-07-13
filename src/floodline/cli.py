@@ -165,10 +165,58 @@ def fetch_data(
 
 
 @app.command()
+def watersheds(
+    path: Annotated[Path, typer.Option(help="Fetched WBD GeoJSON.")] = Path(
+        "data/raw/watersheds/huc10.geojson"
+    ),
+    resolution: Annotated[
+        float, typer.Option(help="Resolution to size each unit against, in metres.")
+    ] = 10.0,
+    config: ConfigOption = None,
+) -> None:
+    """List the watersheds available as units of work, and what each would cost.
+
+    Terrain products computed over an arbitrary box are wrong near its edges,
+    because flow accumulation depends on contributing area the box cannot see. A
+    watershed is hydrologically complete, so it is the right unit to run over.
+    """
+    from floodline.io.ingest import load_watersheds
+
+    resolved = load_config(config)
+    if not path.exists():
+        typer.secho(
+            f"{path} not found. Run: floodline fetch usgs-watersheds",
+            fg=typer.colors.RED,
+            err=True,
+        )
+        raise typer.Exit(code=1)
+
+    units = load_watersheds(path, config=resolved)
+    typer.echo(f"{'HUC':<13}{'name':<38}{'km2':>7}{'Mcells':>9}{'peak':>9}")
+    for unit in units:
+        cells = unit.cells_at(resolution)
+        typer.echo(
+            f"{unit.huc:<13}{unit.name[:36]:<38}{unit.area_km2:>7.0f}"
+            f"{cells / 1e6:>9.1f}{cells * 125 / 1e9:>8.1f}G"
+        )
+    typer.echo(
+        f"\n{len(units)} units at {resolution:g} m; "
+        f"peak memory is roughly 125 bytes per cell for the global fill."
+    )
+
+
+@app.command()
 def ingest(
     tiles: Annotated[Path, typer.Argument(exists=True, help="Directory of downloaded DEM tiles.")],
     out: Annotated[Path, typer.Argument(help="Output DEM (COG, analysis CRS).")],
     resolution: Annotated[float, typer.Option(help="Output cell size in metres.")] = 30.0,
+    huc: Annotated[
+        str | None,
+        typer.Option(help="Clip to this watershed instead of the AOI box."),
+    ] = None,
+    watersheds_path: Annotated[
+        Path, typer.Option("--watersheds", help="Fetched WBD GeoJSON.")
+    ] = Path("data/raw/watersheds/huc10.geojson"),
     no_clip: Annotated[
         bool, typer.Option("--no-clip", help="Keep the full tile extent instead of the AOI.")
     ] = False,
@@ -178,11 +226,35 @@ def ingest(
 
     Downloaded 3DEP tiles are in EPSG:4269, a geographic CRS the rest of the
     pipeline refuses. This is the step that makes them usable.
+
+    Prefer `--huc`: a watershed is hydrologically complete, so the terrain chain run
+    over it is correct throughout. Over an arbitrary box it is not, because flow
+    accumulation depends on contributing area the box cannot see.
     """
-    from floodline.io.ingest import ingest_dem, select_tiles
+    from floodline.io.ingest import ingest_dem, load_watersheds, select_tiles
     from floodline.io.raster import write_cog
 
     resolved = load_config(config)
+
+    unit = None
+    if huc is not None:
+        if not watersheds_path.exists():
+            typer.secho(
+                f"{watersheds_path} not found. Run: floodline fetch usgs-watersheds",
+                fg=typer.colors.RED,
+                err=True,
+            )
+            raise typer.Exit(code=1)
+        matches = [w for w in load_watersheds(watersheds_path, config=resolved) if w.huc == huc]
+        if not matches:
+            typer.secho(
+                f"no watershed {huc} in {watersheds_path}; try: floodline watersheds",
+                fg=typer.colors.RED,
+                err=True,
+            )
+            raise typer.Exit(code=1)
+        unit = matches[0]
+        typer.echo(f"clipping to HUC {unit.huc} {unit.name} ({unit.area_km2:.0f} km2)")
     paths = sorted(tiles.glob("*.tif")) if tiles.is_dir() else [tiles]
     if not paths:
         typer.secho(f"no .tif files under {tiles}", fg=typer.colors.RED, err=True)

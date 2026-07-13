@@ -346,6 +346,10 @@ NWIS_SITE = "https://waterservices.usgs.gov/nwis/site/"
 STN_HWM = "https://stn.wim.usgs.gov/STNServices/HWMs/FilteredHWMs.json"
 OPENFEMA = "https://www.fema.gov/api/open/v2"
 MPC_STAC = "https://planetarycomputer.microsoft.com/api/stac/v1/search"
+WBD = "https://hydro.nationalmap.gov/arcgis/rest/services/wbd/MapServer"
+
+WBD_LAYER_BY_HUC_LEVEL = {2: 1, 4: 2, 6: 3, 8: 4, 10: 5, 12: 6, 14: 7, 16: 8}
+"""Watershed Boundary Dataset layer index by HUC digit count."""
 
 _OPENFEMA_MAX_PAGES = 100
 """Guard so a filter that matches everything cannot page forever."""
@@ -636,6 +640,64 @@ def fetch_sentinel1_search(context: FetchContext) -> list[Artifact]:
     ]
 
 
+def fetch_watersheds(context: FetchContext) -> list[Artifact]:
+    """USGS Watershed Boundary Dataset polygons intersecting the AOI.
+
+    These are the unit of work for the terrain chain. Flow accumulation at a cell
+    depends on everything upstream of it, so terrain products computed over an
+    arbitrary box are wrong near the box's edges -- measured on the Houston 30 m
+    grid, clipping to an 800x800 window left 4.3% of HAND cells more than 0.5 m out,
+    with a 10.8 m worst case, and lost 12% of the stream network. A HUC is
+    hydrologically complete, so the same computation over one is correct throughout.
+    """
+    case = context.case
+    layer = WBD_LAYER_BY_HUC_LEVEL.get(case.huc_level)
+    if layer is None:
+        raise SourceError(
+            f"no WBD layer for HUC level {case.huc_level}; known: {sorted(WBD_LAYER_BY_HUC_LEVEL)}"
+        )
+    field = f"huc{case.huc_level}"
+    west, south, east, north = case.aoi_bbox_wgs84
+    payload = get_json(
+        context,
+        f"{WBD}/{layer}/query",
+        {
+            "geometry": f"{west},{south},{east},{north}",
+            "geometryType": "esriGeometryEnvelope",
+            "inSR": 4326,
+            "spatialRel": "esriSpatialRelIntersects",
+            "outFields": f"{field},name,areasqkm",
+            "returnGeometry": "true",
+            "outSR": 4326,
+            "f": "geojson",
+        },
+    )
+    features = payload.get("features", []) if isinstance(payload, dict) else []
+    if not features:
+        raise SourceError(
+            f"no HUC-{case.huc_level} watersheds intersect the AOI {case.aoi_bbox_wgs84}"
+        )
+    if case.huc_codes:
+        wanted = set(case.huc_codes)
+        features = [f for f in features if f.get("properties", {}).get(field) in wanted]
+        if not features:
+            raise SourceError(f"none of case.huc_codes {case.huc_codes} intersect the AOI")
+
+    total = sum(f.get("properties", {}).get("areasqkm") or 0 for f in features)
+    return [
+        write_json(
+            {"type": "FeatureCollection", "features": features},
+            context.subdir("watersheds") / f"huc{case.huc_level}.geojson",
+            name=f"usgs-wbd-huc{case.huc_level}",
+            url=f"{WBD}/{layer}/query",
+            note=(
+                f"{len(features)} HUC-{case.huc_level} watersheds, {total:,.0f} km2 total; "
+                "the unit of work for the terrain chain"
+            ),
+        )
+    ]
+
+
 REGISTRY: dict[str, Source] = {
     source.name: source
     for source in (
@@ -658,6 +720,11 @@ REGISTRY: dict[str, Source] = {
             name="fema-nfip-claims",
             description="OpenFEMA NFIP per-property claims for the event",
             fetch=fetch_fema_claims,
+        ),
+        Source(
+            name="usgs-watersheds",
+            description="USGS WBD watershed polygons -- the unit of work for terrain",
+            fetch=fetch_watersheds,
         ),
         Source(
             name="sentinel1-search",

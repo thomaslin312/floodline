@@ -27,6 +27,7 @@ a step here that does not exist yet, and this docstring is the warning.
 
 from __future__ import annotations
 
+import json
 import re
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -36,22 +37,91 @@ from pathlib import Path
 import numpy as np
 import numpy.typing as npt
 import rasterio
-from pyproj import CRS
+from pyproj import CRS, Transformer
 from rasterio.crs import CRS as RioCRS
 from rasterio.enums import Resampling
+from rasterio.features import geometry_mask
 from rasterio.merge import merge
 from rasterio.vrt import WarpedVRT
 from rasterio.warp import transform_bounds
+from shapely.geometry import shape
+from shapely.geometry.base import BaseGeometry
+from shapely.ops import transform as shapely_transform
 
 from floodline.config import Config, TileVintage
 from floodline.io.raster import CrsError, Raster
 
-__all__ = ["TileGroup", "estimate_cells", "ingest_dem", "select_tiles"]
+__all__ = [
+    "TileGroup",
+    "Watershed",
+    "estimate_cells",
+    "ingest_dem",
+    "load_watersheds",
+    "select_tiles",
+]
 
 _DATE_IN_NAME = re.compile(r"(?<!\d)(\d{8})(?!\d)")
 _FOOTPRINT_PRECISION = 4
 """Decimal places used to group tiles by footprint. Enough to separate adjacent
 tiles, loose enough that floating-point noise in the bounds does not split a group."""
+
+
+@dataclass(frozen=True, slots=True)
+class Watershed:
+    """One hydrologic unit, reprojected into the analysis CRS.
+
+    This is the unit the terrain chain should run over. Flow accumulation at a cell
+    depends on everything upstream of it, so a chain run over an arbitrary box is
+    wrong near the box's edges; a watershed is complete by construction.
+    """
+
+    huc: str
+    name: str
+    area_km2: float
+    geometry: BaseGeometry
+    """Boundary in the analysis CRS."""
+
+    @property
+    def bounds(self) -> tuple[float, float, float, float]:
+        """(west, south, east, north) in the analysis CRS."""
+        west, south, east, north = self.geometry.bounds
+        return float(west), float(south), float(east), float(north)
+
+    def cells_at(self, resolution_m: float) -> int:
+        """Cells in this watershed's bounding box at `resolution_m`."""
+        cols, rows = estimate_cells(self.bounds, resolution_m)
+        return cols * rows
+
+
+def load_watersheds(path: Path, *, config: Config | None = None) -> list[Watershed]:
+    """Read fetched WBD polygons and reproject them into the analysis CRS.
+
+    Sorted by area descending, so the largest -- the one most likely to be too big
+    for a given resolution -- is the first thing a caller sees.
+    """
+    resolved = config or Config()
+    payload = json.loads(path.read_text())
+    features = payload.get("features", [])
+    if not features:
+        raise ValueError(f"{path} contains no watershed features")
+
+    field = f"huc{resolved.case.huc_level}"
+    project = Transformer.from_crs(
+        CRS.from_epsg(4326), resolved.crs.analysis, always_xy=True
+    ).transform
+
+    sheds: list[Watershed] = []
+    for feature in features:
+        properties = feature.get("properties", {})
+        sheds.append(
+            Watershed(
+                huc=str(properties.get(field, "")),
+                name=str(properties.get("name", "")),
+                area_km2=float(properties.get("areasqkm") or 0.0),
+                geometry=shapely_transform(project, shape(feature["geometry"])),
+            )
+        )
+    return sorted(sheds, key=lambda w: w.area_km2, reverse=True)
 
 
 @dataclass(frozen=True, slots=True)
@@ -136,6 +206,7 @@ def ingest_dem(
     resolution_m: float,
     config: Config | None = None,
     clip_to_aoi: bool = True,
+    watershed: Watershed | None = None,
     max_cells: int | None = 400_000_000,
 ) -> Raster:
     """Reproject, mosaic and clip DEM tiles into one analysis-CRS raster.
@@ -151,6 +222,10 @@ def ingest_dem(
         Supplies the analysis CRS, the AOI, resampling and nodata.
     clip_to_aoi
         Trim to `case.aoi_bbox_wgs84`. The tiles cover far more ground than the case.
+    watershed
+        Clip to this hydrologic unit instead of the AOI box, and mask cells outside
+        its boundary to nodata. This is the correct unit of work: a chain run over an
+        arbitrary box has no way to know about contributing area outside it.
     max_cells
         Refuse an output larger than this. The terrain core is memory-bound and
         global, so a raster it cannot hold is better refused here than discovered
@@ -171,10 +246,13 @@ def ingest_dem(
     chosen = [group.chosen for group in groups]
 
     bounds: tuple[float, float, float, float] | None = None
-    if clip_to_aoi:
+    if watershed is not None:
+        bounds = watershed.bounds
+    elif clip_to_aoi:
         bounds = transform_bounds(
             RioCRS.from_epsg(4326), dst_crs, *resolved.case.aoi_bbox_wgs84, densify_pts=21
         )
+    if bounds is not None:
         cols, rows = estimate_cells(bounds, resolution_m)
         if max_cells is not None and cols * rows > max_cells:
             raise ValueError(
@@ -218,6 +296,19 @@ def ingest_dem(
 
     array: npt.NDArray[np.float32] = np.asarray(data[0], dtype=np.float32)
     array = np.where(array == np.float32(nodata), np.nan, array)
+
+    if watershed is not None:
+        # Everything outside the boundary is nodata. Filling and routing then treat
+        # it as the edge of the data, which is exactly right: water leaving the
+        # watershed has left the domain.
+        outside = ~geometry_mask(
+            [watershed.geometry],
+            out_shape=array.shape,
+            transform=transform,
+            invert=False,
+        )
+        array = np.where(outside, array, np.nan)
+
     return Raster(
         data=np.ascontiguousarray(array),
         transform=transform,
