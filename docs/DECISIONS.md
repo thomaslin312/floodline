@@ -456,3 +456,58 @@ a 5.9 m RMSE.
   products (HAND, flow direction, streams) are the expensive part and the part an
   interactive layer reads windows of; COGs on object storage with HTTP range reads is
   what they are for, and the spec already mandates COG output. Not built yet.
+
+### the 10 m watershed run, and why it is worse
+
+Ran HUC 1204010403 (Whiteoak Bayou-Buffalo Bayou, 491 km2, contains gauges 08074000
+and 08074500 and 16 quality-1/2 high-water marks) at 10 m. Performance is fine:
+9.9M cells, chain in 1.7 s, 1,044,200 flats all resolved, drains completely. The
+17.3M-cell Buffalo Bayou-San Jacinto unit ran in 2.4 s at 1.3 GB peak.
+
+The accuracy got **worse**, not better:
+
+| | 30 m, whole AOI | 10 m, watershed-scoped |
+|---|---|---|
+| mean residual | +5.38 m | **+6.72 m** |
+| RMSE | 5.86 m | **7.86 m** |
+
+The cause is in one number. At 30 m the snapped channel bed at the gauge reads
+4.81 m NAVD88; at 10 m it reads **0.89 m**. Finer resolution resolves the actual
+channel bottom, so `stage - bed` grows from 7.97 m to 11.89 m, and since the model
+applies that as a uniform HAND threshold, everything floods deeper. **Better data
+made the answer worse, because the stage-to-threshold conversion was wrong.**
+
+Then the marks were asked what the threshold should have been. For each mark,
+`WSE - (elevation of that cell's own drainage)` is the HAND threshold that would
+place the water exactly right there:
+
+- implied h: min **-0.19 m**, median **4.42 m**, max **12.32 m**
+- the model used a single h = 11.89 m
+- the marks' own drainage cells sit at a median of 17.09 m NAVD88 — nowhere near the
+  gauge's 0.89 m channel bed, because HAND assigns each floodplain cell to its
+  *nearest* drainage, which across a 491 km2 urban watershed is usually a small
+  tributary, not the main stem
+- the water actually stood a median of **0.58 m above the ground** at the marks:
+  shallow overbank flooding, while the model was putting metres over everything
+
+**The conclusion is that no constant works.** Fitting the best possible single h
+(4.42 m) still gives RMSE 4.13 m and **0% of marks within a metre**. A spatially
+constant HAND threshold cannot reproduce this event at any value, because the water
+surface is not a fixed height above local drainage across a watershed with many
+independent tributaries. That is a statement about the method, not about the DEM,
+and it is the headline limitation for the write-up.
+
+What actually fixes it, in order:
+
+1. **`hydraulics/rating.py`** — in the spec's module list and not yet built. The
+   standard HAND flood-inundation approach derives a synthetic rating curve per
+   reach from HAND geometry and Manning's equation, converts *discharge* to a
+   reach-specific stage, and uses that as the threshold. It is per-reach by
+   construction, which is exactly what is missing.
+2. **Use discharge, not stage.** NWIS parameter 00060 is what a rating curve
+   consumes; we currently fetch only 00065 (gauge height).
+3. More gauges, one per tributary, rather than one for the watershed.
+
+Worth stating plainly in the README: the current model over-predicts by metres, the
+reason is understood and measured, and the fix is a module the spec already
+anticipated.
