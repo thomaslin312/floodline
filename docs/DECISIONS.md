@@ -511,3 +511,67 @@ What actually fixes it, in order:
 Worth stating plainly in the README: the current model over-predicts by metres, the
 reason is understood and measured, and the fix is a module the spec already
 anticipated.
+
+### hydraulics/rating.py — the fix, and it works
+
+Built the synthetic rating curves the spec's module list anticipated, following
+Zheng et al. (2018): each reach owns the cells whose flow path first reaches the
+network there; for a trial stage the wet cells of that catchment give volume and
+bed area; volume over reach length is cross-sectional area, bed area over reach
+length is wetted perimeter, and Manning's equation turns the pair into a discharge.
+Tabulating stage gives a curve per reach, and inverting it turns an observed
+discharge into a reach-specific stage.
+
+Re-validated on the identical ground — HUC 1204010403 at 10 m, the same 16 surveyed
+high-water marks:
+
+| | mean | RMSE | within 1 m | extent |
+|---|---|---|---|---|
+| constant stage | +6.72 m | 7.86 m | 12% | 464 km2 (98% of the unit) |
+| best-fit constant | -0.74 m | 4.13 m | 0% | — |
+| **per-reach rating curve** | **+1.04 m** | **1.38 m** | **50%** | **117 km2 (25%)** |
+
+RMSE 7.86 -> 1.38 m, and it beats the best *any* constant could do by a factor of
+three, which was the whole point. 575 of 579 reaches got a curve; per-reach stage
+runs from 0.25 m to 23.34 m with a median of 0.40 m, against the single 11.89 m the
+old model applied everywhere.
+
+**The honest cost:** only 10 of the 16 marks now fall inside the modelled extent,
+against 16 of 16 before. Extent recall dropped from 100% to 62% while depth accuracy
+improved 5.7x. That is the recall-versus-bias trade the spec wants CSI and bias
+reported for rather than hit rate alone, and it is worth stating both ways round in
+the write-up: the old model "hit" every mark by flooding everything.
+
+Decisions inside this:
+
+- **Discharge, not stage, is the input.** A rating curve consumes discharge; stage
+  is what it produces. `sources.py` now fetches NWIS parameter 00060 alongside
+  00065. Buffalo Bayou (08074000) publishes no discharge for the event — common
+  where backwater breaks the rating — so the gauged reach is Whiteoak Bayou
+  (08074500), peak 50,600 ft3/s = 1,433 m3/s.
+- **Ungauged reaches get discharge by drainage-area ratio**,
+  `Q_reach = Q_gauge x (A_reach/A_gauge)^k` with `k` in config, default 1.0.
+  Regional regressions usually put k between 0.7 and 1.0. This is one gauge's
+  information spread over a watershed, so it cannot represent a storm that hit one
+  tributary and missed another; it does give each reach a discharge suited to its
+  own size, which a single threshold does not. The Monte Carlo should sample k.
+- **Slope is floored at `min_reach_slope`** (1e-4). Manning's Q vanishes with slope,
+  and a coastal plain has plenty of reaches that measure flat or numerically
+  negative; without the floor they carry no water at any stage. `ReachGeometry`
+  keeps `raw_slope` so a floored reach stays identifiable.
+- **Reaches shorter than `min_reach_length_m` get no curve at all**, rather than a
+  curve derived from one or two cells of geometry. Their cells then get stage zero,
+  which floods nothing — the honest default when there is nothing to say —
+  and `reaches_without_a_curve` reports how many, so the silence is visible.
+- **Discharge beyond the top of the curve caps the stage instead of extrapolating.**
+  Manning's equation on a cross-section the DEM never saw is not a prediction.
+  `exceeds_curve` and `reaches_off_the_curve` report it; the CLI warns.
+- **The tabulated curve is made monotone with a running maximum.** Discrete cell
+  geometry can wobble where a stage step adds bed area faster than volume, and a
+  non-monotone curve cannot be inverted by interpolation. Manning's Q is monotone in
+  stage in principle, so this enforces the principle rather than inventing one.
+- **One loose end:** the maximum per-reach stage came out at 23.34 m on a single
+  reach, against a median of 0.40 m. Nothing hit the curve cap, so that reach
+  genuinely needs 23 m of water to pass its area-scaled discharge, which suggests a
+  very constrained derived cross-section. Not chased yet; worth a look before the
+  damage numbers depend on it.

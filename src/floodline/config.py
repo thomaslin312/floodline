@@ -268,7 +268,41 @@ class HydraulicsConfig(Frozen):
     require_connectivity: bool = Field(
         default=True, description="Drop wet regions not connected to a stream cell."
     )
-    manning_n: Positive = Field(default=0.035, description="Manning's n for the synthetic rating.")
+    manning_n: Positive = Field(
+        default=0.035,
+        description="Manning's roughness for the synthetic rating curve. 0.035 is a "
+        "natural channel with some vegetation; an engineered concrete bayou is nearer "
+        "0.015, which is a factor of two on discharge at the same stage.",
+    )
+    rating_max_stage_m: Positive = Field(
+        default=25.0,
+        description="Highest stage the synthetic rating curve is built to. A discharge "
+        "beyond the top of the curve is reported, not extrapolated.",
+    )
+    rating_stage_step_m: Positive = Field(
+        default=0.25,
+        description="Stage increment the curve is tabulated at. Finer costs one pass "
+        "over the reach catchment per step.",
+    )
+    min_reach_slope: Positive = Field(
+        default=1e-4,
+        description="Floor on reach bed slope. Manning's Q goes to zero as slope does, "
+        "so a flat or numerically negative reach would otherwise carry no water at any "
+        "stage. On a coastal plain plenty of reaches are that flat.",
+    )
+    discharge_area_exponent: Positive = Field(
+        default=1.0,
+        description="Exponent in the drainage-area ratio used to carry a gauged "
+        "discharge to ungauged reaches: Q_reach = Q_gauge x (A_reach / A_gauge)^k. "
+        "k = 1 is simple area proportionality; regional regressions usually put it "
+        "between 0.7 and 1.0, smaller meaning small catchments yield more per unit "
+        "area. It is a real assumption and the Monte Carlo should sample it.",
+    )
+    min_reach_length_m: Positive = Field(
+        default=30.0,
+        description="Reaches shorter than this get no rating curve; their geometry is "
+        "one or two cells and the derived hydraulic radius is noise.",
+    )
 
     def require_gauge_reading_unit(self) -> LengthUnit:
         """Return `gauge_reading_unit`, refusing to proceed if it was never set.

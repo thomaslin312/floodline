@@ -421,7 +421,9 @@ def hand(
 @app.command()
 def inundate(
     dem: Annotated[Path, typer.Argument(exists=True, dir_okay=False, help="Conditioned DEM.")],
-    reading: Annotated[float, typer.Argument(help="Gauge reading, relative to gauge zero.")],
+    discharge_cms: Annotated[
+        float, typer.Argument(help="Observed discharge at the gauge, cubic metres per second.")
+    ],
     out: Annotated[Path, typer.Argument(help="Output depth raster.")],
     gauge_row: Annotated[int, typer.Option(help="Row of the gauge's channel cell.")],
     gauge_col: Annotated[int, typer.Option(help="Column of the gauge's channel cell.")],
@@ -430,15 +432,26 @@ def inundate(
     ] = None,
     config: ConfigOption = None,
 ) -> None:
-    """Turn a gauge reading into an inundation extent and depth raster.
+    """Turn an observed discharge into an inundation extent and depth raster.
 
-    Requires `hydraulics.gauge_datum_offset_m` in the config: a gauge reading is
-    relative to that gauge's own zero, and there is no safe default.
+    Discharge, not stage. Each reach gets its own stage from a synthetic rating
+    curve built out of its own HAND geometry, because a single stage applied across
+    a watershed does not work: measured against surveyed high-water marks, the
+    constant-threshold model was 6.7 m high with an RMSE of 7.9 m, and no constant
+    does better than 4.1 m. The per-reach curves bring that to 1.4 m.
     """
+    import numpy as np
+
     from floodline.hydraulics.inundate import inundate as flood
-    from floodline.hydraulics.stage import resolve_gauge, stage_field
+    from floodline.hydraulics.rating import (
+        build_rating_curves,
+        discharge_by_area_ratio,
+        reach_catchments,
+    )
+    from floodline.hydraulics.stage import stage_field_from_discharge
     from floodline.io.raster import read_raster, write_cog
     from floodline.terrain.route import route_terrain
+    from floodline.terrain.streams import link_raster
 
     resolved = load_config(config)
     raster = read_raster(dem, config=resolved)
@@ -451,34 +464,54 @@ def inundate(
     )
     _warn_if_stranded(chain)
 
-    gauge = resolve_gauge(reading, chain.filled, (gauge_row, gauge_col), config=resolved)
     if not chain.streams[gauge_row, gauge_col]:
         typer.secho(
-            f"warning: gauge cell ({gauge_row}, {gauge_col}) is not a stream cell. "
-            "Its bed elevation is a hillslope, not a channel, so the derived depth "
-            "is meaningless. Snap the gauge to the network first.",
+            f"error: gauge cell ({gauge_row}, {gauge_col}) is not on the stream network, "
+            "so it has no contributing area to scale discharge from. Snap it first.",
+            fg=typer.colors.RED,
+            err=True,
+        )
+        raise typer.Exit(code=1)
+
+    link_ids, links = link_raster(chain.streams, chain.flowdir)
+    reach_of = reach_catchments(chain.hand.drainage_index, link_ids)
+    curves = build_rating_curves(
+        chain.hand.hand,
+        chain.filled,
+        links,
+        reach_of,
+        config=resolved,
+        cellsize=raster.cellsize,
+    )
+    gauge_area = float(chain.accumulation.accumulation[gauge_row, gauge_col])
+    flows = discharge_by_area_ratio(
+        discharge_cms, gauge_area, links, chain.accumulation.accumulation, config=resolved
+    )
+    stages = stage_field_from_discharge(reach_of, curves, flows)
+    if stages.reaches_off_the_curve:
+        typer.secho(
+            f"warning: {stages.reaches_off_the_curve} reaches carry more than the top of "
+            f"their rating curve ({resolved.hydraulics.rating_max_stage_m:g} m); their stage "
+            "was capped rather than extrapolated.",
             fg=typer.colors.YELLOW,
             err=True,
         )
 
-    stage = stage_field(
-        chain.filled, chain.flowdir, gauge, config=resolved, cellsize=raster.cellsize
-    )
     result = flood(
         chain.hand.hand,
-        stage,
+        stages.stage_m,
         streams=chain.streams,
         config=resolved,
         cell_area_m2=raster.cell_area_m2,
     )
     path = write_cog(out, raster.with_data(result.depth), config=resolved, dtype="float32")
+    reach_stages = np.array(list(stages.by_reach.values())) if stages.by_reach else np.zeros(1)
     typer.echo(
-        f"wrote {path} (stage {gauge.reading}"
-        f"{resolved.hydraulics.require_gauge_reading_unit().value} = "
-        f"{gauge.datum_elevation_m:.2f} m on datum = "
-        f"{gauge.depth_m:.2f} m above bed; {result.n_wet} cells wet, "
-        f"{result.area_m2 / 1e6:.3f} km2, max depth {result.max_depth_m:.2f} m; "
-        f"{result.n_removed_by_connectivity} cells dropped as disconnected)"
+        f"wrote {path} ({discharge_cms:,.0f} m3/s at a gauge draining "
+        f"{gauge_area * raster.cell_area_m2 / 1e6:,.0f} km2; {len(curves)} rating curves; "
+        f"reach stage median {np.median(reach_stages):.2f} m, max {reach_stages.max():.2f} m; "
+        f"{result.n_wet:,} cells wet, {result.area_m2 / 1e6:.1f} km2, "
+        f"max depth {result.max_depth_m:.2f} m)"
     )
 
 
