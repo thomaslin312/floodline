@@ -575,3 +575,31 @@ Decisions inside this:
   genuinely needs 23 m of water to pass its area-scaled discharge, which suggests a
   very constrained derived cross-section. Not chased yet; worth a look before the
   damage numbers depend on it.
+
+### report/figures.py and the interactive plate
+
+- **Layers are block-reduced per layer, not uniformly.** Continuous surfaces
+  (elevation, HAND, depth) reduce by mean; masks (streams, wet extent) reduce by
+  **max**. A stream is one cell wide, and a mean-reduced stream network disappears at
+  exactly the zoom someone wants to look at it. A test pins both behaviours.
+- **Every layer in one call shares a single reduction factor**, so the PNGs are pixel
+  aligned and a survey mark placed on one is placed on all of them. Without that the
+  pins would drift between layers.
+- **All-NaN blocks warn and the warning is suppressed deliberately.** A watershed does
+  not fill its bounding box, so entirely-outside blocks are normal and NaN is the
+  right answer for them.
+- **The rating-curve figure picks reaches by assigned discharge, not by catchment
+  cell count.** The first version sorted by `catchment_cells` and produced four
+  headwater reaches carrying 22-38 m3/s, because a headwater reach owns a large
+  hillslope while a main-stem reach owns only its immediate banks. Sorting by
+  discharge gives the main stem: 1,455-1,819 m3/s. Worth remembering whenever
+  "biggest reach" is needed - the two orderings mean different things.
+- **The plate is published as an Artifact with the PNGs inlined as data URIs** (1.9 MB
+  total). `outputs/` stays git-ignored: the figures are regenerated from the pipeline,
+  and committing rendered output would breach the rule against results in the repo.
+  The generator scripts live in `notebooks/viz/` so the page is reproducible.
+- **Reach 412 is visible in the rating figure and worth explaining:** 127 m long on a
+  floored slope of 1e-4, so it needs 14.78 m of stage to pass 1,459 m3/s where a
+  neighbouring reach needs 7.11 m. That is the mechanism behind the 23.34 m maximum
+  flagged earlier - short reach plus minimum slope equals almost no conveyance. A
+  minimum-length floor already exists; a conveyance sanity check probably should too.
