@@ -1,0 +1,38 @@
+# data is never committed
+data/**
+!data/MANIFEST.md
+!data/.gitkeep
+
+# python
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+build/
+dist/
+
+# tooling
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.hypothesis/
+.benchmarks/
+.coverage
+htmlcov/
+
+# outputs
+outputs/
+*.tif
+*.tiff
+!tests/fixtures/**/*.tif
+
+# notebooks
+.ipynb_checkpoints/
+
+# local agent/editor settings (personal, not shared)
+.claude/settings.local.json
+
+# os / editors
+.DS_Store
+.idea/
+.vscode/
