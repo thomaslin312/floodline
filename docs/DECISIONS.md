@@ -678,3 +678,67 @@ points it caught - which is exactly the mistake in the first comparison I report
   context, not input. NWIS returns no precipitation series for 2017 at the five AOI
   sites that list parameter 00045, on either the instantaneous or the daily service, so
   no rainfall figure is quoted from our own data.
+
+### compute.py — live compute for any watershed, and why it needs AWS
+
+Thomas asked to compute live rather than be limited to 20 precomputed watersheds.
+`compute_watershed` is that path: give it a HUC code or a map click and it fetches the
+boundary from WBD, finds the 3DEP tiles that intersect it, reads them over HTTP range
+requests, runs the whole chain, and returns the ~180 kB bundle. No local data, no
+prior preparation, anywhere in the United States. It is deliberately shaped like a
+request handler - identifier in, bundle out, no local state - because that is what a
+service wraps.
+
+**3DEP is cloud-optimised**, which is what makes this possible at all: 512x512 internal
+tiles, LZW, overviews [2,4,8,16,32]. Reading a 500 km2 watershed out of a
+10812x10812 tile costs the blocks it touches, not the 400 MB the tile weighs.
+
+**But from this machine it was unusable during testing, and the reason is the network
+rather than the code.** Measured against `prd-tnm`:
+
+| | |
+|---|---|
+| one 512x512 block, cold | 1.40 s |
+| sixteen blocks (16 MB raw) | 51.55 s |
+| effective throughput | **0.3 MB/s** |
+
+A 133 km2 HUC-12 at 30 m did not finish in ten minutes.
+
+**This measurement is confounded and should not be quoted.** Thomas reported
+immediately afterwards that his internet connection was bad at the time, so the
+0.3 MB/s figure describes a degraded local link at least as much as it describes the
+route to S3. It needs re-running on a healthy connection before it means anything.
+What it does establish is the shape of the failure - sustained throughput, not
+per-request latency - because one block cost 1.40 s while sixteen cost 51.55 s, and a
+latency-bound path would have amortised.
+
+The architectural conclusion survives the confound, but on general grounds rather than
+on this number: S3 to EC2 in the same region does not traverse a consumer link at all,
+and a 500 km2 HUC-10 at 10 m is only ~5M cells and about 20 MB of source, on top of a
+measured 0.2 s per Mcell of terrain chain. Whether on-demand compute is viable *from a
+laptop* is genuinely unresolved and worth re-measuring.
+
+**So this is the case for the AWS credits, and it is a real one.** The recommendation:
+
+1. Run `compute_watershed` in `us-west-2`, next to `prd-tnm`. Lambda at 10 GB fits a
+   HUC-10 at 10 m; anything larger wants Fargate or EC2.
+2. Cache each finished bundle in S3, keyed by HUC and resolution. A watershed is
+   computed once and served forever after.
+3. Serve the page as a static site, **not** as an Artifact. The Artifact CSP forbids
+   `fetch` to external hosts, so an Artifact page can never call a compute API - it can
+   only carry what is inlined. That is the hard constraint that decides the delivery
+   shape, and it is why the current atlas precomputes 21 units instead of calling out.
+
+Deployment needs Thomas's credentials and is his to run; the compute function it would
+wrap is built and tested here.
+
+- **GDAL needs explicit retry settings.** A truncated range read - `got 15697 bytes,
+  expected 188786` - is a normal fact of life over HTTP, and GDAL does not retry unless
+  told. Without `GDAL_HTTP_MAX_RETRY`, one short read failed a whole watershed several
+  minutes into the job. A test asserts the settings are present.
+- **rasterio's `Env` wants real Python types, not strings**, for numeric GDAL options.
+  `GDAL_CACHEMAX="1024"` raises `TypeError: an integer is required`.
+- **`ingest_dem` and `select_tiles` now accept GDAL virtual filesystem URLs** as well
+  as paths, which is the whole change needed on the ingest side to read remotely.
+- **`compute_watershed` refuses an oversized watershed before doing any network work**,
+  since depression filling is global and the grid has to fit in memory at once.

@@ -47,6 +47,7 @@ __all__ = [
     "Source",
     "SourceError",
     "fetch",
+    "find_dem_tiles",
     "list_sources",
     "write_manifest",
 ]
@@ -373,6 +374,41 @@ def _bbox_string(bbox: tuple[float, float, float, float]) -> str:
     return ",".join(f"{v:g}" for v in bbox)
 
 
+def find_dem_tiles(
+    context: FetchContext, resolution_m: int, bbox: tuple[float, float, float, float] | None = None
+) -> list[dict[str, Any]]:
+    """Query the TNM Products API for 3DEP tiles intersecting `bbox`.
+
+    Returns the API's own records, each carrying a download URL, a bounding box and
+    a publication date. Used both by the fetcher, which downloads them, and by the
+    on-demand path, which reads them over HTTP range requests without downloading.
+    """
+    dataset = TNM_DATASET_BY_RESOLUTION.get(resolution_m)
+    if dataset is None:
+        raise SourceError(
+            f"no 3DEP product mapped for {resolution_m} m; known: "
+            f"{sorted(TNM_DATASET_BY_RESOLUTION)}"
+        )
+    payload = get_json(
+        context,
+        TNM_PRODUCTS,
+        {
+            "datasets": dataset,
+            "bbox": _bbox_string(bbox or context.case.aoi_bbox_wgs84),
+            "prodFormats": "GeoTIFF",
+            "max": 200,
+        },
+    )
+    items: list[dict[str, Any]] = payload.get("items", [])
+    if not items:
+        raise SourceError(
+            f"3DEP returned no {resolution_m} m tiles for bbox "
+            f"{bbox or context.case.aoi_bbox_wgs84}. 1/9 arc-second (3 m) in particular "
+            "has patchy coverage. Widen the area or drop this resolution."
+        )
+    return items
+
+
 def fetch_usgs_dem(context: FetchContext) -> list[Artifact]:
     """USGS 3DEP elevation tiles at every configured resolution.
 
@@ -386,29 +422,7 @@ def fetch_usgs_dem(context: FetchContext) -> list[Artifact]:
     """
     artifacts: list[Artifact] = []
     for resolution in context.case.dem_resolutions_m:
-        dataset = TNM_DATASET_BY_RESOLUTION.get(resolution)
-        if dataset is None:
-            raise SourceError(
-                f"no 3DEP product mapped for {resolution} m; known: "
-                f"{sorted(TNM_DATASET_BY_RESOLUTION)}"
-            )
-        payload = get_json(
-            context,
-            TNM_PRODUCTS,
-            {
-                "datasets": dataset,
-                "bbox": _bbox_string(context.case.aoi_bbox_wgs84),
-                "prodFormats": "GeoTIFF",
-                "max": 200,
-            },
-        )
-        items = payload.get("items", [])
-        if not items:
-            raise SourceError(
-                f"3DEP returned no {resolution} m tiles for bbox "
-                f"{context.case.aoi_bbox_wgs84}. 1/9 arc-second (3 m) in particular has "
-                "patchy coverage. Widen the AOI or drop this resolution."
-            )
+        items = find_dem_tiles(context, resolution)
         if context.limit is not None:
             items = items[: context.limit]
 
