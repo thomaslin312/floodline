@@ -193,8 +193,11 @@ def build_rating_curves(
     cols = hand.shape[1]
     cell_area = float(cellsize[0] * cellsize[1])
     elevation = np.ascontiguousarray(filled_dem, dtype=np.float64)
+    # The ladder starts at zero. Without a (Q=0, stage=0) point, inverting the curve
+    # below its first tabulated discharge clamps to the first *stage* instead, so a
+    # reach carrying no water would still report a quarter-metre of it.
     stages = np.arange(
-        hydraulics.rating_stage_step_m,
+        0.0,
         hydraulics.rating_max_stage_m + hydraulics.rating_stage_step_m,
         hydraulics.rating_stage_step_m,
         dtype=np.float64,

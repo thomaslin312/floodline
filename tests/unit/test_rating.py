@@ -195,3 +195,17 @@ def test_off_curve_reaches_are_counted() -> None:
     result = stage_field_from_discharge(reach_of, curves, {0: curves[0].max_discharge_cms * 5})
     assert result.reaches_off_the_curve == 1
     assert result.stage_m.max() == pytest.approx(curves[0].stage_m[-1])
+
+
+def test_zero_discharge_gives_zero_stage() -> None:
+    """A reach carrying no water must not report a quarter-metre of it.
+
+    Without a (Q=0, stage=0) point on the curve, inverting below the first
+    tabulated discharge clamps to the first *stage* instead. That surfaced as every
+    cell of a watershed showing 0.25 m of water at zero flow.
+    """
+    hand, filled, links, reach_of = simple_reach()
+    curve = build_rating_curves(hand, filled, links, reach_of, cellsize=(10.0, 10.0))[0]
+    assert curve.stage_m[0] == 0.0
+    assert curve.discharge_cms[0] == 0.0
+    assert curve.stage_for_discharge(0.0) == 0.0

@@ -603,3 +603,78 @@ Decisions inside this:
   neighbouring reach needs 7.11 m. That is the mechanism behind the 23.34 m maximum
   flagged earlier - short reach plus minimum slope equals almost no conveyance. A
   minimum-length floor already exists; a conveyance sanity check probably should too.
+
+### report/bundle.py — multi-watershed interactivity without infrastructure
+
+Thomas asked for a discharge slider and for the ability to look at areas other than
+the one watershed, and offered AWS credits. **The credits are not needed yet**, and
+the measurement is why.
+
+Inundation is `depth = stage - HAND`, and nothing expensive in that depends on
+discharge. So a browser can re-run the model from three small things per watershed:
+HAND as an 8-bit PNG at 0.1 m precision; reach id per pixel packed into a PNG's red
+and green channels; and a stage lookup table, one uint8 row per reach across a ladder
+of discharge multipliers. Measured on Whiteoak at a 746x527 display grid: HAND 97 kB,
+reach ids **32 kB for 579 reaches**, stage table **3 kB** - about 180 kB per watershed
+as base64. All 21 units with a terrain basemap come to **9.2 MB**, inside the 16 MB
+Artifact cap.
+
+The alternative - shipping a depth raster per discharge level - is hundreds of times
+larger and only covers the levels chosen in advance.
+
+- **Precision is deliberately lossy at 0.1 m** on both HAND and stage. The model's own
+  agreement with surveyed marks is RMSE 1.5 m, so a decimetre costs nothing real, and
+  it is what makes 8 bits enough. HAND clamps at 25.4 m; the clamp only ever makes a
+  cell *drier*, so it cannot invent inundation.
+- **Precomputing all 21 units took 94 seconds** on the laptop, from DEM tiles already
+  on disk, and every unit is 100% covered by them. 281M cells, largest unit 3.4 GB peak.
+  Compute was never the bottleneck.
+- **AWS becomes worth it for**: native-resolution zoom (COG range reads rather than a
+  display-reduced grid), metros beyond Houston, 1 m (which also needs a tiled
+  priority-flood), or a public app rather than a private artifact. None of those block
+  the current build. Noted rather than acted on.
+- **The Artifact CSP forbids external images and fetches**, so a hosted bucket would
+  not help a page delivered that way regardless. That constraint is what makes the
+  inline budget the design driver.
+
+**One of 21 units has an observed discharge.** Whiteoak Bayou carries gauge 08074500;
+the other twenty are scaled from it by drainage-area ratio. Rather than hide that, the
+page leads with it, badges every unit gauged or inferred, and makes the slider the
+answer: for twenty basins the discharge *is* the assumption, and dragging it shows how
+much the result depends on it.
+
+**Live RMSE is computed in the browser over all marks in the unit**, counting a mark
+the model leaves dry as an error equal to the water depth actually recorded there.
+Dropping misses would let a model that floods almost nothing score well on the few
+points it caught - which is exactly the mistake in the first comparison I reported.
+
+### a bug the bundle tests caught
+
+- **Zero discharge returned 0.25 m of stage.** The rating curve was tabulated from the
+  first stage step upward, so inverting it below the first tabulated discharge clamped
+  to the first *stage* rather than to zero. Every cell of a watershed showed a quarter
+  metre of water at zero flow. The stage ladder now starts at 0.0, giving the curve a
+  genuine (Q=0, stage=0) point. Found by a test asserting that no discharge means no
+  stage, not by looking at the map.
+
+### correcting a comparison I reported
+
+- **The RMSEs I first quoted were over different denominators.** The constant model's
+  7.86 m was over all 16 marks; the rating model's 1.38 m was over only the 10 it
+  flooded. Fair, over all 16, treating a dry cell as "water surface no higher than the
+  ground": constant mean +6.73, MAE 6.79, RMSE 7.86, 12% within 1 m; rating mean +0.37,
+  MAE 1.12, **RMSE 1.54**, 56% within 1 m. The fair comparison favours the rating model
+  more strongly, not less.
+- **Three of the sixteen marks sit below the DEM ground surface** (-1.27, -1.06,
+  -0.03 m). A high-water mark cannot physically be below ground, so that is DEM error
+  or a coordinate landing in the wrong 10 m cell. Two of the rating model's six misses
+  are those, and are unavoidable; four are genuine, only one of them large.
+- **CSI cannot be computed.** With point ground truth and no observed extent polygon,
+  hit rate and depth bias are available but false alarm ratio is not. That is a direct
+  consequence of dropping Sentinel-1, and it leaves a gap against the definition of
+  done. An observed extent polygon - FEMA or Harris County - would close it.
+- **No precipitation enters the model anywhere.** The input is an observed discharge at
+  one instant: 1,433 m3/s at 08074500, 27 Aug 2017 13:30 CDT. Harvey's rainfall is
+  context, not input. NWIS returns no precipitation series for 2017 at the five AOI
+  sites that list parameter 00045, on either the instantaneous or the daily service, so
+  no rainfall figure is quoted from our own data.
