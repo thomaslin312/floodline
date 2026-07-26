@@ -742,3 +742,55 @@ wrap is built and tested here.
   as paths, which is the whole change needed on the ingest side to read remotely.
 - **`compute_watershed` refuses an oversized watershed before doing any network work**,
   since depression filling is global and the grid has to fit in memory at once.
+
+## 2026-09-05 — the AWS recommendation was wrong, and the bottleneck was my own code
+
+Re-measured on a healthy connection, then found the real problem. The sequence matters
+because I gave a recommendation on the strength of the first number:
+
+1. **First measurement, 0.3 MB/s.** Taken while Thomas's connection was degraded. I
+   attributed it to the route to S3 and said this was the case for the AWS credits.
+2. **Re-measured: raw HTTP to `prd-tnm` is 4.2 MB/s serial, 4.7 MB/s across eight
+   parallel range requests.** Parallelism barely helps, so ~4-5 MB/s is this link's
+   ceiling, not a per-request latency problem.
+3. **But 4-5 MB/s cannot explain a 133 km2 watershed failing to finish in ten
+   minutes** - that is about 5 MB of source. So there was a large inefficiency, and it
+   was mine.
+4. **The `WarpedVRT` was unbounded.** Left to size itself from the source, a VRT over a
+   10812x10812 3DEP tile is a **123M-cell** warp grid; the actual output for a 10 km
+   window at 30 m is **0.10M cells**. A factor of 1,200. `merge` reading from that
+   forced GDAL to compute warp geometry across the whole tile and fetch far more source
+   blocks than the window touched.
+5. **Fixed by pinning every VRT to the output grid** - explicit `transform`, `width`,
+   `height`. As a bonus, all VRTs then share one grid, so combining them is a per-pixel
+   "take the first valid" with no second resampling, and `rasterio.merge` is no longer
+   needed at all.
+
+Measured after the fix, from a laptop over that same 4-5 MB/s link, with **no local
+data**:
+
+| watershed | area | cells | total |
+|---|---|---|---|
+| Cole Creek-Whiteoak (HUC-12) | 133 km2 | 2.5M | **12.3 s** |
+| Brays Bayou (HUC-10) | 367 km2 | 8.3M | **13.4 s** |
+| Whiteoak Bayou (HUC-10) | 491 km2 | 9.9M | **24.5 s** |
+| Dry Comal Creek, New Braunfels | 158 km2 | — | **11.0 s** |
+
+Read time dominates and terrain is 0.3-1.6 s of it. From "did not finish in ten
+minutes" to twelve seconds is roughly a 50x improvement, and none of it came from
+better infrastructure.
+
+**Revised recommendation: AWS is not needed for on-demand compute.** A watershed
+anywhere in the United States computes in 11-25 s from a laptop, which is a perfectly
+good cacheable job. What the credits would still buy:
+
+- **Serving**, if the page is to be public. The Artifact CSP forbids `fetch` to
+  external hosts, so live compute still means a hosted static site rather than an
+  Artifact - that constraint is unchanged and is the real reason to host anything.
+- **Latency**, if 11-25 s is too slow to feel interactive. In-region reads would cut
+  the dominant term, but caching the ~180 kB bundle achieves the same thing for
+  repeat visits at no cost.
+- **Scale**, if precomputing thousands of units rather than tens.
+
+The lesson worth keeping: I recommended infrastructure to solve what turned out to be a
+1,200x inefficiency in the read path. Measure the code before buying a bigger machine.
