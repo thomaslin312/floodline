@@ -794,3 +794,37 @@ good cacheable job. What the credits would still buy:
 
 The lesson worth keeping: I recommended infrastructure to solve what turned out to be a
 1,200x inefficiency in the read path. Measure the code before buying a bigger machine.
+
+### service.py — a map interface for any US watershed
+
+Thomas asked for a map where you click a watershed or type a postcode and it computes
+in real time, with a minute of latency being acceptable. Built, and it comes in well
+under that: 13-29 s cold for a HUC-12, cached afterwards.
+
+- **It is served, not published.** An Artifact cannot `fetch` an external host, so an
+  interactive page that calls a compute API has to come from the same origin as the
+  API. `floodline serve` is that. The same application deploys unchanged to anything
+  running Python, which is what makes hosting later a deployment rather than a rewrite.
+- **The analysis CRS follows the watershed.** EPSG:6587 is Texas South Central: right
+  for Houston, meaningless in Oregon. `utm_crs_for` picks the NAD83 UTM zone from the
+  watershed centroid, so one server is correct nationwide. Verified against Portland
+  (26910), Chicago (26916), Miami (26917), Cambridge (26919).
+- **Display arrays are warped to Web Mercator; analysis stays in UTM.** A north-up UTM
+  grid is not axis-aligned in Web Mercator, so an overlay placed by its corners would
+  be visibly skewed. Only the few-hundred-pixel display arrays are warped, and reach
+  ids resample by nearest - averaging two reach numbers would invent a third.
+- **Geocoding is the Census ZCTA layer for a bare postcode and the Census address
+  geocoder otherwise.** Both public and keyless, and the same federal source as
+  everything else. The address geocoder rejects a bare postcode, which is why the two
+  are split.
+- **Ungauged watersheds get a labelled scenario discharge, not zero.** The first
+  version left discharge unscaled when no gauge was supplied, so every ungauged
+  watershed - which is nearly all of them - computed successfully and flooded exactly
+  nothing. It now defaults to `area x 5 m3/s/km2`, roughly Harvey's specific discharge
+  at Whiteoak, and the bundle carries a warning that the interface prints. A tool that
+  silently returns an empty flood is worse than one that says what it assumed.
+- **Two interface bugs found by looking at it.** `hidden` loses to an explicit
+  `display:flex`, so the controls showed before anything was computed; and Leaflet
+  measures its container on construction, which inside a grid that has not laid out
+  yet gives a tile grid at the wrong size. Both fixed - a `[hidden]` rule and a
+  `ResizeObserver` calling `invalidateSize`.

@@ -24,9 +24,14 @@ from typing import Any
 
 import httpx
 import numpy as np
+import numpy.typing as npt
 import rasterio
 from pyproj import CRS, Transformer
-from shapely.geometry import Point, shape
+from rasterio.crs import CRS as RioCRS
+from rasterio.enums import Resampling
+from rasterio.transform import array_bounds
+from rasterio.warp import calculate_default_transform, reproject
+from shapely.geometry import Point, mapping, shape
 from shapely.geometry.base import BaseGeometry
 from shapely.ops import transform as shapely_transform
 
@@ -57,7 +62,14 @@ from floodline.report.figures import block_reduce
 from floodline.terrain.route import route_terrain
 from floodline.terrain.streams import link_raster
 
-__all__ = ["ComputeResult", "compute_watershed", "watershed_by_huc", "watershed_for_point"]
+__all__ = [
+    "ComputeResult",
+    "compute_watershed",
+    "geometry_wgs84",
+    "utm_crs_for",
+    "watershed_by_huc",
+    "watershed_for_point",
+]
 
 # GDAL settings that make /vsicurl range reads on a COG behave. Without
 # GDAL_DISABLE_READDIR_ON_OPEN, GDAL lists the whole S3 prefix on every open, which
@@ -83,6 +95,30 @@ VSICURL_ENV: dict[str, object] = {
 }
 
 
+def utm_crs_for(lon: float, lat: float) -> CRS:
+    """Return the NAD83 UTM zone covering a longitude, as a projected metre CRS.
+
+    A fixed analysis CRS only works for a fixed study area. `EPSG:6587` is Texas
+    South Central: correct for Houston and meaningless in Oregon. For a tool that
+    accepts any watershed in the country, the CRS has to follow the watershed, and
+    UTM is the standard answer - conformal, metric, and accurate enough over the few
+    hundred kilometres a hydrologic unit spans.
+
+    NAD83 rather than WGS84 because 3DEP publishes in NAD83, so this keeps the whole
+    chain on one datum. Zones are numbered from 180 deg W in 6 deg steps; the
+    continental United States spans zones 10 to 19.
+    """
+    if not -180.0 <= lon <= 180.0:
+        raise ValueError(f"longitude out of range: {lon}")
+    if lat < 0:
+        raise ValueError(
+            f"latitude {lat} is in the southern hemisphere; only NAD83 northern UTM "
+            "zones are mapped here, which covers the United States."
+        )
+    zone = int((lon + 180.0) // 6.0) + 1
+    return CRS.from_epsg(26900 + min(max(zone, 1), 60))
+
+
 @dataclass(frozen=True, slots=True)
 class ComputeResult:
     """A finished watershed, and what it cost to produce."""
@@ -106,14 +142,31 @@ def _to_analysis(geometry: BaseGeometry, config: Config) -> BaseGeometry:
     return shapely_transform(project, geometry)
 
 
-def _watershed_from_feature(feature: dict[str, Any], level: int, config: Config) -> Watershed:
-    """Build a `Watershed` from a WBD GeoJSON feature."""
+def _watershed_from_feature(
+    feature: dict[str, Any], level: int, config: Config
+) -> tuple[Watershed, Config]:
+    """Build a `Watershed` from a WBD feature, in a CRS chosen to suit its location.
+
+    Returns the watershed alongside a config whose analysis CRS is the UTM zone the
+    watershed sits in, so everything downstream works in true metres wherever the
+    user clicked.
+    """
     properties = feature.get("properties", {})
-    return Watershed(
-        huc=str(properties.get(f"huc{level}", "")),
-        name=str(properties.get("name", "")),
-        area_km2=float(properties.get("areasqkm") or 0.0),
-        geometry=_to_analysis(shape(feature["geometry"]), config),
+    geographic = shape(feature["geometry"])
+    centroid = geographic.centroid
+    local = config.model_copy(
+        update={
+            "crs": config.crs.model_copy(update={"analysis": utm_crs_for(centroid.x, centroid.y)})
+        }
+    )
+    return (
+        Watershed(
+            huc=str(properties.get(f"huc{level}", "")),
+            name=str(properties.get("name", "")),
+            area_km2=float(properties.get("areasqkm") or 0.0),
+            geometry=_to_analysis(geographic, local),
+        ),
+        local,
     )
 
 
@@ -140,11 +193,12 @@ def _query_wbd(context: FetchContext, level: int, params: dict[str, Any]) -> lis
 
 def watershed_by_huc(
     huc: str, *, config: Config | None = None, client: httpx.Client | None = None
-) -> Watershed:
+) -> tuple[Watershed, Config]:
     """Look up one watershed by its HUC code, anywhere in the United States.
 
     The HUC's digit count selects the level, so `watershed_by_huc("1204010403")` is a
-    HUC-10 and a 12-digit code is a subwatershed. No local data is needed.
+    HUC-10 and a 12-digit code is a subwatershed. No local data is needed. The
+    returned config carries a UTM analysis CRS chosen for the watershed's location.
     """
     resolved = config or Config()
     level = len(huc)
@@ -171,8 +225,12 @@ def watershed_for_point(
     level: int = 10,
     config: Config | None = None,
     client: httpx.Client | None = None,
-) -> Watershed:
-    """Return the watershed containing a longitude/latitude, which is what a map click gives."""
+) -> tuple[Watershed, Config]:
+    """Return the watershed containing a longitude/latitude, which is what a map click gives.
+
+    Also returns a config whose analysis CRS is the UTM zone for that location, so the
+    same call works anywhere in the country.
+    """
     resolved = config or Config()
     owned = client is None
     active = client or make_client(resolved.sources)
@@ -194,11 +252,10 @@ def watershed_for_point(
     if not features:
         raise SourceError(f"no HUC-{level} watershed contains ({lon}, {lat})")
 
-    point = _to_analysis(Point(lon, lat), resolved)
     for feature in features:
-        unit = _watershed_from_feature(feature, level, resolved)
-        if unit.geometry.contains(point):
-            return unit
+        unit, local = _watershed_from_feature(feature, level, resolved)
+        if unit.geometry.contains(_to_analysis(Point(lon, lat), local)):
+            return unit, local
     return _watershed_from_feature(features[0], level, resolved)
 
 
@@ -224,9 +281,11 @@ def compute_watershed(
         Output cell size. 10 m is the finest 3DEP resolution with full coverage here.
     discharge_cms, gauge_area_cells
         An observed discharge and the contributing area it was measured over. When
-        omitted, discharge is left unscaled at 1 m3/s per gauge-equivalent area, which
-        makes the returned stage table a *relative* curve: useful for exploring shape,
-        not for a flood depth. The bundle records which case applies.
+        omitted, a scenario discharge is used instead:
+        `area_km2 x hydraulics.default_specific_discharge`, which by default is the
+        specific discharge Harvey delivered at Whiteoak Bayou. That makes any
+        watershed immediately explorable, and `UnitBundle.gauged` records that the
+        number was assumed rather than measured.
     max_cells
         Refuse a watershed larger than this at the requested resolution. Depression
         filling is global, so the whole grid must fit in memory at once.
@@ -287,17 +346,24 @@ def compute_watershed(
     curves = build_rating_curves(
         chain.hand.hand, chain.filled, links, reach_of, config=resolved, cellsize=dem.cellsize
     )
-    reference_area = gauge_area_cells or (215e6 / dem.cell_area_m2)
+    gauged = discharge_cms is not None
+    if discharge_cms is not None:
+        reference_discharge = float(discharge_cms)
+        reference_area = gauge_area_cells or (unit.area_km2 * 1e6 / dem.cell_area_m2)
+    else:
+        # No gauge: stand in a severe-flood scenario scaled to this catchment, so the
+        # watershed is explorable rather than uniformly dry. Flagged, not disguised.
+        reference_discharge = unit.area_km2 * resolved.hydraulics.default_specific_discharge
+        reference_area = unit.area_km2 * 1e6 / dem.cell_area_m2
+        warnings.append(
+            f"no gauge for this watershed: discharge is a scenario of "
+            f"{resolved.hydraulics.default_specific_discharge:g} m3/s per km2 "
+            f"({reference_discharge:,.0f} m3/s over {unit.area_km2:,.0f} km2), not an observation"
+        )
     flows = discharge_by_area_ratio(
-        discharge_cms if discharge_cms is not None else 1.0,
-        reference_area,
-        links,
-        chain.accumulation.accumulation,
-        config=resolved,
+        reference_discharge, reference_area, links, chain.accumulation.accumulation, config=resolved
     )
     timings["rating"] = time.perf_counter() - start
-    if discharge_cms is None:
-        warnings.append("no discharge supplied; the stage table is relative, not a depth")
 
     start = time.perf_counter()
     ladder = multipliers if multipliers is not None else np.linspace(0.0, 3.0, 33)
@@ -307,6 +373,21 @@ def compute_watershed(
         np.where(reach_of >= 0, reach_of, np.nan).astype(float), factor, how="max"
     )
     reach_i = np.where(np.isfinite(reach_r), np.nan_to_num(reach_r), -1).astype(np.int64)
+
+    # A web map draws in Web Mercator. The analysis grid is UTM and north-up there,
+    # which is *not* axis-aligned in Web Mercator, so an overlay placed by its corner
+    # coordinates would be visibly skewed. Warping the display arrays - only those, at
+    # a few hundred pixels - puts them on the map's own grid. Analysis stays in UTM,
+    # where the metres are real.
+    display_transform = dem.transform * rasterio.Affine.scale(factor, factor)
+    hand_r, mercator_bounds = _to_web_mercator(hand_r, display_transform, resolved, "bilinear")
+    reach_f, _ = _to_web_mercator(
+        np.where(reach_i >= 0, reach_i, np.nan).astype(np.float64),
+        display_transform,
+        resolved,
+        "nearest",
+    )
+    reach_i = np.where(np.isfinite(reach_f), np.nan_to_num(reach_f), -1).astype(np.int64)
     height, width = hand_r.shape
 
     bundle = UnitBundle(
@@ -316,11 +397,11 @@ def compute_watershed(
         width=width,
         height=height,
         reduction=factor,
-        bounds=unit.bounds,
+        bounds=mercator_bounds,
         n_reaches=len(links),
-        base_discharge_cms=round(float(discharge_cms or 0.0), 1),
+        base_discharge_cms=round(reference_discharge, 1),
         multipliers=[round(float(m), 3) for m in ladder],
-        gauged=discharge_cms is not None,
+        gauged=gauged,
         hand=to_data_uri(encode_hand(hand_r)),
         reach=to_data_uri(encode_reach_ids(reach_i)),
         stage_table=to_data_uri(encode_stage_table(len(links), curves, flows, ladder)),
@@ -333,6 +414,8 @@ def compute_watershed(
                 float(np.isfinite(chain.hand.hand).sum()) * dem.cell_area_m2 / 1e6, 1
             ),
             "resolution_m": resolution_m,
+            "analysis_crs": resolved.crs.analysis.to_string(),
+            "display_crs": "EPSG:3857",
         },
     )
     timings["encode"] = time.perf_counter() - start
@@ -346,3 +429,47 @@ def _to_wgs84_bounds(unit: Watershed, config: Config) -> tuple[float, float, flo
     west, south, east, north = unit.bounds
     xs, ys = back.transform([west, east, east, west], [south, south, north, north])
     return min(xs), min(ys), max(xs), max(ys)
+
+
+def _to_web_mercator(
+    array: npt.NDArray[np.floating],
+    transform: rasterio.Affine,
+    config: Config,
+    resampling: str,
+) -> tuple[npt.NDArray[np.float64], tuple[float, float, float, float]]:
+    """Warp a display-resolution array from the analysis CRS to Web Mercator.
+
+    Returns the warped array and its bounds, which a web map uses directly. Reach
+    ids resample by nearest - averaging two reach numbers would produce a third
+    reach that does not exist.
+    """
+    source = RioCRS.from_wkt(config.crs.analysis.to_wkt())
+    target = RioCRS.from_epsg(3857)
+    rows, cols = array.shape
+    dst_transform, dst_width, dst_height = calculate_default_transform(
+        source, target, cols, rows, *array_bounds(rows, cols, transform)
+    )
+    out = np.full((dst_height, dst_width), np.nan, dtype=np.float64)
+    reproject(
+        source=np.asarray(array, dtype=np.float64),
+        destination=out,
+        src_transform=transform,
+        src_crs=source,
+        dst_transform=dst_transform,
+        dst_crs=target,
+        src_nodata=np.nan,
+        dst_nodata=np.nan,
+        resampling=Resampling[resampling],
+    )
+    west, south, east, north = array_bounds(dst_height, dst_width, dst_transform)
+    return out, (float(west), float(south), float(east), float(north))
+
+
+def geometry_wgs84(unit: Watershed, config: Config) -> dict[str, Any]:
+    """Return a watershed's boundary as WGS84 GeoJSON, for drawing on a web map.
+
+    The `Watershed` carries its geometry in the analysis CRS, which is where the
+    modelling happens. A map wants degrees.
+    """
+    back = Transformer.from_crs(config.crs.analysis, CRS.from_epsg(4326), always_xy=True).transform
+    return mapping(shapely_transform(back, unit.geometry))

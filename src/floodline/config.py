@@ -290,6 +290,13 @@ class HydraulicsConfig(Frozen):
         "so a flat or numerically negative reach would otherwise carry no water at any "
         "stage. On a coastal plain plenty of reaches are that flat.",
     )
+    default_specific_discharge: Positive = Field(
+        default=5.0,
+        description="Discharge per km2 of catchment used when no gauge is available, "
+        "in m3/s/km2. 5.0 is roughly what Harvey delivered at Whiteoak Bayou - "
+        "1,433 m3/s over 246 km2 - so it stands for a severe flood. It is a scenario, "
+        "not an observation, and anything derived from it should say so.",
+    )
     discharge_area_exponent: Positive = Field(
         default=1.0,
         description="Exponent in the drainage-area ratio used to carry a gauged "
