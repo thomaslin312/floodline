@@ -1,4 +1,4 @@
-"""Runtime benchmark for depression filling.
+"""Runtime benchmarks for the terrain kernels.
 
 Not an assertion about speed — a number to put in the write-up, and a tripwire if
 the kernel ever loses its JIT. Skipped when the JIT is off, where the same code
@@ -15,6 +15,7 @@ from pytest_benchmark.fixture import BenchmarkFixture
 
 from floodline.synthetic import make_synthetic_catchment
 from floodline.terrain.fill import fill_depressions
+from floodline.terrain.flowdir import flow_direction
 
 pytestmark = pytest.mark.slow
 
@@ -30,3 +31,15 @@ def test_fill_benchmark(benchmark: BenchmarkFixture, size: int) -> None:
     fill_depressions(dem)  # pay for JIT compilation outside the timed section
     filled = benchmark(fill_depressions, dem)
     assert np.all(filled >= dem)
+
+
+@pytest.mark.skipif(JIT_DISABLED, reason="timing a pure-Python fallback is meaningless")
+@pytest.mark.parametrize("size", [512, 1024])
+def test_flow_direction_benchmark(benchmark: BenchmarkFixture, size: int) -> None:
+    dem = make_synthetic_catchment(
+        rows=size, cols=size, n_pits=40, roughness_m=0.2, seed=1
+    ).dem.astype(np.float32)
+    filled = fill_depressions(dem, epsilon=1e-3)
+    flow_direction(filled)  # pay for JIT compilation outside the timed section
+    fdir = benchmark(flow_direction, filled, cellsize=(5.0, 5.0))
+    assert fdir.shape == (size, size)

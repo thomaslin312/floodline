@@ -17,6 +17,12 @@ from floodline.config import Config
 from floodline.io.raster import read_raster, write_cog
 from floodline.synthetic import make_synthetic_catchment
 from floodline.terrain.fill import fill_depressions, undrained_mask
+from floodline.terrain.flowdir import (
+    D8_CODES,
+    FLOW_NODATA,
+    flow_direction,
+    steps_to_outlet,
+)
 
 
 def test_synth_to_conditioned_dem(tmp_path: Path) -> None:
@@ -56,3 +62,38 @@ def test_conditioning_a_catchment_with_nodata(tmp_path: Path) -> None:
     filled = fill_depressions(raw.data, config=cfg)
     assert np.array_equal(np.isnan(filled), catchment.nodata_mask)
     assert not undrained_mask(filled).any()
+
+
+def test_conditioned_dem_routes_end_to_end(tmp_path: Path) -> None:
+    """DEM on disk -> fill -> flow direction, with every path reaching the edge."""
+    cfg = Config.model_validate({"terrain": {"fill_epsilon": 1e-4}})
+    catchment = make_synthetic_catchment(rows=120, cols=90, n_pits=5, seed=4)
+
+    raw = read_raster(
+        write_cog(tmp_path / "raw.tif", catchment.as_raster(), config=cfg), config=cfg
+    )
+    filled = fill_depressions(raw.data, config=cfg, nodata=raw.nodata)
+    fdir = flow_direction(filled, config=cfg, nodata=raw.nodata, cellsize=raw.cellsize)
+
+    # epsilon filling leaves no flats, so every cell is either routed or an outlet
+    assert not (fdir == FLOW_NODATA).any()
+    assert np.isin(fdir[fdir > 0], D8_CODES).all()
+
+    steps = steps_to_outlet(fdir)  # raises on a cycle
+    assert steps.max() < filled.size
+    assert steps.max() > 10, "a real catchment should have paths longer than a few cells"
+
+
+def test_flow_direction_survives_a_cog_roundtrip(tmp_path: Path) -> None:
+    """Direction codes are int16 and must come back off disk bit-identical."""
+    cfg = Config.model_validate({"terrain": {"fill_epsilon": 1e-4}})
+    catchment = make_synthetic_catchment(rows=60, cols=50, n_pits=2, seed=6)
+
+    filled = fill_depressions(catchment.dem.astype(np.float64), config=cfg)
+    fdir = flow_direction(filled, config=cfg, cellsize=(catchment.cellsize,) * 2)
+
+    raster = catchment.as_raster().with_data(fdir.astype(np.int16), nodata=FLOW_NODATA)
+    path = write_cog(tmp_path / "flowdir.tif", raster, config=cfg)
+    back = read_raster(path, config=cfg, masked=False)
+
+    np.testing.assert_array_equal(back.data.astype(np.int16), fdir)
