@@ -15,6 +15,4 @@ Case: **Hurricane Harvey over Houston, Texas, 26 August - 1 September 2017**
 
 | Dataset | File | Bytes | SHA256 | Retrieved | URL | Notes |
 |---|---|---:|---|---|---|---|
-| nwis-site-metadata | gauge/site_metadata.rdb | 3,667 | `ccd6bf51f9ce3fca…` | 2026-09-04 | https://waterservices.usgs.gov/nwis/site/ | carries alt_va and alt_datum_cd -- the vertical datum (reused) |
-| nwis-00065 | gauge/gauge_height.json | 168,932 | `b9e05ecc13f439e0…` | 2026-09-04 | https://waterservices.usgs.gov/nwis/iv/ | parameter 00065 (gauge height, feet), 2017-08-25 to 2017-09-02 (reused) |
-| nwis-00060 | gauge/discharge.json | 110,555 | `239658d0ac5a37ae…` | 2026-09-04 | https://waterservices.usgs.gov/nwis/iv/ | parameter 00060 (discharge, cubic feet per second), 2017-08-25 to 2017-09-02 |
+| usgs-high-water-marks-national | validation/high_water_marks_national.json | 33,751,249 | `2b16363cad1d4cfd…` | 2026-09-05 | https://stn.wim.usgs.gov/STNServices/HWMs.json | 38,230 located marks of 39,772, across 258 events |

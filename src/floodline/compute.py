@@ -18,8 +18,10 @@ out, no local state. That is what a service wraps.
 
 from __future__ import annotations
 
+import json
 import time
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -34,6 +36,7 @@ from rasterio.warp import calculate_default_transform, reproject
 from shapely.geometry import Point, mapping, shape
 from shapely.geometry.base import BaseGeometry
 from shapely.ops import transform as shapely_transform
+from shapely.prepared import prep
 
 from floodline.config import Config
 from floodline.hydraulics.rating import (
@@ -48,8 +51,10 @@ from floodline.io.sources import (
     FetchContext,
     SourceError,
     find_dem_tiles,
+    find_gauges,
     get_json,
     make_client,
+    peak_discharge,
 )
 from floodline.report.bundle import (
     UnitBundle,
@@ -65,7 +70,9 @@ from floodline.terrain.streams import link_raster
 __all__ = [
     "ComputeResult",
     "compute_watershed",
+    "gauge_for_watershed",
     "geometry_wgs84",
+    "marks_within",
     "utm_crs_for",
     "watershed_by_huc",
     "watershed_for_point",
@@ -270,6 +277,8 @@ def compute_watershed(
     gauge_area_cells: float | None = None,
     multipliers: np.ndarray | None = None,
     max_cells: int = 60_000_000,
+    marks_path: Path | None = None,
+    find_gauge: bool = True,
 ) -> ComputeResult:
     """Run the whole model for one watershed, reading the DEM over the network.
 
@@ -346,6 +355,29 @@ def compute_watershed(
     curves = build_rating_curves(
         chain.hand.hand, chain.filled, links, reach_of, config=resolved, cellsize=dem.cellsize
     )
+    # Prefer a real gauge inside this watershed over a scenario. Its peak of record
+    # is the worst flow it has actually measured, which is a far better anchor than a
+    # specific discharge borrowed from somewhere else.
+    gauge: dict[str, Any] | None = None
+    if discharge_cms is None and find_gauge:
+        start = time.perf_counter()
+        owned_g = client is None
+        active_g = client or make_client(resolved.sources)
+        try:
+            gauge = gauge_for_watershed(
+                unit,
+                chain,
+                dem,
+                FetchContext(config=resolved, dest=resolved.paths.raw, client=active_g),
+            )
+        finally:
+            if owned_g:
+                active_g.close()
+        timings["find_gauge"] = time.perf_counter() - start
+        if gauge is not None:
+            discharge_cms = gauge["discharge_cms"]
+            gauge_area_cells = gauge["area_cells"]
+
     gauged = discharge_cms is not None
     if discharge_cms is not None:
         reference_discharge = float(discharge_cms)
@@ -356,7 +388,7 @@ def compute_watershed(
         reference_discharge = unit.area_km2 * resolved.hydraulics.default_specific_discharge
         reference_area = unit.area_km2 * 1e6 / dem.cell_area_m2
         warnings.append(
-            f"no gauge for this watershed: discharge is a scenario of "
+            f"no gauge in this watershed: discharge is a scenario of "
             f"{resolved.hydraulics.default_specific_discharge:g} m3/s per km2 "
             f"({reference_discharge:,.0f} m3/s over {unit.area_km2:,.0f} km2), not an observation"
         )
@@ -390,6 +422,25 @@ def compute_watershed(
     reach_i = np.where(np.isfinite(reach_f), np.nan_to_num(reach_f), -1).astype(np.int64)
     height, width = hand_r.shape
 
+    marks = marks_within(unit, resolved, marks_path) if marks_path else []
+    if marks:
+        # Place each mark on the display grid so the page can draw it, and record the
+        # model's own ground elevation there, which is what a residual is measured from.
+        inverse = ~dem.transform
+        forward = Transformer.from_crs(CRS.from_epsg(4326), resolved.crs.analysis, always_xy=True)
+        placed = []
+        for mark in marks:
+            x, y = forward.transform(mark["lon"], mark["lat"])
+            col, row = inverse * (x, y)
+            row, col = int(row), int(col)
+            if not (0 <= row < chain.filled.shape[0] and 0 <= col < chain.filled.shape[1]):
+                continue
+            ground = float(chain.filled[row, col])
+            if not np.isfinite(ground):
+                continue
+            placed.append({**mark, "ground_m": round(ground, 2)})
+        marks = placed
+
     bundle = UnitBundle(
         huc=unit.huc,
         name=unit.name,
@@ -405,6 +456,8 @@ def compute_watershed(
         hand=to_data_uri(encode_hand(hand_r)),
         reach=to_data_uri(encode_reach_ids(reach_i)),
         stage_table=to_data_uri(encode_stage_table(len(links), curves, flows, ladder)),
+        gauge=gauge,
+        marks=marks,
         stats={
             "cells": int(dem.data.size),
             "curves": len(curves),
@@ -429,6 +482,123 @@ def _to_wgs84_bounds(unit: Watershed, config: Config) -> tuple[float, float, flo
     west, south, east, north = unit.bounds
     xs, ys = back.transform([west, east, east, west], [south, south, north, north])
     return min(xs), min(ys), max(xs), max(ys)
+
+
+def gauge_for_watershed(
+    unit: Watershed,
+    chain: Any,
+    dem: Any,
+    context: FetchContext,
+    *,
+    snap_cells: int = 40,
+) -> dict[str, Any] | None:
+    """Find the gauge that best represents this watershed's outflow, and its peak.
+
+    Every NWIS gauge publishing discharge inside the watershed is snapped to our own
+    stream network, and the one draining the largest area wins - that is the station
+    nearest the outlet, whose flow stands for the whole unit. Contributing area comes
+    from our own flow accumulation rather than the published figure, so the discharge
+    and the area it is divided by are measured on the same grid.
+
+    Its peak of record is used as the discharge: the worst flow that gauge has
+    actually measured, rather than a design figure from a regression.
+    """
+    west, south, east, north = _to_wgs84_bounds(unit, context.config)
+    try:
+        sites = find_gauges(context, (west, south, east, north))
+    except (SourceError, httpx.HTTPError):
+        return None
+    if not sites:
+        return None
+
+    forward = Transformer.from_crs(CRS.from_epsg(4326), context.config.crs.analysis, always_xy=True)
+    rows, cols = chain.streams.shape
+    best: dict[str, Any] | None = None
+
+    for site in sites:
+        try:
+            lon, lat = float(site["dec_long_va"]), float(site["dec_lat_va"])
+        except (KeyError, ValueError):
+            continue
+        x, y = forward.transform(lon, lat)
+        if not unit.geometry.contains(Point(x, y)):
+            continue
+        col, row = ~dem.transform * (x, y)
+        row, col = int(row), int(col)
+
+        snapped = None
+        for radius in range(snap_cells + 1):
+            found = [
+                (dr * dr + dc * dc, row + dr, col + dc)
+                for dr in range(-radius, radius + 1)
+                for dc in range(-radius, radius + 1)
+                if abs(dr) == radius or abs(dc) == radius
+                if 0 <= row + dr < rows
+                and 0 <= col + dc < cols
+                and chain.streams[row + dr, col + dc]
+            ]
+            if found:
+                snapped = min(found)
+                break
+        if snapped is None:
+            continue
+        _, grow, gcol = snapped
+        area_cells = float(chain.accumulation.accumulation[grow, gcol])
+        if best is not None and area_cells <= best["area_cells"]:
+            continue
+        best = {
+            "site": site["site_no"],
+            "name": site.get("station_nm", "").strip(),
+            "lon": lon,
+            "lat": lat,
+            "row": grow,
+            "col": gcol,
+            "area_cells": area_cells,
+            "area_km2": round(area_cells * dem.cell_area_m2 / 1e6, 1),
+        }
+
+    if best is None:
+        return None
+    peak = peak_discharge(context, best["site"])
+    if peak is None:
+        return None
+    return {**best, **peak}
+
+
+def marks_within(unit: Watershed, config: Config, path: Path) -> list[dict[str, Any]]:
+    """Return the cached national high-water marks that fall inside a watershed.
+
+    The Short-Term Network's whole holding is about 26 MB and takes fourteen seconds
+    to fetch, so it is cached once and filtered per watershed. Marks come from every
+    event STN has surveyed, not one, so a watershed carries whatever ground truth
+    exists for it.
+    """
+    if not path.exists():
+        return []
+    forward = Transformer.from_crs(CRS.from_epsg(4326), config.crs.analysis, always_xy=True)
+    prepared = prep(unit.geometry)
+    out: list[dict[str, Any]] = []
+    for mark in json.loads(path.read_text()):
+        lon, lat = mark["longitude_dd"], mark["latitude_dd"]
+        x, y = forward.transform(lon, lat)
+        if not prepared.contains(Point(x, y)):
+            continue
+        out.append(
+            {
+                "lon": lon,
+                "lat": lat,
+                "elev_m": round(float(mark["elev_ft"]) * 0.3048, 2),
+                "event": mark.get("eventName", "") or "unnamed event",
+                "event_date": mark.get("eventDate", ""),
+                "quality": mark.get("hwm_quality_id"),
+                "height_above_gnd_m": (
+                    round(float(mark["height_above_gnd"]) * 0.3048, 2)
+                    if isinstance(mark.get("height_above_gnd"), int | float)
+                    else None
+                ),
+            }
+        )
+    return out
 
 
 def _to_web_mercator(

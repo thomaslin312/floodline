@@ -57,6 +57,7 @@ def create_app(
     config: Config | None = None,
     cache_dir: Path | None = None,
     max_cells: int = 40_000_000,
+    marks_path: Path | None = None,
 ) -> FastAPI:
     """Build the application.
 
@@ -75,6 +76,7 @@ def create_app(
     base = config or Config()
     cache = cache_dir or Path("outputs/cache")
     cache.mkdir(parents=True, exist_ok=True)
+    marks = marks_path or (base.paths.raw / "validation" / "high_water_marks_national.json")
     app = FastAPI(title="floodline", docs_url="/api/docs")
 
     def client() -> httpx.Client:
@@ -205,6 +207,7 @@ def create_app(
                     config=local,
                     client=http,
                     max_cells=max_cells,
+                    marks_path=marks if marks.exists() else None,
                 )
         except SourceError as exc:
             raise HTTPException(502, f"upstream data source failed: {exc}") from exc
@@ -232,6 +235,11 @@ def create_app(
     @app.get("/api/health")
     def health() -> dict[str, Any]:
         cached = sorted(p.name for p in cache.glob("*.json"))
-        return {"ok": True, "cached_watersheds": len(cached), "max_cells": max_cells}
+        return {
+            "ok": True,
+            "cached_watersheds": len(cached),
+            "max_cells": max_cells,
+            "high_water_marks": marks.exists(),
+        }
 
     return app

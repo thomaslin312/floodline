@@ -48,7 +48,9 @@ __all__ = [
     "SourceError",
     "fetch",
     "find_dem_tiles",
+    "find_gauges",
     "list_sources",
+    "peak_discharge",
     "write_manifest",
 ]
 
@@ -345,12 +347,18 @@ TNM_PRODUCTS = "https://tnmaccess.nationalmap.gov/api/v1/products"
 NWIS_IV = "https://waterservices.usgs.gov/nwis/iv/"
 NWIS_SITE = "https://waterservices.usgs.gov/nwis/site/"
 STN_HWM = "https://stn.wim.usgs.gov/STNServices/HWMs/FilteredHWMs.json"
+STN_ALL_HWM = "https://stn.wim.usgs.gov/STNServices/HWMs.json"
+STN_EVENTS = "https://stn.wim.usgs.gov/STNServices/Events.json"
+NWIS_PEAK = "https://nwis.waterdata.usgs.gov/nwis/peak"
 OPENFEMA = "https://www.fema.gov/api/open/v2"
 MPC_STAC = "https://planetarycomputer.microsoft.com/api/stac/v1/search"
 WBD = "https://hydro.nationalmap.gov/arcgis/rest/services/wbd/MapServer"
 
 WBD_LAYER_BY_HUC_LEVEL = {2: 1, 4: 2, 6: 3, 8: 4, 10: 5, 12: 6, 14: 7, 16: 8}
 """Watershed Boundary Dataset layer index by HUC digit count."""
+
+CFS_TO_CMS = 0.0283168
+"""Cubic feet per second to cubic metres per second. USGS publishes discharge in cfs."""
 
 _OPENFEMA_MAX_PAGES = 100
 """Guard so a filter that matches everything cannot page forever."""
@@ -719,6 +727,127 @@ def fetch_watersheds(context: FetchContext) -> list[Artifact]:
     ]
 
 
+def find_gauges(
+    context: FetchContext, bbox: tuple[float, float, float, float]
+) -> list[dict[str, Any]]:
+    """Return NWIS stream gauges inside `bbox` that publish discharge.
+
+    Discharge (parameter 00060) rather than gauge height, because a rating curve
+    consumes discharge. Each record carries the site number, name, coordinates and
+    published drainage area, which is what lets a watershed pick the gauge nearest
+    its own outlet - the one with the largest contributing area.
+    """
+    west, south, east, north = bbox
+    response = context.request(
+        "GET",
+        NWIS_SITE,
+        params={
+            "format": "rdb",
+            "bBox": f"{west:.5f},{south:.5f},{east:.5f},{north:.5f}",
+            "parameterCd": "00060",
+            "siteType": "ST",
+            "siteStatus": "all",
+            "hasDataTypeCd": "dv",
+            "siteOutput": "expanded",
+        },
+    )
+    if response.status_code == 404:
+        return []
+    response.raise_for_status()
+    return _parse_rdb(response.text)
+
+
+def _parse_rdb(text: str) -> list[dict[str, Any]]:
+    """Parse a USGS RDB table into records, skipping its comment and format lines."""
+    rows = [line for line in text.splitlines() if line and not line.startswith("#")]
+    if len(rows) < 3:
+        return []
+    header = rows[0].split("\t")
+    out: list[dict[str, Any]] = []
+    for line in rows[2:]:
+        values = line.split("\t")
+        if len(values) != len(header):
+            continue
+        out.append(dict(zip(header, values, strict=True)))
+    return out
+
+
+def peak_discharge(context: FetchContext, site: str) -> dict[str, Any] | None:
+    """Return a gauge's largest annual peak discharge on record, in cumecs.
+
+    The annual maximum series is the natural scenario for a screening flood model:
+    it is the worst flow that gauge has actually measured, rather than a design
+    figure from a regression. Returns None where the gauge has no peak record,
+    which is common for short or discontinued stations.
+    """
+    response = context.request(
+        "GET", NWIS_PEAK, params={"site_no": site, "agency_cd": "USGS", "format": "rdb"}
+    )
+    if response.status_code != 200:
+        return None
+    peaks = [row for row in _parse_rdb(response.text) if (row.get("peak_va") or "").strip()]
+    if not peaks:
+        return None
+    best = max(peaks, key=lambda row: float(row["peak_va"]))
+    return {
+        "site": site,
+        "discharge_cms": float(best["peak_va"]) * CFS_TO_CMS,
+        "discharge_cfs": float(best["peak_va"]),
+        "date": best.get("peak_dt", ""),
+        "n_years": len(peaks),
+    }
+
+
+def fetch_all_high_water_marks(context: FetchContext) -> list[Artifact]:
+    """Every surveyed high-water mark the USGS Short-Term Network holds, nationally.
+
+    About 26 MB and fourteen seconds, which is far too slow to do per request but
+    perfectly reasonable once. Cached on disk, it gives any watershed in the country
+    whatever ground truth exists for it, across every event STN has surveyed rather
+    than only the one this project started with.
+    """
+    payload = get_json(context, STN_ALL_HWM)
+    if not isinstance(payload, list) or not payload:
+        raise SourceError("STN returned no high-water marks")
+
+    # The bulk endpoint carries event_id but not the event's name, so the two are
+    # joined here. A mark labelled "2017 Harvey" is worth far more to a reader than
+    # one labelled 180.
+    catalogue = get_json(context, STN_EVENTS)
+    names = {
+        item["event_id"]: item.get("event_name", "")
+        for item in catalogue
+        if isinstance(item, dict) and "event_id" in item
+    }
+    dates = {
+        item["event_id"]: str(item.get("event_start_date", ""))[:10]
+        for item in catalogue
+        if isinstance(item, dict) and "event_id" in item
+    }
+
+    usable = [
+        {
+            **mark,
+            "eventName": names.get(mark.get("event_id"), ""),
+            "eventDate": dates.get(mark.get("event_id"), ""),
+        }
+        for mark in payload
+        if isinstance(mark.get("longitude_dd"), int | float)
+        and isinstance(mark.get("latitude_dd"), int | float)
+        and isinstance(mark.get("elev_ft"), int | float)
+    ]
+    events = {mark["eventName"] for mark in usable}
+    return [
+        write_json(
+            usable,
+            context.subdir("validation") / "high_water_marks_national.json",
+            name="usgs-high-water-marks-national",
+            url=STN_ALL_HWM,
+            note=f"{len(usable):,} located marks of {len(payload):,}, across {len(events)} events",
+        )
+    ]
+
+
 REGISTRY: dict[str, Source] = {
     source.name: source
     for source in (
@@ -731,6 +860,11 @@ REGISTRY: dict[str, Source] = {
             name="usgs-gauge",
             description="USGS NWIS gauge height, discharge, and site metadata (the datum)",
             fetch=fetch_usgs_gauge,
+        ),
+        Source(
+            name="usgs-hwm-national",
+            description="Every surveyed high-water mark STN holds, for validation anywhere",
+            fetch=fetch_all_high_water_marks,
         ),
         Source(
             name="usgs-hwm",
