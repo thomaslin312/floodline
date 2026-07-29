@@ -129,6 +129,54 @@ def condition(
 
 
 @app.command()
+def streams(
+    dem: Annotated[Path, typer.Argument(exists=True, dir_okay=False, help="Conditioned DEM.")],
+    out: Annotated[Path, typer.Argument(help="Output stream network (GeoParquet).")],
+    raster_out: Annotated[
+        Path | None, typer.Option(help="Also write the stream mask as a COG.")
+    ] = None,
+    threshold: Annotated[
+        int | None, typer.Option(help="Accumulation threshold in cells; overrides config.")
+    ] = None,
+    config: ConfigOption = None,
+) -> None:
+    """Derive the stream network from a conditioned DEM."""
+    from floodline.io.raster import read_raster, write_cog
+    from floodline.io.vector import write_vector
+    from floodline.terrain.flowacc import flow_accumulation
+    from floodline.terrain.flowdir import flow_direction
+    from floodline.terrain.streams import prune_stream_mask, stream_mask, stream_network
+
+    resolved = load_config(config)
+    raster = read_raster(dem, config=resolved)
+    fdir = flow_direction(
+        raster.data, config=resolved, nodata=raster.nodata, cellsize=raster.cellsize
+    )
+    accumulated = flow_accumulation(fdir)
+    if accumulated.cells_draining_to_flats:
+        typer.secho(
+            f"warning: {accumulated.cells_draining_to_flats} cells "
+            f"({accumulated.flat_drainage_fraction:.1%}) drain into flats and never "
+            "reach an outlet. Condition with terrain.fill_epsilon > 0.",
+            fg=typer.colors.YELLOW,
+            err=True,
+        )
+
+    mask = stream_mask(accumulated.accumulation, fdir, config=resolved, threshold=threshold)
+    mask = prune_stream_mask(mask, fdir, config=resolved)
+    network = stream_network(mask, fdir, accumulated.accumulation, raster.transform, raster.crs)
+    path = write_vector(out, network, config=resolved)
+    if raster_out is not None:
+        write_cog(
+            raster_out,
+            raster.with_data(mask.astype("uint8"), nodata=0),
+            config=resolved,
+            dtype="uint8",
+        )
+    typer.echo(f"wrote {path} ({len(network)} links, {int(mask.sum())} stream cells)")
+
+
+@app.command()
 def hand(
     dem: Annotated[Path, typer.Argument(exists=True, dir_okay=False, help="Conditioned DEM.")],
     out: Annotated[Path, typer.Argument(help="Output HAND raster.")],
