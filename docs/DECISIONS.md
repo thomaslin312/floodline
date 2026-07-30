@@ -883,3 +883,26 @@ under that: 13-29 s cold for a HUC-12, cached afterwards.
 - **10 m is now the default** wherever the grid fits in one pass. 30 m does not resolve
   a channel and the residuals show it, so defaulting to the coarse option was quietly
   costing accuracy.
+
+### two corrections from measuring rather than assuming
+
+- **The 10 m default was reverted.** I made 10 m the default reasoning that "30 m does
+  not resolve a channel and the residuals show it". Measured on City of
+  Houston-Buffalo Bayou against its 57 Harvey marks, 10 m was **worse** - RMSE 6.25 m
+  against 4.89 m at 30 m - and took 66 s against 16 s. More marks landed within a
+  metre at 10 m (21% against 14%), but more were left dry (43 of 57 against 50), and
+  the misses cost more than the near-hits gained. 30 m is the default again and 10 m
+  is offered rather than assumed. This is the second time finer data has scored worse
+  here, and the reason is the same both times: resolving the channel changes what HAND
+  is measured against.
+- **The headline RMSE was being set by the roughest surveys.** USGS grades every mark;
+  1 and 2 are surveys good to a few centimetres, 3 and below progressively rougher. On
+  this watershed the split is stark: quality 1-2 give **RMSE 1.03 m**, quality 3
+  (51 of 57 marks) give **4.93 m**, quality 4 gives 5.64 m. Reporting one number over
+  all of them let the least reliable surveys dominate. The interface now scores the
+  graded subset by default and draws the rest smaller and faded, so they are visible
+  but not deciding the verdict. Worth stating in the write-up: on this watershed the
+  model agrees with the trustworthy marks to about a metre.
+  The caveat on that caveat: only two marks here are quality 1-2, which is a thin
+  basis. Whiteoak Bayou has sixteen and gave 1.54 m, so the two agree, but neither is
+  a large sample.
