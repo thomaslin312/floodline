@@ -795,6 +795,14 @@ def peak_discharge(context: FetchContext, site: str) -> dict[str, Any] | None:
         "discharge_cfs": float(best["peak_va"]),
         "date": best.get("peak_dt", ""),
         "n_years": len(peaks),
+        # The whole annual series, so a caller can pick the peak belonging to a
+        # particular flood rather than the largest on record. Comparing a model
+        # driven by the 1935 flood against marks surveyed after Harvey in 2017
+        # measures nothing.
+        "series": [
+            {"date": row.get("peak_dt", ""), "cms": float(row["peak_va"]) * CFS_TO_CMS}
+            for row in peaks
+        ],
     }
 
 

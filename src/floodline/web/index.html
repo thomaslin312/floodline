@@ -3,326 +3,509 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>floodline — any US watershed</title>
+<title>floodline</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=Public+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <style>
-  :root{--paper:#eef2f1;--plate:#fff;--sunk:#e3e9e8;--ink:#0e1d23;--ink-soft:#3a4d54;--muted:#64787e;
-        --rule:#c9d5d4;--water:#0d7c8a;--over:#b8543a;--close:#3f7d54;--dry:#8b969a;--warn:#8a6a1f;
-        --display:"Archivo",sans-serif;--body:"Public Sans",sans-serif;--mono:"IBM Plex Mono",monospace}
-  @media (prefers-color-scheme:dark){:root{--paper:#0c181d;--plate:#13242b;--sunk:#0f1f25;--ink:#e7eeed;
-        --ink-soft:#b3c4c6;--muted:#8ba0a4;--rule:#274049;--water:#3aa9b6;--over:#e0785a;--close:#63b47c;
-        --dry:#6e8288;--warn:#d6ac4e}}
+  :root{
+    --bg:#eef1f2; --card:#ffffffef; --card-solid:#fff; --line:#dbe3e4; --line-soft:#e9eeef;
+    --ink:#0c1a20; --ink-2:#3d5058; --ink-3:#7a8d93;
+    --accent:#0b7f8e; --accent-soft:#0b7f8e18; --good:#3f8a5c; --warn:#a8762a; --bad:#b5503a;
+    --ring:0 0 0 1px #0c1a2012; --lift:0 1px 2px #0c1a200f, 0 8px 28px -14px #0c1a2033;
+    --display:"Archivo",system-ui,sans-serif; --body:"Public Sans",system-ui,sans-serif;
+    --mono:"IBM Plex Mono",ui-monospace,Menlo,monospace;
+    --r:10px;
+  }
+  @media (prefers-color-scheme:dark){:root{
+    --bg:#08141a; --card:#10222aee; --card-solid:#10222a; --line:#223a44; --line-soft:#1a2f38;
+    --ink:#e8f0f1; --ink-2:#a8bdc2; --ink-3:#74898f;
+    --accent:#37b0be; --accent-soft:#37b0be22; --good:#5fb47c; --warn:#d3a24e; --bad:#df7a5c;
+    --ring:0 0 0 1px #ffffff14; --lift:0 1px 2px #0006, 0 10px 34px -16px #000a;
+  }}
   *{box-sizing:border-box}
   [hidden]{display:none!important}
-  html,body{height:100%;margin:0}
-  body{background:var(--paper);color:var(--ink);font-family:var(--body);font-size:14px;display:flex;flex-direction:column}
-  header{padding:10px 16px;border-bottom:2px solid var(--ink);display:flex;flex-wrap:wrap;gap:10px 18px;align-items:center}
-  h1{font-family:var(--display);font-size:17px;font-weight:700;margin:0;letter-spacing:-.01em}
-  h1 span{font-family:var(--mono);font-size:10.5px;font-weight:400;color:var(--muted);letter-spacing:.1em;text-transform:uppercase;margin-left:8px}
-  form{display:flex;gap:6px;flex:1 1 300px;max-width:440px}
-  select{padding:4px 6px;border:1px solid var(--rule);border-radius:3px;background:var(--plate);color:var(--ink);font-family:var(--body);font-size:12.5px}
-  input[type=text]{flex:1;padding:6px 9px;border:1px solid var(--rule);border-radius:3px;background:var(--plate);color:var(--ink);font-family:var(--body);font-size:13.5px}
-  button{padding:6px 12px;border:1px solid var(--ink);border-radius:3px;background:var(--ink);color:var(--paper);font-family:var(--body);font-weight:600;font-size:13px;cursor:pointer}
-  button:disabled{opacity:.45;cursor:default}
-  button.ghost{background:var(--plate);color:var(--ink);border-color:var(--rule);font-weight:400}
-  .hintbar{font-size:12.5px;color:var(--muted)}
-  main{flex:1;display:grid;grid-template-columns:minmax(0,1fr) 320px;min-height:0}
-  @media (max-width:820px){main{grid-template-columns:1fr;grid-template-rows:56vh auto}}
-  #map{height:100%;width:100%;background:var(--sunk)}
-  aside{border-left:1px solid var(--rule);background:var(--plate);overflow-y:auto;padding:14px 16px 28px;display:flex;flex-direction:column;gap:14px}
-  h2{font-family:var(--mono);font-size:10.5px;letter-spacing:.11em;text-transform:uppercase;color:var(--muted);margin:0 0 6px}
-  .unitname{font-family:var(--display);font-size:16px;font-weight:600;line-height:1.25;margin:0}
-  .sub{font-family:var(--mono);font-size:11.5px;color:var(--muted)}
-  .q{display:flex;flex-direction:column;gap:5px}
-  .q .row{display:flex;align-items:baseline;gap:7px}
-  .q .big{font-family:var(--display);font-weight:700;font-size:24px;font-variant-numeric:tabular-nums}
-  .q input[type=range]{width:100%;accent-color:var(--water)}
-  dl.stats{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--rule);border:1px solid var(--rule);margin:0}
-  dl.stats>div{background:var(--plate);padding:7px 9px}
-  dt{font-family:var(--mono);font-size:9.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
-  dd{margin:2px 0 0;font-family:var(--mono);font-size:13.5px;font-variant-numeric:tabular-nums}
-  .status{font-size:13px;color:var(--ink-soft);border-left:3px solid var(--water);padding:7px 0 7px 10px;min-height:20px}
-  .status.err{border-color:var(--over)}
-  .status.warn{border-color:var(--warn)}
-  .spin{display:inline-block;width:11px;height:11px;border:2px solid var(--rule);border-top-color:var(--water);border-radius:50%;animation:s .8s linear infinite;vertical-align:-1px;margin-right:6px}
-  @keyframes s{to{transform:rotate(360deg)}}
+  html,body{height:100%;margin:0;overflow:hidden}
+  body{background:var(--bg);color:var(--ink);font-family:var(--body);font-size:14px;-webkit-font-smoothing:antialiased}
+  #map{position:absolute;inset:0;background:var(--bg)}
+  .leaflet-container{background:var(--bg);font-family:var(--body)}
+  .leaflet-control-attribution{background:var(--card)!important;color:var(--ink-3)!important;
+    font-size:10px!important;border-radius:6px 0 0 0;backdrop-filter:blur(6px)}
+  .leaflet-control-attribution a{color:var(--ink-3)!important}
+  .leaflet-bar{border:0!important;box-shadow:var(--lift)!important;border-radius:8px!important;overflow:hidden}
+  .leaflet-bar a{background:var(--card-solid)!important;color:var(--ink)!important;border-bottom-color:var(--line)!important;width:30px!important;height:30px!important;line-height:30px!important}
+
+  /* ---------- floating panels ---------- */
+  .panel{position:absolute;z-index:1000;background:var(--card);backdrop-filter:blur(14px) saturate(1.3);
+    border-radius:var(--r);box-shadow:var(--ring),var(--lift)}
+  #search{top:14px;left:14px;width:346px;padding:12px 13px 11px}
+  #info{top:14px;right:14px;width:322px;max-height:calc(100vh - 28px);overflow-y:auto;padding:14px}
+  #legend{left:14px;bottom:26px;padding:10px 12px;font-size:11.5px;color:var(--ink-2)}
+  @media (max-width:900px){
+    #search{left:10px;right:10px;width:auto}
+    #info{left:10px;right:10px;top:auto;bottom:26px;width:auto;max-height:46vh}
+    #legend{display:none}
+  }
+
+  .brand{display:flex;align-items:baseline;gap:8px;margin-bottom:9px}
+  .brand b{font-family:var(--display);font-weight:700;font-size:15px;letter-spacing:-.015em}
+  .brand span{font-family:var(--mono);font-size:9.5px;letter-spacing:.13em;text-transform:uppercase;color:var(--ink-3)}
+  .searchrow{display:flex;gap:7px}
+  input[type=text]{flex:1;min-width:0;padding:8px 11px;border:1px solid var(--line);border-radius:7px;
+    background:var(--card-solid);color:var(--ink);font-family:var(--body);font-size:13.5px}
+  input[type=text]:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+  button{border:0;border-radius:7px;background:var(--accent);color:#fff;font-family:var(--body);
+    font-weight:600;font-size:13px;padding:8px 13px;cursor:pointer;white-space:nowrap}
+  button:disabled{opacity:.4;cursor:default}
+  button.wide{width:100%;padding:10px;font-size:13.5px;margin-top:2px}
+  button.quiet{background:transparent;color:var(--ink-2);border:1px solid var(--line);font-weight:500}
+  button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+  .opts{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;align-items:center}
+  select{padding:5px 7px;border:1px solid var(--line);border-radius:6px;background:var(--card-solid);
+    color:var(--ink);font-family:var(--body);font-size:12px}
+  .chip{display:inline-flex;align-items:center;gap:5px;padding:4px 8px;border:1px solid var(--line);
+    border-radius:20px;font-size:11.5px;color:var(--ink-2);cursor:pointer;user-select:none;background:var(--card-solid)}
+  .chip input{display:none}
+  .chip.on{border-color:var(--accent);color:var(--accent);background:var(--accent-soft)}
+  .chip i{width:7px;height:7px;border-radius:50%;background:currentColor;opacity:.6}
+
+  /* ---------- info panel ---------- */
+  .eyebrow{font-family:var(--mono);font-size:9.5px;letter-spacing:.13em;text-transform:uppercase;color:var(--ink-3)}
+  h2.name{font-family:var(--display);font-size:17px;font-weight:600;line-height:1.22;margin:3px 0 4px;letter-spacing:-.01em}
+  .meta{font-family:var(--mono);font-size:10.5px;color:var(--ink-3);line-height:1.6}
+  .status{margin:11px 0;padding:8px 10px;border-radius:8px;background:var(--accent-soft);
+    font-size:12.5px;color:var(--ink-2);line-height:1.45}
+  .status.bad{background:#b5503a1a;color:var(--bad)}
+  .status.warn{background:#a8762a1a;color:var(--warn)}
+  .spin{display:inline-block;width:10px;height:10px;border:2px solid var(--line);border-top-color:var(--accent);
+    border-radius:50%;animation:sp .7s linear infinite;vertical-align:-1px;margin-right:6px}
+  @keyframes sp{to{transform:rotate(360deg)}}
   @media (prefers-reduced-motion:reduce){.spin{animation:none}}
-  .legend{font-size:12px;color:var(--ink-soft);display:flex;flex-direction:column;gap:4px}
-  .ramp{display:inline-block;width:90px;height:8px;border-radius:1px;background:linear-gradient(90deg,#cfe6f2,#3d8fc0,#0b3f73);vertical-align:0}
-  .note{font-size:12px;color:var(--muted);line-height:1.5}
-  .leaflet-container{font-family:var(--body)}
+
+  .qhead{display:flex;align-items:baseline;justify-content:space-between;gap:8px;margin-top:4px}
+  .qval{font-family:var(--display);font-weight:700;font-size:27px;letter-spacing:-.025em;font-variant-numeric:tabular-nums}
+  .qunit{font-family:var(--mono);font-size:10px;color:var(--ink-3);letter-spacing:.1em;text-transform:uppercase}
+  input[type=range]{width:100%;accent-color:var(--accent);margin:6px 0 2px}
+  .qnote{font-size:11.5px;color:var(--ink-3);line-height:1.45}
+  .src{display:inline-flex;align-items:center;gap:5px;font-family:var(--mono);font-size:9.5px;
+    letter-spacing:.08em;text-transform:uppercase;padding:2px 7px;border-radius:20px}
+  .src.obs{background:var(--accent-soft);color:var(--accent)}
+  .src.est{background:#a8762a1a;color:var(--warn)}
+
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--line-soft);
+    border-radius:8px;overflow:hidden;margin-top:12px}
+  .grid div{background:var(--card-solid);padding:7px 9px 8px}
+  .grid dt{font-family:var(--mono);font-size:9px;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-3)}
+  .grid dd{margin:1px 0 0;font-family:var(--mono);font-size:13.5px;font-variant-numeric:tabular-nums}
+  .grid dd.na{color:var(--ink-3)}
+  .grid dd.good{color:var(--good)} .grid dd.warn{color:var(--warn)} .grid dd.bad{color:var(--bad)}
+
+  .ramp{height:8px;border-radius:4px;background:linear-gradient(90deg,#cfe6f2,#7fb8dc,#3d8fc0,#1a6098,#0b3f73);margin:5px 0 3px}
+  .rampax{display:flex;justify-content:space-between;font-family:var(--mono);font-size:9.5px;color:var(--ink-3)}
+  .keyrow{display:flex;gap:12px;margin-top:8px;flex-wrap:wrap}
+  .keyrow span{display:inline-flex;align-items:center;gap:5px}
+  .keyrow i{width:9px;height:9px;border-radius:50%;display:inline-block}
+
+  .bar{position:absolute;top:0;left:0;height:2px;background:var(--accent);width:0;z-index:1200;
+    transition:width .35s ease}
+  .hwm{border-radius:50%;border:1.5px solid #fff;box-shadow:0 1px 3px #0004}
+  .leaflet-tooltip{background:var(--card-solid);border:0;box-shadow:var(--ring),var(--lift);
+    color:var(--ink);font-family:var(--body);font-size:12px;border-radius:7px;padding:6px 9px}
+  .leaflet-tooltip:before{display:none}
+  .tt b{font-family:var(--display);font-size:12.5px}
+  .tt code{font-family:var(--mono);font-size:11px;color:var(--ink-2)}
 </style>
 </head>
 <body>
-<header>
-  <h1>floodline <span>any US watershed</span></h1>
-  <form id="find">
-    <input type="text" id="q" placeholder="ZIP code, address, or 12-digit HUC" autocomplete="off">
-    <button type="submit">Find</button>
-  </form>
-  <span class="hintbar">or click any watershed</span>
-  <span style="flex:1"></span>
-  <label class="hintbar">Level
-    <select id="lvl">
+<div id="map"></div>
+<div class="bar" id="bar"></div>
+
+<section class="panel" id="search">
+  <div class="brand"><b>floodline</b><span>any US watershed</span></div>
+  <div class="searchrow">
+    <input type="text" id="q" placeholder="ZIP, address, or HUC code" autocomplete="off">
+    <button id="go">Find</button>
+  </div>
+  <div class="opts">
+    <select id="lvl" title="What a click resolves to">
       <option value="8">HUC-8 basin</option>
       <option value="10">HUC-10 watershed</option>
       <option value="12" selected>HUC-12 subwatershed</option>
     </select>
-  </label>
-  <label class="hintbar"><input type="checkbox" id="bnd" checked> Boundaries</label>
-  <label class="hintbar"><input type="checkbox" id="hi"> 10 m (slower)</label>
-</header>
-<main>
-  <div id="map"></div>
-  <aside>
-    <div>
-      <h2>Watershed</h2>
-      <p class="unitname" id="uname">None selected</p>
-      <p class="sub" id="usub">Click anywhere in the United States, or search above.</p>
+    <label class="chip on" id="c-bnd"><input type="checkbox" checked><i></i>Boundaries</label>
+    <label class="chip on" id="c-hwm"><input type="checkbox" checked><i></i>Marks</label>
+    <label class="chip" id="c-hi"><input type="checkbox"><i></i>10 m</label>
+  </div>
+</section>
+
+<section class="panel" id="info">
+  <div class="eyebrow">Watershed</div>
+  <h2 class="name" id="uname">Click any watershed</h2>
+  <div class="meta" id="umeta">The boundary layer shows every hydrologic unit in the country. Zoom in for finer ones.</div>
+  <div class="status" id="status">Ready.</div>
+  <button class="wide" id="run" disabled>Compute this watershed</button>
+
+  <div id="model" hidden>
+    <div class="qhead">
+      <div>
+        <div class="eyebrow">Discharge at outlet</div>
+        <span class="qval" id="qval">—</span> <span class="qunit">m³/s</span>
+      </div>
+      <span class="src" id="qsrc"></span>
     </div>
-    <div class="status" id="status">Ready.</div>
-    <button id="run" disabled>Compute this watershed</button>
+    <input type="range" id="qs" min="0" max="300" step="2" value="100">
+    <div class="qnote" id="qnote"></div>
+    <dl class="grid" id="stats"></dl>
+  </div>
+</section>
 
-    <div class="q" id="qwrap" hidden>
-      <h2>Discharge at the outlet</h2>
-      <div class="row"><span class="big" id="qval">—</span><span class="sub">m³/s</span></div>
-      <input type="range" id="qs" min="0" max="300" step="2" value="100">
-      <span class="sub" id="qrel"></span>
-    </div>
-
-    <dl class="stats" id="stats" hidden></dl>
-
-    <div class="legend" id="legend" hidden>
-      <span><span class="ramp"></span> depth 0 → 8 m+</span>
-    </div>
-
-    <p class="note" id="caveat" hidden></p>
-  </aside>
-</main>
+<section class="panel" id="legend">
+  <div class="eyebrow">Modelled depth</div>
+  <div class="ramp"></div>
+  <div class="rampax"><span>0</span><span>2</span><span>4</span><span>6</span><span>8 m+</span></div>
+  <div class="keyrow" id="hwmkey" hidden>
+    <span><i style="background:var(--good)"></i>mark within 1 m</span>
+    <span><i style="background:var(--bad)"></i>over 3 m out</span>
+    <span><i style="background:transparent;border:1.5px dashed var(--ink-3)"></i>dry</span>
+  </div>
+</section>
 
 <script>
 (function(){
 "use strict";
 const $ = (id) => document.getElementById(id);
-const map = L.map("map", {zoomControl:true}).setView([31.5, -96.0], 6);
-L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
-  maxZoom: 17, attribution: '&copy; OpenStreetMap contributors'
-}).addTo(map);
+const dark = () => window.matchMedia("(prefers-color-scheme: dark)").matches;
+const css = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
 
-// The Watershed Boundary Dataset renders as images and swaps HUC level by scale on
-// its own - regions when zoomed out, subwatersheds when zoomed in - so the whole
-// national grid is browsable without shipping any geometry.
-const ArcGISDynamic = L.TileLayer.extend({
-  getTileUrl: function (coords) {
-    const bounds = this._tileCoordsToBounds(coords);
-    const sw = L.CRS.EPSG3857.project(bounds.getSouthWest());
-    const ne = L.CRS.EPSG3857.project(bounds.getNorthEast());
-    return this.options.base + "/export?bbox=" + [sw.x, sw.y, ne.x, ne.y].join(",")
-      + "&bboxSR=3857&imageSR=3857&size=256,256&layers=show:" + this.options.layers
-      + "&format=png32&transparent=true&dpi=96&f=image";
-  },
-});
-const boundaries = new ArcGISDynamic("", {
-  base: "https://hydro.nationalmap.gov/arcgis/rest/services/wbd/MapServer",
-  layers: "1,2,3,4,5,6",
-  opacity: 0.75,
-  attribution: "USGS Watershed Boundary Dataset",
-}).addTo(map);
+const map = L.map("map", {zoomControl:false, minZoom:3, maxZoom:16, attributionControl:true})
+  .setView([39.5,-98.5], 4);
+L.control.zoom({position:"bottomright"}).addTo(map);
 
-let outline = null, overlay = null, unit = null, bundle = null;
-let hand = null, reach = null, lut = null, nMult = 0, busy = false;
+/* Panes so the flood sits above the terrain but below place names — labels on top
+   is what keeps a busy city readable once the water is drawn over it. */
+map.createPane("base").style.zIndex = 200;
+map.createPane("bnd").style.zIndex = 350;
+map.createPane("flood").style.zIndex = 400;
+map.createPane("labels").style.zIndex = 450;
+map.getPane("labels").style.pointerEvents = "none";
+map.getPane("flood").style.pointerEvents = "none";
 
-function status(text, kind){
-  const el = $("status");
-  el.className = "status" + (kind ? " " + kind : "");
-  el.innerHTML = text;
+// Esri's grey canvas: a deliberately quiet basemap with the labels published as a
+// separate layer, which is what lets place names sit *above* the flood instead of
+// disappearing under it. Keyless, unlike Carto, which now watermarks without one.
+const ESRI = "https://services.arcgisonline.com/ArcGIS/rest/services/Canvas/";
+let baseLayer = null, labelLayer = null;
+function basemap(){
+  if(baseLayer) map.removeLayer(baseLayer);
+  if(labelLayer) map.removeLayer(labelLayer);
+  const tone = dark() ? "Dark" : "Light";
+  baseLayer = L.tileLayer(ESRI+`World_${tone}_Gray_Base/MapServer/tile/{z}/{y}/{x}`,
+    {pane:"base", maxZoom:16, attribution:'Esri, HERE, Garmin, &copy; OpenStreetMap contributors'}).addTo(map);
+  labelLayer = L.tileLayer(ESRI+`World_${tone}_Gray_Reference/MapServer/tile/{z}/{y}/{x}`,
+    {pane:"labels", maxZoom:16}).addTo(map);
 }
+basemap();
+window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => { basemap(); repaint(); });
+
+/* The WBD renders boundary images and swaps HUC level by scale on its own, so the
+   whole national grid is browsable without shipping geometry. */
+const ArcGIS = L.TileLayer.extend({
+  getTileUrl(coords){
+    const b = this._tileCoordsToBounds(coords);
+    const sw = L.CRS.EPSG3857.project(b.getSouthWest());
+    const ne = L.CRS.EPSG3857.project(b.getNorthEast());
+    // dynamicLayers with showLabels:false strips the HUC code printed across every
+    // polygon. On a city-scale view those labels are most of the ink on the screen.
+    const spec = this.options.ids.map(id => ({
+      id, source:{type:"mapLayer", mapLayerId:id}, drawingInfo:{showLabels:false}
+    }));
+    return this.options.base+"/export?bbox="+[sw.x,sw.y,ne.x,ne.y].join(",")
+      +"&bboxSR=3857&imageSR=3857&size=256,256"
+      +"&dynamicLayers="+encodeURIComponent(JSON.stringify(spec))
+      +"&format=png32&transparent=true&dpi=96&f=image";
+  }
+});
+const boundaries = new ArcGIS("", {
+  base:"https://hydro.nationalmap.gov/arcgis/rest/services/wbd/MapServer",
+  ids:[1,2,3,4,5,6], pane:"bnd", opacity:0.5,
+  attribution:"USGS Watershed Boundary Dataset"
+}).addTo(map);
+
+let unit=null, bundle=null, outline=null, overlay=null, markers=[], gaugeMarker=null;
+let hand=null, reach=null, lut=null, nMult=0, busy=false, raf=0;
+
+function status(html, kind){ const el=$("status"); el.className="status"+(kind?" "+kind:""); el.innerHTML=html; }
+function progress(p){ $("bar").style.width = (p*100).toFixed(0)+"%"; if(p>=1) setTimeout(()=>$("bar").style.width="0",400); }
 
 async function api(path){
   const r = await fetch(path);
-  if(!r.ok){
-    let detail = r.statusText;
-    try { detail = (await r.json()).detail || detail; } catch(e){}
-    throw new Error(detail);
-  }
+  if(!r.ok){ let d=r.statusText; try{ d=(await r.json()).detail||d; }catch(e){} throw new Error(d); }
   return r.json();
 }
 
-/* ---------- pick a watershed ---------- */
+/* ---------------- select a watershed ---------------- */
 async function pick(lon, lat, label){
   if(busy) return;
-  const level = $("lvl").value;
-  status('<span class="spin"></span>Identifying the watershed…');
+  status('<span class="spin"></span>Identifying watershed…'); progress(0.3);
   try{
-    unit = await api(`/api/watershed?lon=${lon}&lat=${lat}&level=${level}`);
-    showUnit(label);
-  }catch(e){ status("Could not identify a watershed there: " + e.message, "err"); }
+    unit = await api(`/api/watershed?lon=${lon}&lat=${lat}&level=${$("lvl").value}`);
+    showUnit(label); progress(1);
+  }catch(e){ status("No watershed there: "+e.message, "bad"); progress(1); }
+}
+
+function clearModel(){
+  if(overlay){ map.removeLayer(overlay); overlay=null; }
+  markers.forEach(m=>map.removeLayer(m)); markers=[];
+  if(gaugeMarker){ map.removeLayer(gaugeMarker); gaugeMarker=null; }
+  bundle=null; hand=null;
+  $("model").hidden = true; $("hwmkey").hidden = true;
 }
 
 function showUnit(label){
+  clearModel();
   if(outline) map.removeLayer(outline);
-  if(overlay){ map.removeLayer(overlay); overlay = null; }
-  bundle = null; hand = null;
-  $("qwrap").hidden = true; $("stats").hidden = true; $("legend").hidden = true; $("caveat").hidden = true;
-
-  outline = L.geoJSON(unit.geometry, {style:{color:"#0d7c8a", weight:2, fillOpacity:0.06}}).addTo(map);
-  map.fitBounds(outline.getBounds(), {padding:[24,24]});
-
+  outline = L.geoJSON(unit.geometry, {style:{color:css("--accent"), weight:2.2, opacity:.95,
+    fillColor:css("--accent"), fillOpacity:.05}}).addTo(map);
+  map.fitBounds(outline.getBounds(), {padding:[70,70], maxZoom:13});
   $("uname").textContent = unit.name || "Unnamed watershed";
-  $("usub").textContent = `HUC-${unit.huc.length} ${unit.huc} · ${unit.area_km2.toLocaleString()} km² · ${unit.analysis_crs}`
-    + (label ? ` · ${label}` : "");
+  $("umeta").innerHTML = `HUC-${unit.huc.length} <code>${unit.huc}</code> · ${unit.area_km2.toLocaleString()} km²`
+    + ` · ${unit.analysis_crs}` + (label?` · ${label}`:"");
   $("run").disabled = false;
-  const cells = unit.cells_at["10"];
-  status(unit.too_big_at_10m
-    ? `This watershed is ${(cells/1e6).toFixed(0)}M cells at 10 m — too large for one pass. It will compute at 30 m.`
-    : `Ready. ${(cells/1e6).toFixed(1)}M cells at 10 m.`,
-    unit.too_big_at_10m ? "warn" : null);
+  const c = unit.cells_at["10"];
+  // 30 m does not resolve a channel, and the residuals show it, so 10 m is the
+  // default wherever the grid fits in one pass.
+  const fine = !unit.too_big_at_10m;
+  $("c-hi").classList.toggle("on", fine);
+  $("c-hi").querySelector("input").checked = fine;
+  status(fine
+    ? `Ready. ${(c/1e6).toFixed(1)}M cells at 10 m.`
+    : `${(c/1e6).toFixed(0)}M cells at 10 m — too large for one pass, so this runs at 30 m.`,
+    fine ? null : "warn");
 }
 
-/* ---------- compute ---------- */
+/* ---------------- compute ---------------- */
 async function run(){
-  if(!unit || busy) return;
-  busy = true; $("run").disabled = true;
-  const res = ($("hi").checked && !unit.too_big_at_10m) ? 10 : 30;
-  const t0 = performance.now();
-  const tick = setInterval(() => {
-    status(`<span class="spin"></span>Computing at ${res} m — reading DEM tiles over the network… ${((performance.now()-t0)/1000).toFixed(0)}s`);
-  }, 250);
+  if(!unit||busy) return;
+  busy=true; $("run").disabled=true;
+  const res = ($("c-hi").classList.contains("on") && !unit.too_big_at_10m) ? 10 : 30;
+  const t0=performance.now(); let p=0.05;
+  const tick=setInterval(()=>{
+    p=Math.min(0.92,p+0.03); progress(p);
+    status(`<span class="spin"></span>Computing at ${res} m — reading elevation tiles… ${((performance.now()-t0)/1000).toFixed(0)}s`);
+  },300);
   try{
     bundle = await api(`/api/compute/${unit.huc}?resolution=${res}`);
-    clearInterval(tick);
-    await render();
-    const s = bundle.seconds || {};
-    status(bundle.cached
-      ? "Loaded from cache."
-      : `Computed in ${((performance.now()-t0)/1000).toFixed(1)}s — ${bundle.tiles_read} DEM tiles read, `
-        + `terrain ${(s.terrain||0).toFixed(1)}s.`);
-  }catch(e){
-    clearInterval(tick);
-    status("Compute failed: " + e.message, "err");
-  }finally{ busy = false; $("run").disabled = false; }
+    clearInterval(tick); progress(0.96);
+    await load();
+    progress(1);
+    const s=bundle.seconds||{};
+    status(bundle.cached ? "Loaded from cache."
+      : `Done in ${((performance.now()-t0)/1000).toFixed(1)}s · ${bundle.tiles_read} elevation tiles · terrain ${(s.terrain||0).toFixed(1)}s`);
+  }catch(e){ clearInterval(tick); progress(1); status("Compute failed: "+e.message,"bad"); }
+  finally{ busy=false; $("run").disabled=false; }
 }
 
 function pixels(src){
-  return new Promise((res)=>{
-    const im = new Image();
-    im.onload = () => {
-      const c = document.createElement("canvas");
-      c.width = im.naturalWidth; c.height = im.naturalHeight;
-      const x = c.getContext("2d", {willReadFrequently:true});
-      x.drawImage(im,0,0);
-      res({d:x.getImageData(0,0,c.width,c.height).data, w:c.width, h:c.height});
-    };
-    im.src = src;
-  });
+  return new Promise((res)=>{ const im=new Image();
+    im.onload=()=>{ const c=document.createElement("canvas"); c.width=im.naturalWidth; c.height=im.naturalHeight;
+      const x=c.getContext("2d",{willReadFrequently:true}); x.drawImage(im,0,0);
+      res({d:x.getImageData(0,0,c.width,c.height).data,w:c.width,h:c.height}); };
+    im.src=src; });
 }
 
-async function render(){
-  const [h,r,t] = await Promise.all([pixels(bundle.hand), pixels(bundle.reach), pixels(bundle.stage_table)]);
-  const n = bundle.width * bundle.height;
-  hand = new Uint8Array(n); reach = new Uint16Array(n);
+async function load(){
+  const [h,r,t] = await Promise.all([pixels(bundle.hand),pixels(bundle.reach),pixels(bundle.stage_table)]);
+  const n = bundle.width*bundle.height;
+  hand=new Uint8Array(n); reach=new Uint16Array(n);
   for(let p=0;p<n;p++){ hand[p]=h.d[p*4]; reach[p]=(r.d[p*4]<<8)|r.d[p*4+1]; }
-  nMult = t.w; lut = new Uint8Array(t.w*t.h);
+  nMult=t.w; lut=new Uint8Array(t.w*t.h);
   for(let p=0;p<t.w*t.h;p++) lut[p]=t.d[p*4];
-
-  $("qwrap").hidden = false; $("stats").hidden = false; $("legend").hidden = false;
-  const warn = (bundle.warnings||[]).join(" · ");
-  $("caveat").hidden = !warn;
-  $("caveat").textContent = warn ? "Note: " + warn : "";
-  paint();
+  $("model").hidden=false;
+  if(bundle.gauge){
+    const g=bundle.gauge;
+    gaugeMarker = L.circleMarker([g.lat,g.lon], {radius:6, color:"#fff", weight:2,
+      fillColor:css("--accent"), fillOpacity:1, pane:"markerPane"})
+      .bindTooltip(`<div class="tt"><b>${g.site}</b><br><code>${g.name}</code><br>` +
+        `peak ${Math.round(g.discharge_cms).toLocaleString()} m³/s · ${g.date} · ${g.n_years} yr record</code></div>`,
+        {direction:"top"}).addTo(map);
+  }
+  repaint();
 }
 
-const RAMP=[[207,230,242],[142,193,224],[61,143,192],[26,96,150],[11,63,115],[6,38,74]];
+const RAMP=[[207,230,242],[127,184,220],[61,143,192],[26,96,152],[11,63,115],[6,34,66]];
 function ramp(t){const x=Math.min(.999,Math.max(0,t))*(RAMP.length-1),i=Math.floor(x),f=x-i,
   a=RAMP[i],b=RAMP[Math.min(i+1,RAMP.length-1)];
   return [a[0]+(b[0]-a[0])*f,a[1]+(b[1]-a[1])*f,a[2]+(b[2]-a[2])*f];}
 
-function paint(){
-  if(!hand) return;
-  const mult = +$("qs").value/100;
-  const M = bundle.multipliers;
-  const span = M[M.length-1]-M[0];
-  const x = Math.min(nMult-1.001, Math.max(0,((mult-M[0])/span)*(nMult-1)));
-  const i0 = Math.floor(x), f = x-i0;
-  const stage = new Float32Array(bundle.n_reaches);
+function stagesNow(){
+  const mult=+$("qs").value/100, M=bundle.multipliers, span=M[M.length-1]-M[0];
+  const x=Math.min(nMult-1.001,Math.max(0,((mult-M[0])/span)*(nMult-1)));
+  const i0=Math.floor(x), f=x-i0, out=new Float32Array(bundle.n_reaches);
   for(let i=0;i<bundle.n_reaches;i++){
     const a=lut[i*nMult+i0], b=lut[i*nMult+Math.min(i0+1,nMult-1)];
-    stage[i]=a+(b-a)*f;
+    out[i]=a+(b-a)*f;
   }
-  const cv = document.createElement("canvas");
-  cv.width = bundle.width; cv.height = bundle.height;
-  const ctx = cv.getContext("2d");
-  const img = ctx.createImageData(bundle.width, bundle.height);
-  const px = img.data;
-  let wet = 0, maxd = 0;
-  for(let p=0;p<hand.length;p++){
-    const hh = hand[p]; if(hh===255) continue;
-    const rr = reach[p]; if(rr===65535||rr>=bundle.n_reaches) continue;
-    const d = stage[rr]-hh; if(d<=0.5) continue;      // 0.05 m in decimetres
-    wet++; if(d>maxd) maxd=d;
-    const c = ramp(d/80), o=p*4;
-    px[o]=c[0];px[o+1]=c[1];px[o+2]=c[2];px[o+3]=200;
-  }
-  ctx.putImageData(img,0,0);
-
-  const [w,s,e,nn] = bundle.bounds;                    // EPSG:3857
-  const sw = L.Projection.SphericalMercator.unproject(L.point(w,s));
-  const ne = L.Projection.SphericalMercator.unproject(L.point(e,nn));
-  const b = L.latLngBounds(sw, ne);
-  if(overlay) map.removeLayer(overlay);
-  overlay = L.imageOverlay(cv.toDataURL(), b, {opacity:0.82}).addTo(map);
-
-  const cellKm2 = Math.pow(bundle.reduction * (bundle.stats.resolution_m||10), 2)/1e6;
-  const q = bundle.base_discharge_cms * mult;
-  $("qval").textContent = Math.round(q).toLocaleString();
-  $("qrel").textContent = (bundle.gauged
-    ? mult.toFixed(2)+"× the observed peak"
-    : mult.toFixed(2)+"× a severe-flood scenario — no gauge here, so this is assumed")
-    + ` · ${(q/(bundle.area_km2||1)).toFixed(1)} m³/s per km²`;
-  $("stats").innerHTML = [
-    ["Extent", (wet*cellKm2).toFixed(1)+" km²"],
-    ["Of watershed", bundle.stats.valid_km2 ? Math.round(wet*cellKm2/bundle.stats.valid_km2*100)+"%" : "—"],
-    ["Max depth", (maxd/10).toFixed(1)+" m"],
-    ["Reaches", bundle.stats.curves+" curves"],
-    ["Grid", (bundle.stats.cells/1e6).toFixed(1)+"M cells"],
-    ["Resolution", (bundle.stats.resolution_m||10)+" m"],
-  ].map(([k,v])=>`<div><dt>${k}</dt><dd>${v}</dd></div>`).join("");
+  return {stage:out, mult};
 }
 
-/* ---------- wiring ---------- */
-map.on("click", (e) => pick(e.latlng.lng, e.latlng.lat, null));
-// Leaflet measures its container when constructed. Inside a grid that has not laid
-// out yet that measurement is wrong, and the tile grid renders at the wrong size.
-new ResizeObserver(() => map.invalidateSize()).observe($("map"));
-requestAnimationFrame(() => map.invalidateSize());
+/* Marks arrive as coordinates; the depth grid is Web Mercator with known bounds, so
+   a mark's pixel is a straight interpolation into that box. */
+function markPixel(m){
+  const p = L.CRS.EPSG3857.project(L.latLng(m.lat, m.lon));
+  const [w,s,e,n] = bundle.bounds;
+  const col = Math.round((p.x-w)/(e-w)*bundle.width);
+  const row = Math.round((n-p.y)/(n-s)*bundle.height);
+  if(col<0||row<0||col>=bundle.width||row>=bundle.height) return -1;
+  return row*bundle.width+col;
+}
+
+function repaint(){
+  if(!bundle||!hand) return;
+  const {stage, mult} = stagesNow();
+  const cv=document.createElement("canvas"); cv.width=bundle.width; cv.height=bundle.height;
+  const ctx=cv.getContext("2d"), img=ctx.createImageData(bundle.width,bundle.height), px=img.data;
+  let wet=0, maxd=0;
+  for(let p=0;p<hand.length;p++){
+    const hh=hand[p]; if(hh===255) continue;
+    const rr=reach[p]; if(rr===65535||rr>=bundle.n_reaches) continue;
+    const d=stage[rr]-hh; if(d<=0.5) continue;
+    wet++; if(d>maxd) maxd=d;
+    const c=ramp(d/80), o=p*4;
+    px[o]=c[0];px[o+1]=c[1];px[o+2]=c[2];px[o+3]=214;
+  }
+  ctx.putImageData(img,0,0);
+  const [w,s,e,n]=bundle.bounds;
+  const b=L.latLngBounds(L.CRS.EPSG3857.unproject(L.point(w,s)), L.CRS.EPSG3857.unproject(L.point(e,n)));
+  if(overlay) map.removeLayer(overlay);
+  overlay=L.imageOverlay(cv.toDataURL(), b, {pane:"flood", opacity:0.88}).addTo(map);
+
+  drawMarks(stage);
+  updatePanel(wet, maxd, mult);
+}
+
+function drawMarks(stage){
+  markers.forEach(m=>map.removeLayer(m)); markers=[];
+  const show = $("c-hwm").classList.contains("on");
+  const marks = bundle.marks||[];
+  $("hwmkey").hidden = !(show && marks.length);
+  if(!show || !marks.length) return;
+  for(const m of marks){
+    const p = markPixel(m);
+    let depth=null;
+    if(p>=0){
+      const hh=hand[p], rr=reach[p];
+      if(hh!==255 && rr!==65535 && rr<bundle.n_reaches){
+        const d=stage[rr]-hh; if(d>0.5) depth=d/10;
+      }
+    }
+    const res = depth===null ? null : (m.ground_m+depth-m.elev_m);
+    const a = res===null?null:Math.abs(res);
+    const colour = res===null ? "transparent" : a<=1?css("--good") : a<=3?css("--warn") : css("--bad");
+    const marker = L.circleMarker([m.lat,m.lon], {
+      radius:4.5, weight:1.5, color: res===null?css("--ink-3"):"#fff",
+      dashArray: res===null?"2 2":null, fillColor:colour, fillOpacity: res===null?0:1,
+      className:"hwm", pane:"markerPane"
+    }).bindTooltip(
+      `<div class="tt"><b>${m.event}</b>${m.event_date?` <code>${m.event_date}</code>`:""}<br>` +
+      `<code>surveyed ${m.elev_m.toFixed(2)} m · ground ${m.ground_m.toFixed(2)} m</code><br>` +
+      (res===null ? `<code>model: dry here</code>`
+                  : `<code>modelled ${(m.ground_m+depth).toFixed(2)} m · ${res>=0?"+":""}${res.toFixed(2)} m</code>`) +
+      `</div>`, {direction:"top"}).addTo(map);
+    markers.push(marker);
+  }
+}
+
+function updatePanel(wet, maxd, mult){
+  const cell = Math.pow(bundle.reduction*(bundle.stats.resolution_m||10),2)/1e6;
+  const q = bundle.base_discharge_cms*mult;
+  $("qval").textContent = Math.round(q).toLocaleString();
+  const g = bundle.gauge;
+  $("qsrc").className = "src " + (bundle.gauged?"obs":"est");
+  $("qsrc").textContent = bundle.gauged ? "observed" : "estimated";
+  if(bundle.gauged && g && g.event_discharge_cms){
+    $("qnote").innerHTML =
+      `${mult.toFixed(2)}× the <b>${g.event_year}</b> peak at <b>${g.site}</b> — `
+      + `${Math.round(g.event_discharge_cms).toLocaleString()} m³/s on ${g.event_date}, `
+      + `matched to the ${g.matched_marks} marks surveyed after that flood. `
+      + `Its peak of record is ${Math.round(g.discharge_cms).toLocaleString()} m³/s (${g.date}).`;
+  } else if(bundle.gauged && g){
+    $("qnote").innerHTML =
+      `${mult.toFixed(2)}× the peak of record at <b>${g.site}</b> — `
+      + `${Math.round(g.discharge_cms).toLocaleString()} m³/s on ${g.date}, from ${g.n_years} years`
+      + (g.n_years < 15 ? ` <span style="color:var(--warn)">· short record</span>` : "");
+  } else {
+    $("qnote").innerHTML =
+      `${mult.toFixed(2)}× a severe-flood scenario of ${(q/(bundle.area_km2||1)).toFixed(1)} m³/s per km² `
+      + `— no gauge in this basin, so this is assumed, not measured`;
+  }
+  // Say plainly when the marks and the discharge come from different floods.
+  const events = [...new Set((bundle.marks||[]).map(m=>m.event))].filter(Boolean);
+  if(events.length && !(g && g.event_discharge_cms)){
+    $("qnote").innerHTML += `<br><span style="color:var(--warn)">Marks here are from `
+      + `${events.slice(0,2).join(", ")}${events.length>2?" and others":""}, `
+      + `which is not the flood driving this model — the residual mixes two events.</span>`;
+  } else if(events.length){
+    $("qnote").innerHTML += `<br>Marks: ${events.slice(0,2).join(", ")}${events.length>2?` and ${events.length-2} more`:""}.`;
+  }
+
+  // Live agreement against whatever surveyed marks exist here.
+  const marks = bundle.marks||[];
+  let rmse=null, hit=0;
+  if(marks.length){
+    const {stage} = stagesNow(); const res=[];
+    for(const m of marks){
+      const p=markPixel(m); let depth=null;
+      if(p>=0){ const hh=hand[p], rr=reach[p];
+        if(hh!==255&&rr!==65535&&rr<bundle.n_reaches){ const d=stage[rr]-hh; if(d>0.5) depth=d/10; } }
+      if(depth===null) res.push(m.ground_m-m.elev_m); else { hit++; res.push(m.ground_m+depth-m.elev_m); }
+    }
+    rmse = Math.sqrt(res.reduce((s,v)=>s+v*v,0)/res.length);
+  }
+  const cls = rmse===null?"na":rmse<=1.5?"good":rmse<=3?"warn":"bad";
+  $("stats").innerHTML = [
+    ["Extent", (wet*cell).toFixed(1)+" km²", ""],
+    ["Of basin", bundle.stats.valid_km2?Math.round(wet*cell/bundle.stats.valid_km2*100)+"%":"—",""],
+    ["Max depth", (maxd/10).toFixed(1)+" m", ""],
+    ["Resolution", (bundle.stats.resolution_m||10)+" m", ""],
+    ["Marks", marks.length?`${hit} / ${marks.length} wet`:"none here", marks.length?"":"na"],
+    ["RMSE", rmse===null?"—":rmse.toFixed(2)+" m", cls],
+  ].map(([k,v,c])=>`<div><dt>${k}</dt><dd class="${c}">${v}</dd></div>`).join("");
+}
+
+/* ---------------- wiring ---------------- */
+map.on("click", e => pick(e.latlng.lng, e.latlng.lat, null));
 $("run").addEventListener("click", run);
-$("bnd").addEventListener("change", (e) => {
-  if(e.target.checked) boundaries.addTo(map); else map.removeLayer(boundaries);
-});
-$("lvl").addEventListener("change", () => {
-  status("Level changed. Click the map to pick a watershed at this level.");
-});
-let raf=0;
-$("qs").addEventListener("input", ()=>{ if(!raf) raf=requestAnimationFrame(()=>{raf=0;paint();}); });
-$("find").addEventListener("submit", async (ev) => {
-  ev.preventDefault();
-  const text = $("q").value.trim();
-  if(!text) return;
-  if(/^\d+$/.test(text) && text.length >= 8 && text.length % 2 === 0){
+$("qs").addEventListener("input", ()=>{ if(!raf) raf=requestAnimationFrame(()=>{raf=0;repaint();}); });
+
+function chip(id, on){
+  const el=$(id), box=el.querySelector("input");
+  el.addEventListener("click", (ev)=>{ ev.preventDefault();
+    box.checked=!box.checked; el.classList.toggle("on",box.checked); on(box.checked); });
+}
+chip("c-bnd", v => v ? boundaries.addTo(map) : map.removeLayer(boundaries));
+chip("c-hwm", () => { if(bundle&&hand) repaint(); });
+chip("c-hi", () => {});
+$("lvl").addEventListener("change", ()=>status("Level changed — click the map to pick at this level."));
+
+async function search(){
+  const text=$("q").value.trim(); if(!text) return;
+  if(/^\d+$/.test(text) && text.length>=8 && text.length%2===0){
     status('<span class="spin"></span>Looking up HUC…');
-    try{ unit = await api(`/api/watershed/${text}`); showUnit("by HUC"); }
-    catch(e){ status("No such HUC: " + e.message, "err"); }
+    try{ unit=await api(`/api/watershed/${text}`); showUnit("by HUC"); }
+    catch(e){ status("No such HUC: "+e.message,"bad"); }
     return;
   }
   status('<span class="spin"></span>Geocoding…');
   try{
-    const g = await api(`/api/geocode?q=${encodeURIComponent(text)}`);
-    map.setView([g.lat, g.lon], 11);
-    await pick(g.lon, g.lat, g.label);
-  }catch(e){ status("Could not find that: " + e.message, "err"); }
-});
+    const g=await api(`/api/geocode?q=${encodeURIComponent(text)}`);
+    map.setView([g.lat,g.lon], 11);
+    await pick(g.lon,g.lat,g.label);
+  }catch(e){ status("Could not find that: "+e.message,"bad"); }
+}
+$("go").addEventListener("click", search);
+$("q").addEventListener("keydown", e => { if(e.key==="Enter"){ e.preventDefault(); search(); } });
+new ResizeObserver(()=>map.invalidateSize()).observe($("map"));
+requestAnimationFrame(()=>map.invalidateSize());
 })();
 </script>
 </body>
