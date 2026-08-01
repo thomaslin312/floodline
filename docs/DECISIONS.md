@@ -923,3 +923,23 @@ under that: 13-29 s cold for a HUC-12, cached afterwards.
   to discharge here, which says the residual is structural - the HAND assumption and
   the 30 m cross-sections - rather than an error in the flow. That is a more useful
   conclusion than a calibrated multiplier would have been.
+
+### a stale tile took down two cities
+
+- **A tile the 3DEP catalogue lists but no longer serves used to fail the whole
+  watershed.** New Orleans (ZIP 70112) and Philadelphia (19104) both returned a bare
+  500 on a 404 from one tile URL. A tile that cannot be opened is now skipped, so one
+  stale entry costs that footprint rather than the request; the service reports a
+  clear 502 only when *no* tile can be read. Regression-tested both ways.
+- **Smoke-tested across the country** after the fix: New Orleans (Bayou Saint John,
+  123 marks from 2005 Katrina), Philadelphia (City of Philadelphia-Schuylkill, gauge
+  01474500, 22 marks from 2021 Ida of which 11 are graded), Cambridge (Outlet Charles
+  River, 15 marks from a 2018 storm), Phoenix and Denver (gauged, no marks), Seattle
+  (Lake Washington-Sammamish). 20-32 s each, cold.
+  **Philadelphia is the second usable validation case** the project has: a gauge and
+  eleven graded marks from a single named flood. Worth running properly.
+- **Open question worth checking**: Lake Washington-Sammamish returned a gauge peak of
+  only 14 m3/s for a 461 km2 watershed, which is implausibly low for an outlet. The
+  gauge-selection rule takes the largest contributing area *among stations inside the
+  unit*, and a lake-dominated basin may have its real outlet gauge outside the HUC
+  boundary. Not chased.

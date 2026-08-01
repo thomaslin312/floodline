@@ -25,6 +25,7 @@ from typing import Any
 import httpx
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse, JSONResponse
+from rasterio.errors import RasterioIOError
 
 from floodline.compute import (
     compute_watershed,
@@ -211,6 +212,12 @@ def create_app(
                 )
         except SourceError as exc:
             raise HTTPException(502, f"upstream data source failed: {exc}") from exc
+        except RasterioIOError as exc:
+            raise HTTPException(
+                502,
+                "the elevation tiles for this watershed could not be read. The USGS "
+                f"catalogue sometimes lists a tile it no longer serves. ({exc})",
+            ) from exc
         except ValueError as exc:
             raise HTTPException(413, str(exc)) from exc
 

@@ -39,6 +39,7 @@ import rasterio
 from pyproj import CRS, Transformer
 from rasterio.crs import CRS as RioCRS
 from rasterio.enums import Resampling
+from rasterio.errors import RasterioIOError
 from rasterio.features import geometry_mask
 from rasterio.transform import from_origin
 from rasterio.vrt import WarpedVRT
@@ -155,10 +156,24 @@ def select_tiles(paths: Sequence[Path | str], *, config: Config | None = None) -
     strategy = resolved.case.dem_vintage
 
     groups: dict[tuple[float, ...], list[Path]] = {}
+    unreadable: list[str] = []
     for source in paths:
-        with rasterio.open(source) as src:
-            key = tuple(round(v, _FOOTPRINT_PRECISION) for v in src.bounds)
+        try:
+            with rasterio.open(source) as src:
+                key = tuple(round(v, _FOOTPRINT_PRECISION) for v in src.bounds)
+        except RasterioIOError as exc:
+            # The 3DEP catalogue occasionally lists a tile that is no longer served.
+            # One stale entry should cost that tile's footprint, not the whole
+            # watershed, so it is skipped and reported.
+            unreadable.append(f"{source} ({exc})")
+            continue
         groups.setdefault(key, []).append(Path(str(source)))
+
+    if not groups:
+        raise CrsError(
+            "none of the elevation tiles could be opened. "
+            + ("; ".join(unreadable[:3]) if unreadable else "no tiles were supplied")
+        )
 
     selected: list[TileGroup] = []
     for footprint, members in sorted(groups.items()):
@@ -206,12 +221,17 @@ def _union_bounds(
     west = south = float("inf")
     east = north = float("-inf")
     for path in paths:
-        with rasterio.open(path) as src:
-            if src.crs is None:
-                raise CrsError(f"{path} has no CRS; floodline will not guess one.")
-            b = transform_bounds(src.crs, dst_crs, *src.bounds, densify_pts=21)
+        try:
+            with rasterio.open(path) as src:
+                if src.crs is None:
+                    raise CrsError(f"{path} has no CRS; floodline will not guess one.")
+                b = transform_bounds(src.crs, dst_crs, *src.bounds, densify_pts=21)
+        except RasterioIOError:
+            continue
         west, south = min(west, b[0]), min(south, b[1])
         east, north = max(east, b[2]), max(north, b[3])
+    if west == float("inf"):
+        raise CrsError("no elevation tile could be opened to establish an extent")
     return west, south, east, north
 
 
@@ -297,8 +317,13 @@ def ingest_dem(
     # minutes over a network. It also means every VRT shares one grid, so combining
     # them is a per-pixel choice with no resampling left to do.
     array = np.full((rows, cols), np.nan, dtype=np.float32)
+    read = 0
     for path in chosen:
-        with rasterio.open(path) as src:
+        try:
+            src = rasterio.open(path)
+        except RasterioIOError:
+            continue
+        with src:
             if src.crs is None:
                 raise CrsError(f"{path} has no CRS; floodline will not guess one.")
             with WarpedVRT(
@@ -313,12 +338,16 @@ def ingest_dem(
                 warp_mem_limit=resolved.raster.warp_memory_limit_mb,
             ) as vrt:
                 block = vrt.read(1).astype(np.float32)
+        read += 1
         block = np.where(block == np.float32(nodata), np.nan, block)
         gaps = np.isnan(array) & ~np.isnan(block)
         if gaps.any():
             array[gaps] = block[gaps]
         if not np.isnan(array).any():
             break
+
+    if read == 0:
+        raise CrsError("no elevation tile could be read for this area")
 
     if watershed is not None:
         # Everything outside the boundary is nodata. Filling and routing then treat
