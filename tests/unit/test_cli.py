@@ -141,13 +141,28 @@ def test_streams_writes_a_geoparquet(tmp_path: Path) -> None:
 
 
 def test_streams_warns_when_water_drains_into_flats(tmp_path: Path) -> None:
-    """An epsilon-free fill strands water in flats; the CLI must say so."""
+    """With both escapes disabled, water strands in flats and the CLI must say so."""
+    raw, filled = tmp_path / "raw.tif", tmp_path / "filled.tif"
+    cfg = tmp_path / "stranded.toml"
+    cfg.write_text("[floodline.terrain]\nfill_epsilon = 0.0\nresolve_flats = false\n")
+
+    runner.invoke(app, ["synth", str(raw), "--rows", "80", "--cols", "60"])
+    runner.invoke(app, ["condition", str(raw), str(filled), "--config", str(cfg)])
+    result = runner.invoke(
+        app, ["streams", str(filled), str(tmp_path / "n.parquet"), "--config", str(cfg)]
+    )
+    assert result.exit_code == 0, result.stdout
+    assert "drain into flats" in result.stderr
+
+
+def test_streams_strands_nothing_by_default(tmp_path: Path) -> None:
+    """The default config resolves flats, so no warning and nothing is stranded."""
     raw, filled = tmp_path / "raw.tif", tmp_path / "filled.tif"
     runner.invoke(app, ["synth", str(raw), "--rows", "80", "--cols", "60"])
     runner.invoke(app, ["condition", str(raw), str(filled)])
     result = runner.invoke(app, ["streams", str(filled), str(tmp_path / "n.parquet")])
     assert result.exit_code == 0, result.stdout
-    assert "drain into flats" in result.stderr
+    assert "drain into flats" not in result.stderr
 
 
 def test_hand_writes_a_raster(tmp_path: Path) -> None:

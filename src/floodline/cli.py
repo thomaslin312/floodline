@@ -143,47 +143,58 @@ def streams(
     """Derive the stream network from a conditioned DEM."""
     from floodline.io.raster import read_raster, write_cog
     from floodline.io.vector import write_vector
-    from floodline.terrain.flowacc import flow_accumulation
-    from floodline.terrain.flowdir import flow_direction
-    from floodline.terrain.streams import prune_stream_mask, stream_mask, stream_network
+    from floodline.terrain.route import route_terrain
+    from floodline.terrain.streams import stream_network
 
     resolved = load_config(config)
     raster = read_raster(dem, config=resolved)
-    fdir = flow_direction(
-        raster.data, config=resolved, nodata=raster.nodata, cellsize=raster.cellsize
+    chain = route_terrain(
+        raster.data,
+        config=resolved,
+        nodata=raster.nodata,
+        cellsize=raster.cellsize,
+        stream_threshold=threshold,
     )
-    accumulated = flow_accumulation(fdir)
-    if accumulated.cells_draining_to_flats:
-        typer.secho(
-            f"warning: {accumulated.cells_draining_to_flats} cells "
-            f"({accumulated.flat_drainage_fraction:.1%}) drain into flats and never "
-            "reach an outlet. Condition with terrain.fill_epsilon > 0.",
-            fg=typer.colors.YELLOW,
-            err=True,
-        )
+    _warn_if_stranded(chain)
 
-    mask = stream_mask(accumulated.accumulation, fdir, config=resolved, threshold=threshold)
-    mask = prune_stream_mask(mask, fdir, config=resolved)
-    network = stream_network(mask, fdir, accumulated.accumulation, raster.transform, raster.crs)
+    network = stream_network(
+        chain.streams,
+        chain.flowdir,
+        chain.accumulation.accumulation,
+        raster.transform,
+        raster.crs,
+    )
     path = write_vector(out, network, config=resolved)
     if raster_out is not None:
         write_cog(
             raster_out,
-            raster.with_data(mask.astype("uint8"), nodata=0),
+            raster.with_data(chain.streams.astype("uint8"), nodata=0),
             config=resolved,
             dtype="uint8",
         )
-    typer.echo(f"wrote {path} ({len(network)} links, {int(mask.sum())} stream cells)")
+    typer.echo(f"wrote {path} ({len(network)} links, {int(chain.streams.sum())} stream cells)")
+
+
+def _warn_if_stranded(chain: object) -> None:
+    """Warn on stderr when any water fails to reach the edge of the data."""
+    from floodline.terrain.route import TerrainChain
+
+    assert isinstance(chain, TerrainChain)
+    if chain.accumulation.cells_draining_to_flats:
+        typer.secho(
+            f"warning: {chain.accumulation.cells_draining_to_flats} cells "
+            f"({chain.accumulation.flat_drainage_fraction:.1%}) drain into flats and "
+            "never reach an outlet. Enable terrain.resolve_flats, or set "
+            "terrain.fill_epsilon > 0.",
+            fg=typer.colors.YELLOW,
+            err=True,
+        )
 
 
 @app.command()
 def hand(
     dem: Annotated[Path, typer.Argument(exists=True, dir_okay=False, help="Conditioned DEM.")],
     out: Annotated[Path, typer.Argument(help="Output HAND raster.")],
-    streams_in: Annotated[
-        Path | None,
-        typer.Option("--streams", help="Stream mask raster. Derived from the DEM if omitted."),
-    ] = None,
     threshold: Annotated[
         int | None, typer.Option(help="Accumulation threshold in cells; overrides config.")
     ] = None,
@@ -191,35 +202,31 @@ def hand(
 ) -> None:
     """Compute height above nearest drainage."""
     from floodline.io.raster import read_raster, write_cog
-    from floodline.terrain.flowacc import flow_accumulation
-    from floodline.terrain.flowdir import flow_direction
-    from floodline.terrain.hand import hand as compute_hand
-    from floodline.terrain.streams import prune_stream_mask, stream_mask
+    from floodline.terrain.route import route_terrain
 
     resolved = load_config(config)
     raster = read_raster(dem, config=resolved)
-    fdir = flow_direction(
-        raster.data, config=resolved, nodata=raster.nodata, cellsize=raster.cellsize
+    chain = route_terrain(
+        raster.data,
+        config=resolved,
+        nodata=raster.nodata,
+        cellsize=raster.cellsize,
+        stream_threshold=threshold,
     )
-
-    if streams_in is not None:
-        channels = read_raster(streams_in, config=resolved, masked=False).data > 0
-    else:
-        accumulated = flow_accumulation(fdir)
-        channels = stream_mask(accumulated.accumulation, fdir, config=resolved, threshold=threshold)
-        channels = prune_stream_mask(channels, fdir, config=resolved)
-
-    result = compute_hand(raster.data, fdir, channels, nodata=raster.nodata)
-    if result.cells_without_drainage:
+    _warn_if_stranded(chain)
+    if chain.hand.cells_without_drainage:
         typer.secho(
-            f"note: {result.cells_without_drainage} cells "
-            f"({result.undrained_fraction:.1%}) never reach a stream and are nodata in "
-            "the HAND raster.",
+            f"note: {chain.hand.cells_without_drainage} cells "
+            f"({chain.hand.undrained_fraction:.1%}) never reach a stream and are nodata "
+            "in the HAND raster.",
             fg=typer.colors.YELLOW,
             err=True,
         )
-    path = write_cog(out, raster.with_data(result.hand), config=resolved, dtype="float32")
-    typer.echo(f"wrote {path} ({int(channels.sum())} stream cells)")
+    path = write_cog(out, raster.with_data(chain.hand.hand), config=resolved, dtype="float32")
+    typer.echo(
+        f"wrote {path} ({int(chain.streams.sum())} stream cells, "
+        f"{chain.flat_cells_before} flats resolved)"
+    )
 
 
 @app.command()

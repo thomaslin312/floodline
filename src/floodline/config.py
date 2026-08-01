@@ -153,6 +153,12 @@ class TerrainConfig(Frozen):
         default=0, ge=0, description="Cells either side of the stream included in the burn."
     )
     flowdir_method: FlowDirMethod = Field(default=FlowDirMethod.D8)
+    resolve_flats: bool = Field(
+        default=True,
+        description="Give filled flats an artificial drainage gradient (Barnes et al. "
+        "2014b) so D8 is defined across them. Without it, and without a non-zero "
+        "fill_epsilon, water routed into a filled depression never reaches an outlet.",
+    )
     stream_threshold_cells: int = Field(
         default=1000,
         gt=0,
