@@ -52,12 +52,11 @@ def test_synth_writes_a_cog(tmp_path: Path) -> None:
         assert src.nodata is not None
 
 
-@pytest.mark.parametrize("stage", ["hand", "inundate", "exposure", "damage"])
+@pytest.mark.parametrize("stage", ["inundate", "exposure", "damage"])
 def test_unimplemented_stages_exit_2(stage: str, tmp_path: Path) -> None:
     dummy = tmp_path / "in.tif"
     dummy.write_bytes(b"")
     args = {
-        "hand": [stage, str(dummy), str(tmp_path / "o.tif")],
         "inundate": [stage, str(dummy), "10.5", str(tmp_path / "o.tif")],
         "exposure": [stage, str(dummy), str(dummy), str(tmp_path / "o.parquet")],
         "damage": [stage, str(dummy), str(tmp_path / "o.parquet")],
@@ -149,3 +148,22 @@ def test_streams_warns_when_water_drains_into_flats(tmp_path: Path) -> None:
     result = runner.invoke(app, ["streams", str(filled), str(tmp_path / "n.parquet")])
     assert result.exit_code == 0, result.stdout
     assert "drain into flats" in result.stderr
+
+
+def test_hand_writes_a_raster(tmp_path: Path) -> None:
+
+    raw, filled, out = tmp_path / "raw.tif", tmp_path / "f.tif", tmp_path / "hand.tif"
+    cfg = tmp_path / "c.toml"
+    cfg.write_text("[floodline.terrain]\nfill_epsilon = 1e-4\nstream_threshold_cells = 200\n")
+
+    runner.invoke(app, ["synth", str(raw), "--rows", "120", "--cols", "90"])
+    runner.invoke(app, ["condition", str(raw), str(filled), "--config", str(cfg)])
+    result = runner.invoke(app, ["hand", str(filled), str(out), "--config", str(cfg)])
+    assert result.exit_code == 0, result.stdout
+    assert "stream cells" in result.stdout
+
+    with rasterio.open(out) as src:
+        assert src.dtypes[0] == "float32"
+        assert src.crs.to_epsg() == 7856
+        values = src.read(1, masked=True)
+    assert values.min() >= 0.0, "HAND must never be negative"

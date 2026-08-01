@@ -125,3 +125,35 @@ existed; they are recorded here so the review has one place to look.
   end to end. It also warns on stderr when accumulation is stranded in flats.
   Alternative: leave it library-only — rejected because an unreachable deliverable
   cannot be checked by anyone but a test.
+
+### hand
+
+- **Cells whose flow path never reaches a stream get NaN, and the count is
+  reported on `HandResult`.** Why: a hillslope draining straight off the tile edge
+  has no nearest drainage, and an inundation depth there would be meaningless.
+  Alternative: fall back to the elevation above the flow path's terminus —
+  rejected because that number looks like a HAND value and is not one.
+- **`hand()` takes the filled DEM as an explicit argument rather than re-filling.**
+  Why: `HAND >= 0` holds only because elevation is non-increasing downstream on the
+  *conditioned* surface; passing the raw DEM would break the invariant silently.
+  The docstring says so at the parameter. Alternative: fill internally — rejected
+  as hiding an expensive step and re-deriving something the caller already has.
+- **The HAND differential test compares cells where both implementations route
+  identically, plus the distribution.** Why: pysheds derives its own flow
+  directions inside `compute_hand`, so the comparison is of the whole chain. On the
+  synthetic catchment 75.6% of cells are comparable and the agreement there is
+  *exact* (max absolute difference 0.0), which the test now asserts rather than
+  merely bounding by a tolerance.
+- **pysheds leaves 39 stream cells NaN; the test asserts every one of them is on
+  the raster border.** Why: it will not route a border cell off-raster, so it
+  cannot find a drainage cell for one. Asserting the *reason* turns a tolerated
+  difference into a check — an interior stream cell coming back NaN would now fail.
+  Alternative: exclude border cells and say nothing — rejected as weaker.
+- **`pysheds` boolean mask rasters need their own `ViewFinder` with
+  `nodata=False`.** Why: pysheds validates that nodata is representable in the
+  array dtype and the DEM's NaN is not a bool. Test-only plumbing, noted because it
+  cost two attempts to find.
+- **`floodline hand` derives the stream network itself unless `--streams` is
+  given.** Why: the command is usable from a conditioned DEM alone, which is what
+  the integration test and the eventual figures need. It reports on stderr how many
+  cells have no drainage.

@@ -180,10 +180,46 @@ def streams(
 def hand(
     dem: Annotated[Path, typer.Argument(exists=True, dir_okay=False, help="Conditioned DEM.")],
     out: Annotated[Path, typer.Argument(help="Output HAND raster.")],
+    streams_in: Annotated[
+        Path | None,
+        typer.Option("--streams", help="Stream mask raster. Derived from the DEM if omitted."),
+    ] = None,
+    threshold: Annotated[
+        int | None, typer.Option(help="Accumulation threshold in cells; overrides config.")
+    ] = None,
     config: ConfigOption = None,
 ) -> None:
     """Compute height above nearest drainage."""
-    _not_implemented("hand", 1)
+    from floodline.io.raster import read_raster, write_cog
+    from floodline.terrain.flowacc import flow_accumulation
+    from floodline.terrain.flowdir import flow_direction
+    from floodline.terrain.hand import hand as compute_hand
+    from floodline.terrain.streams import prune_stream_mask, stream_mask
+
+    resolved = load_config(config)
+    raster = read_raster(dem, config=resolved)
+    fdir = flow_direction(
+        raster.data, config=resolved, nodata=raster.nodata, cellsize=raster.cellsize
+    )
+
+    if streams_in is not None:
+        channels = read_raster(streams_in, config=resolved, masked=False).data > 0
+    else:
+        accumulated = flow_accumulation(fdir)
+        channels = stream_mask(accumulated.accumulation, fdir, config=resolved, threshold=threshold)
+        channels = prune_stream_mask(channels, fdir, config=resolved)
+
+    result = compute_hand(raster.data, fdir, channels, nodata=raster.nodata)
+    if result.cells_without_drainage:
+        typer.secho(
+            f"note: {result.cells_without_drainage} cells "
+            f"({result.undrained_fraction:.1%}) never reach a stream and are nodata in "
+            "the HAND raster.",
+            fg=typer.colors.YELLOW,
+            err=True,
+        )
+    path = write_cog(out, raster.with_data(result.hand), config=resolved, dtype="float32")
+    typer.echo(f"wrote {path} ({int(channels.sum())} stream cells)")
 
 
 @app.command()
