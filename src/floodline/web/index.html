@@ -263,6 +263,10 @@ function clearModel(){
   bundle=null; hand=null;
   $("model").hidden = true; $("hwmkey").hidden = true;
   $("fitnote").hidden = true; $("fit").hidden = true;
+  /* The slider is a multiplier, so it has to go back to 1.00x with the model it
+     described. Carrying a best-fit multiplier from one watershed into the next
+     opens the new one at a discharge that means nothing there. */
+  $("qs").value = 100;
 }
 
 function showUnit(label){

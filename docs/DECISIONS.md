@@ -943,3 +943,16 @@ under that: 13-29 s cold for a HUC-12, cached afterwards.
   gauge-selection rule takes the largest contributing area *among stations inside the
   unit*, and a lake-dominated basin may have its real outlet gauge outside the HUC
   boundary. Not chased.
+
+## 2026-09-05 — the discharge slider resets to 1.00x on every new watershed
+
+The slider is a multiplier on a per-watershed reference discharge, but `clearModel()`
+never reset it. Running the best-fit sweep on Whiteoak Bayou left it at 0.56x, and the
+next watershed searched (City of Philadelphia-Schuylkill River) then opened at 0.56x of
+*its* peak of record — 2,141 m3/s instead of 3,823 — with no indication that the figure
+came from a different basin. Every reported number downstream of it (extent, max depth,
+RMSE) was for a discharge nobody chose. `clearModel()` now sets it back to 100.
+
+Rejected: keeping the multiplier as a deliberate "hold the scenario across basins"
+feature. A multiplier is only meaningful against the reference it was fitted to, so
+carrying it is carrying a number that has lost its meaning.
