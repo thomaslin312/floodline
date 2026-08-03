@@ -100,7 +100,7 @@
   .grid dd.na{color:var(--ink-3)}
   .grid dd.good{color:var(--good)} .grid dd.warn{color:var(--warn)} .grid dd.bad{color:var(--bad)}
 
-  .ramp{height:8px;border-radius:4px;background:linear-gradient(90deg,#cfe6f2,#7fb8dc,#3d8fc0,#1a6098,#0b3f73);margin:5px 0 3px}
+  .ramp{height:8px;border-radius:4px;background:linear-gradient(90deg,#cfe6f2,#7fb8dc,#3d8fc0,#1a6098,#0b3f73,#062242);margin:5px 0 3px}
   .rampax{display:flex;justify-content:space-between;font-family:var(--mono);font-size:9.5px;color:var(--ink-3)}
   .keyrow{display:flex;gap:12px;margin-top:8px;flex-wrap:wrap}
   .keyrow span{display:inline-flex;align-items:center;gap:5px}
@@ -165,7 +165,7 @@
 <section class="panel" id="legend">
   <div class="eyebrow">Modelled depth</div>
   <div class="ramp"></div>
-  <div class="rampax"><span>0</span><span>2</span><span>4</span><span>6</span><span>8 m+</span></div>
+  <div class="rampax"><span>0</span><span>0.5</span><span>2</span><span>4.5</span><span>8 m+</span></div>
   <div class="keyrow" id="hwmkey" hidden>
     <span><i style="background:var(--good)"></i>mark within 1 m</span>
     <span><i style="background:var(--bad)"></i>over 3 m out</span>
@@ -376,7 +376,13 @@ function repaint(){
     const rr=reach[p]; if(rr===65535||rr>=bundle.n_reaches) continue;
     const d=stage[rr]-hh; if(d<=0.5) continue;
     wet++; if(d>maxd) maxd=d;
-    const c=ramp(d/80), o=p*4;
+    /* Square root, not linear. Depth is capped at 8 m for colour, and an urban
+       flood is mostly 0.5-2 m, so a linear ramp spends three quarters of its
+       range on depths that almost never occur and renders the actual flood in
+       the near-white first stop. The scale stays absolute -- the same depth is
+       the same colour in every watershed -- so basins remain comparable; only
+       the spacing changes, and the legend ticks are spaced to match. */
+    const c=ramp(Math.sqrt(d/80)), o=p*4;
     px[o]=c[0];px[o+1]=c[1];px[o+2]=c[2];px[o+3]=214;
   }
   ctx.putImageData(img,0,0);

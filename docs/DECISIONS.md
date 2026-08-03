@@ -956,3 +956,20 @@ RMSE) was for a discharge nobody chose. `clearModel()` now sets it back to 100.
 Rejected: keeping the multiplier as a deliberate "hold the scenario across basins"
 feature. A multiplier is only meaningful against the reference it was fitted to, so
 carrying it is carrying a number that has lost its meaning.
+
+## 2026-09-05 — depth colour is a square-root scale, not linear
+
+The map painted depth as `ramp(d/80)` — linear from 0 to 8 m. Urban flooding is mostly
+0.5-2 m, which is the bottom quarter of that range, so Whiteoak Bayou rendered almost
+entirely in the palest ramp stop (#cfe6f2) and was near-invisible against the grey
+basemap. It looked like nothing had been computed. The City of Philadelphia-Schuylkill
+River unit looked fine only because its confined valley reaches 18.5 m and saturates the
+dark end — the same bug, hidden by a steeper basin.
+
+Now `ramp(sqrt(d/80))`. Legend ticks moved to the matching positions (0 / 0.5 / 2 / 4.5 /
+8 m+) so the uneven spacing shows the scale is non-linear, and the legend gradient gained
+the ramp's sixth stop, which it had been missing.
+
+Rejected: a per-watershed percentile stretch. It would make every basin look equally
+flooded and destroy comparability between them, which is most of the point of a national
+interface. The scale stays absolute — a given depth is the same colour everywhere.
