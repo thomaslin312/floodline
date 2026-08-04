@@ -41,6 +41,13 @@ class FlowDirMethod(StrEnum):
     DINF = "dinf"
 
 
+class StageMethod(StrEnum):
+    """How a single gauge reading becomes a stage for every reach."""
+
+    CONSTANT = "constant"
+    SLOPE = "slope"
+
+
 class BuildingDepthStat(StrEnum):
     """How a per-building depth is reduced from the depth raster under its footprint."""
 
@@ -172,10 +179,21 @@ class TerrainConfig(Frozen):
 class HydraulicsConfig(Frozen):
     """Stage handling and inundation."""
 
-    gauge_datum_offset_m: float = Field(
-        default=0.0,
-        description="Metres added to a gauge stage to convert gauge-zero to AHD. "
-        "This bites everyone; it is never assumed to be zero silently.",
+    gauge_datum_offset_m: float | None = Field(
+        default=None,
+        description="Metres added to a gauge reading to convert gauge zero to AHD. "
+        "There is no default: a gauge reading is relative to that gauge's own zero, "
+        "and assuming zero silently would put the whole flood at the wrong elevation. "
+        "Set it explicitly - 0.0 is a legitimate value, but it has to be chosen.",
+    )
+    stage_method: StageMethod = Field(
+        default=StageMethod.CONSTANT,
+        description="Constant applies the gauge's depth-above-drainage everywhere; "
+        "slope adjusts it by water_surface_slope along the network.",
+    )
+    water_surface_slope: NonNegative = Field(
+        default=0.0005,
+        description="Water-surface gradient (m/m) used by the slope stage method.",
     )
     min_depth_m: Positive = Field(
         default=0.05, description="Cells shallower than this are treated as dry."
@@ -189,6 +207,29 @@ class HydraulicsConfig(Frozen):
         default=True, description="Drop wet regions not connected to a stream cell."
     )
     manning_n: Positive = Field(default=0.035, description="Manning's n for the synthetic rating.")
+
+    def require_gauge_datum(self) -> float:
+        """Return `gauge_datum_offset_m`, refusing to proceed if it was never set.
+
+        Gauge readings are relative to a datum that differs per gauge and is not
+        recoverable from the reading. Defaulting it to zero would silently place
+        the entire modelled flood at the wrong elevation, and every downstream
+        number - extent, depths, buildings, damage - would be confidently wrong.
+
+        Raises
+        ------
+        ValueError
+            If `gauge_datum_offset_m` is None.
+        """
+        if self.gauge_datum_offset_m is None:
+            raise ValueError(
+                "hydraulics.gauge_datum_offset_m is not set. A gauge reading is "
+                "relative to that gauge's zero, so converting it to AHD needs the "
+                "offset for the specific gauge. For Wilsons River at Lismore, take "
+                "it from the BoM/WaterNSW station metadata. Set it to 0.0 only if "
+                "the readings really are already in AHD."
+            )
+        return self.gauge_datum_offset_m
 
 
 class ExposureConfig(Frozen):

@@ -231,13 +231,64 @@ def hand(
 
 @app.command()
 def inundate(
-    hand_raster: Annotated[Path, typer.Argument(exists=True, dir_okay=False, help="HAND raster.")],
-    stage_m: Annotated[float, typer.Argument(help="Gauge stage in metres.")],
+    dem: Annotated[Path, typer.Argument(exists=True, dir_okay=False, help="Conditioned DEM.")],
+    reading: Annotated[float, typer.Argument(help="Gauge reading, relative to gauge zero.")],
     out: Annotated[Path, typer.Argument(help="Output depth raster.")],
+    gauge_row: Annotated[int, typer.Option(help="Row of the gauge's channel cell.")],
+    gauge_col: Annotated[int, typer.Option(help="Column of the gauge's channel cell.")],
+    threshold: Annotated[
+        int | None, typer.Option(help="Accumulation threshold in cells; overrides config.")
+    ] = None,
     config: ConfigOption = None,
 ) -> None:
-    """Turn a stage into an inundation extent and depth raster."""
-    _not_implemented("inundate", 2)
+    """Turn a gauge reading into an inundation extent and depth raster.
+
+    Requires `hydraulics.gauge_datum_offset_m` in the config: a gauge reading is
+    relative to that gauge's own zero, and there is no safe default.
+    """
+    from floodline.hydraulics.inundate import inundate as flood
+    from floodline.hydraulics.stage import resolve_gauge, stage_field
+    from floodline.io.raster import read_raster, write_cog
+    from floodline.terrain.route import route_terrain
+
+    resolved = load_config(config)
+    raster = read_raster(dem, config=resolved)
+    chain = route_terrain(
+        raster.data,
+        config=resolved,
+        nodata=raster.nodata,
+        cellsize=raster.cellsize,
+        stream_threshold=threshold,
+    )
+    _warn_if_stranded(chain)
+
+    gauge = resolve_gauge(reading, chain.filled, (gauge_row, gauge_col), config=resolved)
+    if not chain.streams[gauge_row, gauge_col]:
+        typer.secho(
+            f"warning: gauge cell ({gauge_row}, {gauge_col}) is not a stream cell. "
+            "Its bed elevation is a hillslope, not a channel, so the derived depth "
+            "is meaningless. Snap the gauge to the network first.",
+            fg=typer.colors.YELLOW,
+            err=True,
+        )
+
+    stage = stage_field(
+        chain.filled, chain.flowdir, gauge, config=resolved, cellsize=raster.cellsize
+    )
+    result = flood(
+        chain.hand.hand,
+        stage,
+        streams=chain.streams,
+        config=resolved,
+        cell_area_m2=raster.cell_area_m2,
+    )
+    path = write_cog(out, raster.with_data(result.depth), config=resolved, dtype="float32")
+    typer.echo(
+        f"wrote {path} (stage {gauge.reading_m} m = {gauge.ahd_m:.2f} m AHD = "
+        f"{gauge.depth_m:.2f} m above bed; {result.n_wet} cells wet, "
+        f"{result.area_m2 / 1e6:.3f} km2, max depth {result.max_depth_m:.2f} m; "
+        f"{result.n_removed_by_connectivity} cells dropped as disconnected)"
+    )
 
 
 @app.command()
