@@ -156,7 +156,15 @@ def _downstream_index(
     drow: npt.NDArray[np.int64],
     dcol: npt.NDArray[np.int64],
 ) -> npt.NDArray[np.int64]:
-    """Return the flat index each cell drains into, or -1 where flow terminates."""
+    """Return the flat index each cell drains into, or -1 where flow terminates.
+
+    A direction pointing off the raster yields -1, the same as a terminating cell.
+    `flow_direction` never emits one, but a hand-built or externally supplied
+    direction grid can, and an unchecked index here becomes an out-of-bounds write
+    in every caller. numba does not bounds-check by default, so that would corrupt
+    memory silently under JIT while raising cleanly with NUMBA_DISABLE_JIT=1 --
+    which is how it was found.
+    """
     n_cells = rows * cols
     out = np.full(n_cells, -1, dtype=np.int64)
     for row in range(rows):
@@ -167,7 +175,10 @@ def _downstream_index(
                 continue
             for k in range(codes.shape[0]):
                 if codes[k] == code:
-                    out[cell] = (row + drow[k]) * cols + (col + dcol[k])
+                    n_row = row + drow[k]
+                    n_col = col + dcol[k]
+                    if 0 <= n_row < rows and 0 <= n_col < cols:
+                        out[cell] = n_row * cols + n_col
                     break
     return out
 
