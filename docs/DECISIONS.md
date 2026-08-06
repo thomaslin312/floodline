@@ -3,12 +3,12 @@
 Judgment calls made without asking, one line each: what was decided, why, and what
 the alternative was. Newest last. Dates are the day the decision landed.
 
-Entries marked *(retro)* were made and reported in conversation before this log
-existed; they are recorded here so the review has one place to look.
+Entries marked *(retro)* predate this log; they are recorded here so the review has
+one place to look.
 
 ## 2026-09-03
 
-- *(retro)* **Deleted `floodline_SPEC.md` after splitting it** into `CLAUDE.md` and
+- *(retro)* **Deleted `floodline_SPEC.md` after splitting it** into `CONTRIBUTING.md` and
   `docs/SPEC.md`. Why: the file's own header says it becomes those two once the repo
   exists, and a third copy would drift. Alternative: keep it as an archive — rejected
   because two sources of truth for conventions is exactly what the conventions warn about.
@@ -197,7 +197,7 @@ existed; they are recorded here so the review has one place to look.
 ### hydraulics
 
 - **`gauge_datum_offset_m` has no default and `require_gauge_datum()` raises when
-  it is None.** Why: the user asked for exactly this, and it is right — a gauge
+  it is None.** Why: a gauge
   reading is relative to that gauge's own zero, which is not recoverable from the
   reading. Defaulting to 0.0 would put the whole modelled flood at the wrong
   elevation and every downstream number would be confidently wrong. 0.0 remains a
@@ -250,7 +250,7 @@ existed; they are recorded here so the review has one place to look.
 ## 2026-09-03 (evening) — change of primary validation case
 
 - **The primary validation case moved from Lismore, NSW to Hurricane Harvey /
-  Houston, 2017.** Decided by Thomas after I established what is reachable by API.
+  Houston, 2017.** Decided after establishing what is actually reachable by API.
   Why: every Harvey input is public and keyless, including the 1 m bare-earth lidar
   (USGS 3DEP via the TNM Products API, 53 GeoTIFF tiles over the Houston AOI on
   anonymous S3), whereas the Australian equivalent (ELVIS) delivers an emailed ZIP
@@ -418,8 +418,8 @@ a 5.9 m RMSE.
 
 ## 2026-09-04
 
-- **Sentinel-1 dropped as a validation reference.** Thomas has no Planetary Computer
-  access, and every RTC path needs a credential — MPC declares
+- **Sentinel-1 dropped as a validation reference.** There is no Planetary Computer
+  access here, and every RTC path needs a credential — MPC declares
   `msft:requires_account`, Copernicus Data Space and ASF need their own logins. The
   only keyless option is raw GRD on AWS, which is not terrain-corrected, so using it
   would mean the SNAP-style preprocessing the spec explicitly rules out. This costs
@@ -606,8 +606,9 @@ Decisions inside this:
 
 ### report/bundle.py — multi-watershed interactivity without infrastructure
 
-Thomas asked for a discharge slider and for the ability to look at areas other than
-the one watershed, and offered AWS credits. **The credits are not needed yet**, and
+The goal was a discharge slider and the ability to look at areas other than the one
+watershed, with AWS credits available if they turned out to be needed. **They are not
+needed yet**, and
 the measurement is why.
 
 Inundation is `depth = stage - HAND`, and nothing expensive in that depends on
@@ -681,7 +682,7 @@ points it caught - which is exactly the mistake in the first comparison I report
 
 ### compute.py — live compute for any watershed, and why it needs AWS
 
-Thomas asked to compute live rather than be limited to 20 precomputed watersheds.
+The goal was live compute rather than a fixed set of 20 precomputed watersheds.
 `compute_watershed` is that path: give it a HUC code or a map click and it fetches the
 boundary from WBD, finds the 3DEP tiles that intersect it, reads them over HTTP range
 requests, runs the whole chain, and returns the ~180 kB bundle. No local data, no
@@ -704,8 +705,8 @@ rather than the code.** Measured against `prd-tnm`:
 
 A 133 km2 HUC-12 at 30 m did not finish in ten minutes.
 
-**This measurement is confounded and should not be quoted.** Thomas reported
-immediately afterwards that his internet connection was bad at the time, so the
+**This measurement is confounded and should not be quoted.** The local internet
+connection turned out to be bad at the time, so the
 0.3 MB/s figure describes a degraded local link at least as much as it describes the
 route to S3. It needs re-running on a healthy connection before it means anything.
 What it does establish is the shape of the failure - sustained throughput, not
@@ -797,8 +798,8 @@ The lesson worth keeping: I recommended infrastructure to solve what turned out 
 
 ### service.py — a map interface for any US watershed
 
-Thomas asked for a map where you click a watershed or type a postcode and it computes
-in real time, with a minute of latency being acceptable. Built, and it comes in well
+The goal was a map where clicking a watershed or typing a postcode computes in real
+time, with a minute of latency acceptable. It comes in well
 under that: 13-29 s cold for a HUC-12, cached afterwards.
 
 - **It is served, not published.** An Artifact cannot `fetch` an external host, so an
@@ -830,7 +831,7 @@ under that: 13-29 s cold for a HUC-12, cached afterwards.
   `ResizeObserver` calling `invalidateSize`.
 
 - **The national watershed grid is now visible, not just clickable.** The first version
-  made you click a blind point and told you afterwards what you had hit. The WBD
+  required clicking a blind point and reported afterwards what had been hit. The WBD
   MapServer renders boundary images and swaps HUC level by map scale on its own -
   regions when zoomed out, subwatersheds when zoomed in - so a small `L.TileLayer`
   subclass that builds an `export` URL per tile puts the whole national grid on the map

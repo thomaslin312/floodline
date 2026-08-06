@@ -1,7 +1,7 @@
 # floodline — flood extent, exposure and damage estimation from a DEM and a gauge
 
 
-> Project brief. Conventions and Definition of done live in [CLAUDE.md](../CLAUDE.md).
+> Project brief. Conventions and Definition of done live in [CONTRIBUTING.md](../CONTRIBUTING.md).
 
 ## One-paragraph pitch
 
@@ -195,7 +195,7 @@ retrieval date and hash.
 
 ## Phases
 
-**Phase 0 — scaffold (Claude Code, day 1).** Repo, `uv`, pyproject, ruff/mypy/pre-commit, GitHub Actions running tests on push, `config.py`, `io/raster.py` with CRS refusal, synthetic catchment fixture generator (a tilted plane with a carved valley and a few pits), typer skeleton. Push and confirm CI is green before anything else.
+**Phase 0 — scaffold.** Repo, `uv`, pyproject, ruff/mypy/pre-commit, GitHub Actions running tests on push, `config.py`, `io/raster.py` with CRS refusal, synthetic catchment fixture generator (a tilted plane with a carved valley and a few pits), typer skeleton. Push and confirm CI is green before anything else.
 
 **Phase 1 — terrain core (weeks 1–2).** `fill`, `flowdir`, `flowacc`, `streams`, `hand`, all numba, all property-tested, differential-tested against pysheds on the synthetic fixture and one real ELVIS tile. Benchmark. This is the part that reads as engineering; don't lean on a library for it.
 

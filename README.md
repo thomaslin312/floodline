@@ -14,7 +14,7 @@ can reproduce the extent of a real major flood to within a stated CSI and put th
 observed building count inside its 90% interval.
 
 The full brief is in [docs/SPEC.md](docs/SPEC.md); the working rules are in
-[CLAUDE.md](CLAUDE.md).
+[CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## What this method cannot do
 
