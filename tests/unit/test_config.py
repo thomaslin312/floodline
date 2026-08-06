@@ -15,14 +15,14 @@ from floodline.config import (
 )
 
 
-def test_defaults_are_lismore_mga56() -> None:
+def test_defaults_are_houston_texas_south_central() -> None:
     cfg = Config()
-    assert cfg.crs.analysis.to_epsg() == 7856
+    assert cfg.crs.analysis.to_epsg() == 6587
     assert cfg.crs.analysis.is_projected
     assert not cfg.crs.allow_reprojection
 
 
-@pytest.mark.parametrize("crs", ["EPSG:7856", 7856, 28356, "EPSG:32756", CRS.from_epsg(7856)])
+@pytest.mark.parametrize("crs", ["EPSG:6587", 6587, 26915, "EPSG:32615", 7856, CRS.from_epsg(6587)])
 def test_projected_metre_crs_accepted(crs: object) -> None:
     assert validate_projected_crs(crs).is_projected  # type: ignore[arg-type]
 
@@ -33,8 +33,35 @@ def test_geographic_crs_refused(crs: object) -> None:
         validate_projected_crs(crs)  # type: ignore[arg-type]
 
 
+@pytest.mark.parametrize("crs", [3857, "EPSG:3857", 900913, 3785, 3395])
+def test_whole_world_mercator_refused(crs: object) -> None:
+    """Pseudo-Mercator's axis unit is the metre, but not a ground metre.
+
+    Its scale factor is 1/cos(latitude), so at Houston a "metre" is about 15% too
+    long and areas are out by 30%. Both the USGS 3DEP and NSW elevation image
+    services serve 3857 natively, so this is the CRS a fetched raster is most
+    likely to arrive in - which is why accepting it would be the easiest way to
+    get quietly wrong slopes and areas.
+    """
+    with pytest.raises(ValueError, match="whole-world Mercator"):
+        validate_projected_crs(crs)  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize("crs", [26915, 32615, 7856, 28356])
+def test_transverse_mercator_is_not_caught_by_the_mercator_rule(crs: int) -> None:
+    """UTM and MGA are Transverse Mercator: scale is referenced to a meridian."""
+    assert validate_projected_crs(crs).is_projected
+
+
+def test_lambert_conformal_conic_is_accepted() -> None:
+    assert validate_projected_crs(6587).name.startswith("NAD83(2011) / Texas")
+
+
 def test_non_metre_projected_crs_refused() -> None:
-    # NAD83 / Texas Central (ftUS) — projected, but the axes are survey feet.
+    # NAD83(2011) / Texas South Central (ftUS) — the survey-foot twin of the
+    # analysis CRS, which is exactly the mistake most likely to be made here.
+    with pytest.raises(ValueError, match="metres"):
+        validate_projected_crs("EPSG:6588")
     with pytest.raises(ValueError, match="metres"):
         validate_projected_crs("EPSG:2277")
 

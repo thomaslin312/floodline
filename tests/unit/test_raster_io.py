@@ -44,7 +44,7 @@ def _write_plain_tif(
 
 
 def test_require_projected_crs_accepts_mga56() -> None:
-    assert require_projected_crs(RioCRS.from_epsg(7856)).to_epsg() == 7856
+    assert require_projected_crs(RioCRS.from_epsg(6587)).to_epsg() == 6587
 
 
 def test_require_projected_crs_refuses_none() -> None:
@@ -101,7 +101,7 @@ def test_cog_roundtrip_preserves_values(tmp_path: Path, catchment: SyntheticCatc
     out = write_cog(tmp_path / "dem.tif", catchment.as_raster())
     back = read_raster(out)
     assert back.shape == catchment.shape
-    assert back.crs.to_epsg() == 7856
+    assert back.crs.to_epsg() == 6587
     assert back.nodata == pytest.approx(catchment.nodata)
     assert back.cellsize == pytest.approx((catchment.cellsize, catchment.cellsize))
     np.testing.assert_allclose(back.data, catchment.dem, rtol=0, atol=1e-4)

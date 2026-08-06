@@ -83,7 +83,7 @@ def synth(
 ) -> None:
     """Write a synthetic catchment DEM: tilted plane, carved valley, a few pits."""
     from floodline.io.raster import write_cog
-    from floodline.synthetic import make_synthetic_catchment
+    from floodline.synthetic import DEFAULT_CRS_EPSG, make_synthetic_catchment
 
     resolved = load_config(config)
     catchment = make_synthetic_catchment(
@@ -93,7 +93,7 @@ def synth(
         n_pits=pits,
         seed=seed,
         nodata=resolved.raster.nodata,
-        epsg=resolved.crs.analysis.to_epsg() or 7856,
+        epsg=resolved.crs.analysis.to_epsg() or DEFAULT_CRS_EPSG,
     )
     path = write_cog(out, catchment.as_raster(), config=resolved)
     typer.echo(f"wrote {path} ({rows}x{cols}, {len(catchment.pits)} pits)")

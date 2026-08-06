@@ -89,7 +89,7 @@ def test_channel_mask_widening() -> None:
 
 def test_georeferencing_is_projected_metres() -> None:
     catchment = make_synthetic_catchment(rows=20, cols=20, cellsize=2.5)
-    assert catchment.crs.to_epsg() == 7856
+    assert catchment.crs.to_epsg() == 6587
     assert not catchment.crs.is_geographic
     assert catchment.as_raster().cellsize == pytest.approx((2.5, 2.5))
 

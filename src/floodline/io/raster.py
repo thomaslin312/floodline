@@ -122,7 +122,7 @@ def require_projected_crs(crs: RioCRS | CRS | str | int | None, *, source: str =
     if crs is None:
         raise CrsError(
             f"{source} has no CRS. floodline will not guess one; "
-            "assign a projected CRS in metres (for Lismore: EPSG:7856)."
+            "assign a projected CRS in metres (for Houston: EPSG:6587)."
         )
     try:
         return validate_projected_crs(crs.to_wkt() if isinstance(crs, RioCRS) else crs)

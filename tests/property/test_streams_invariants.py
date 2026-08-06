@@ -22,7 +22,7 @@ from floodline.terrain.flowdir import downstream_index, flow_direction
 from floodline.terrain.streams import prune_stream_mask, stream_mask, stream_network
 
 TRANSFORM = from_origin(500_000.0, 6_800_000.0, 1.0, 1.0)
-ANALYSIS_CRS = CRS.from_epsg(7856)
+ANALYSIS_CRS = CRS.from_epsg(6587)
 
 SETTINGS = settings(
     max_examples=100,

@@ -125,41 +125,73 @@ Damage
 - MC mean converges (seeded) and the interval contains the point estimate.
 
 ### Known failure modes to state in the README (and ideally demonstrate)
-- HAND assumes water surface parallel to the drainage line: misses backwater, levees, culverts, and flow routing across catchment boundaries. Lismore's levee (the CBD levee overtops around 10.6 m) is a good demonstration of when the assumption breaks vs when it doesn't.
+- HAND assumes water surface parallel to the drainage line: misses backwater, levees, culverts, and flow routing across catchment boundaries. The Addicks and Barker reservoir releases during Harvey are a sharp demonstration — water arrived downstream by a controlled release no terrain-following model can infer. (Lismore's CBD levee, which overtops around 10.6 m, is the equivalent demonstration for the secondary case.)
 - One gauge ≠ one stage for the whole reach.
-- SAR misses water under tree canopy and in dense urban areas (double bounce); it's a lower bound on urban extent.
+- SAR misses water under tree canopy and in dense urban areas (double bounce); it's a lower bound on urban extent. This is why the primary reference here is the surveyed high-water marks, with SAR as a secondary check.
 - Population grids disagree with each other by tens of percent in small towns — report all three.
 
 ---
 
-## Validation case: Lismore, NSW, 28 February 2022
+## Validation case: Hurricane Harvey, Houston, Texas, 26 August – 1 September 2017
 
-Why this event: record stage (~14.4 m at the Lismore gauge, ~2 m above the 1974 record), good open lidar, a Sentinel-1 pass near the peak, and published building and loss figures. Secondary case if time: Hurricane Harvey, Houston 2017 (FEMA per-structure damage assessments — best ground truth in the world for this).
+**Changed from Lismore, NSW on 2026-09-03.** The original brief named Lismore as the
+primary case and Harvey as the secondary, on the grounds that Harvey has "FEMA
+per-structure damage assessments — best ground truth in the world for this". That
+judgment held up; what tipped the order was data access. Every Harvey input is
+reachable from a public API with no account, including the 1 m bare-earth lidar,
+whereas the equivalent Australian lidar (ELVIS) is delivered by emailed ZIP with no
+documented REST API. See `docs/DECISIONS.md` for the full reasoning and what was
+given up.
 
-### Data acquisition checklist (Thomas does these — they need accounts/clicks)
+Why this event: record rainfall (over 1500 mm in places), a metropolitan area with
+complete 1 m lidar coverage, 2,298 ground-surveyed high-water marks, per-property
+NFIP insurance claims, dense USGS stream gauging, and Sentinel-1 passes through the
+flood peak. The Addicks and Barker reservoir releases are a sharp demonstration of
+where the HAND assumption breaks: water arrived by a route no terrain-following
+model can infer.
 
-| # | Dataset | Source | Notes |
+Secondary case if time: Lismore, NSW, 28 February 2022 — record stage (~14.4 m,
+about 2 m above the 1974 record), and a small town, which is where population grids
+disagree most. Needs one manual ELVIS request for the 1 m DEM; the NSW 5 m elevation
+service is scriptable in the meantime.
+
+### Data acquisition (all automatable unless marked)
+
+`io/sources.py` fetches these with checksums; `data/MANIFEST.md` records every URL,
+retrieval date and hash.
+
+| # | Dataset | Source | Access |
 |---|---|---|---|
-| 1 | 1 m lidar DEM, Lismore / Wilsons River | ELVIS (elevation.fsdf.org.au) | Free, needs email. Get DEM (bare earth), not DSM. Download tiles covering Lismore + ~10 km upstream. Also grab the 5 m and note SRTM 30 m for the resolution-sensitivity experiment |
-| 2 | Gauge record, Wilsons River at Lismore | BoM Water Data Online / WaterNSW | Hourly stage Feb 22 – Mar 5 2022. Record the gauge datum (stage is relative to gauge zero — you need the AHD conversion, this bites everyone) |
-| 3 | Stream network | GA Geofabric, or derive from DEM | Use Geofabric to burn; derive from DEM as a check |
-| 4 | Building footprints | Overture Maps (buildings theme) via DuckDB/S3, or Microsoft Global Footprints | Overture preferred (consistent with GeoDiff). Clip to AOI |
-| 5 | Population | ABS 2021 Census mesh blocks (counts + boundaries), WorldPop 100 m AU, Meta HRSL | Mesh blocks are the best available and are ground-truth-adjacent; use the gridded ones for the disagreement analysis |
-| 6 | Depth–damage curves | JRC Global flood depth-damage functions (Huizinga et al. 2017) — the Excel supplement | Free. Take Oceania curves + max damage values. Optional: FEMA HAZUS curves for the Houston case |
-| 7 | Sentinel-1 RTC | Microsoft Planetary Computer `sentinel-1-rtc` collection (STAC) | Analysis-ready, terrain-corrected, no SNAP. Find the scene closest to 28 Feb–1 Mar 2022 over Lismore. Also check Copernicus Global Flood Monitoring (GFM) for a ready-made flood mask as a second reference — verify coverage |
-| 8 | Reference figures | Lismore City Council flood reports, NSW Flood Inquiry 2022, Insurance Council of Australia loss estimates | Note scope carefully: ICA figures are for the whole Northern Rivers / east coast event, not Lismore alone; council building counts are the cleaner comparison |
-
-Put raw downloads in `data/raw/` (git-ignored), record every URL, date and checksum in `data/MANIFEST.md`. `sources.py` should be able to reproduce every download that doesn't need a login.
+| 1 | 1 m bare-earth lidar DEM | USGS 3DEP via TNM Products API → `prd-tnm` S3 | Public, no key. 53 GeoTIFF tiles over the Houston AOI |
+| 1b | 3 m / 10 m / 30 m DEM | Same 3DEP service, resolution as a parameter | Public. This is the resolution experiment in one API |
+| 2 | Gauge stage + **datum** | USGS NWIS `iv` (param 00065) and site metadata | Public, no key. Site metadata states `alt_datum_cd` (NAVD88) explicitly — the datum problem the original brief flagged is an API field here |
+| 3 | Stream network | USGS NHDPlus HR, or derive from the DEM | Public. Derive from DEM as the cross-check |
+| 4 | Building footprints | Overture Maps buildings via DuckDB/S3 | Public anonymous S3 |
+| 5 | Population | US Census ACS block groups (TIGERweb), WorldPop 100 m, Meta HRSL | All public. See the caveat under experiment 4 |
+| 6 | Depth–damage curves | FEMA HAZUS curves (US); JRC Huizinga et al. 2017 for the cross-family comparison | Public downloads |
+| 7 | High-water marks | USGS STN Flood Event Viewer, event 180 | Public, no key. 2,298 surveyed marks with elevation, datum and a quality flag |
+| 8 | Per-property damage | OpenFEMA `NfipClaims` v3, `HousingAssistanceOwners` v2 | Public, no key |
+| 9 | Sentinel-1 RTC | Planetary Computer STAC (`sentinel-1-rtc`) | **Search is public; download needs a key.** The collection declares `msft:requires_account: true`. Supply it through an environment variable; it never enters the repo. Copernicus Data Space and ASF are alternatives with the same constraint |
+| 10 | Reference figures | Harris County Flood Control District reports, NOAA/NWS post-event summaries | **Manual.** These are documents whose *scope* matters, not datasets |
 
 ### Experiments to report
-1. Extent vs SAR at peak stage: hit rate, FAR, CSI, bias. Map of agreement / miss / false alarm.
-2. Same, across DEM resolution: 1 m, 5 m, 30 m SRTM. (Expected result: SRTM is much worse — which is what most global flood products use.)
-3. Inundated building count vs council figures, with the MC interval.
-4. People affected: mesh block vs WorldPop vs HRSL.
-5. Damage: point estimate and 5–95% band, broken down by building class, with the curve-family sensitivity shown separately.
-6. Runtime and memory for the terrain pipeline on the full 1 m tile set.
 
----
+1. Extent vs USGS high-water marks at peak stage: elevation residuals at 2,298
+   surveyed points, plus hit rate, false alarm ratio, CSI and bias against the
+   Sentinel-1 mask where a key is available. Map of agreement / miss / false alarm.
+2. Same, across DEM resolution: 1 m, 3 m, 10 m, 30 m. (Expected result: 30 m is much
+   worse — which is what most global flood products use.)
+3. Inundated building count vs OpenFEMA NFIP claim locations, with the MC interval.
+4. People affected: Census block groups vs WorldPop vs HRSL. **Caveat, and it has to
+   be stated in the write-up:** these grids diverge most in small towns and agree
+   fairly well across a metro the size of Houston, so this experiment is weaker here
+   than it would have been at Lismore. It is the main thing lost by the change of
+   case. Run it on the Lismore AOI too if the secondary case happens.
+5. Damage: point estimate and 5–95% band, broken down by building class, with the
+   curve-family sensitivity (HAZUS vs JRC) shown separately.
+6. Runtime and memory for the terrain pipeline on the full 1 m tile set.
+7. Where HAND breaks: the Addicks and Barker reservoir releases, as a worked example
+   of water arriving by a route the model cannot infer from terrain.
 
 ## Phases
 

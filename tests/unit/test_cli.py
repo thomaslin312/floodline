@@ -48,7 +48,7 @@ def test_synth_writes_a_cog(tmp_path: Path) -> None:
     assert out.exists()
     with rasterio.open(out) as src:
         assert src.shape == (60, 50)
-        assert src.crs.to_epsg() == 7856
+        assert src.crs.to_epsg() == 6587
         assert src.nodata is not None
 
 
@@ -132,7 +132,7 @@ def test_streams_writes_a_geoparquet(tmp_path: Path) -> None:
     assert "links" in result.stdout
 
     frame = gpd.read_parquet(net)
-    assert frame.crs.to_epsg() == 7856
+    assert frame.crs.to_epsg() == 6587
     assert len(frame) > 0
     assert {"link_id", "strahler", "acc_outflow", "length_m"} <= set(frame.columns)
     with rasterio.open(mask) as src:
@@ -178,7 +178,7 @@ def test_hand_writes_a_raster(tmp_path: Path) -> None:
 
     with rasterio.open(out) as src:
         assert src.dtypes[0] == "float32"
-        assert src.crs.to_epsg() == 7856
+        assert src.crs.to_epsg() == 6587
         values = src.read(1, masked=True)
     assert values.min() >= 0.0, "HAND must never be negative"
 

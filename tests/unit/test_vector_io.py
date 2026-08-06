@@ -12,7 +12,7 @@ from floodline.io.raster import CrsError
 from floodline.io.vector import read_vector, write_vector
 
 
-def _frame(epsg: int | None = 7856) -> gpd.GeoDataFrame:
+def _frame(epsg: int | None = 6587) -> gpd.GeoDataFrame:
     return gpd.GeoDataFrame(
         {"link_id": [0, 1], "strahler": [1, 2]},
         geometry=[LineString([(0, 0), (10, 10)]), LineString([(10, 10), (20, 5)])],
@@ -24,7 +24,7 @@ def test_geoparquet_roundtrip(tmp_path: Path) -> None:
     path = write_vector(tmp_path / "net.parquet", _frame())
     back = read_vector(path)
     assert list(back.columns) == list(_frame().columns)
-    assert back.crs.to_epsg() == 7856
+    assert back.crs.to_epsg() == 6587
     assert len(back) == 2
     assert back.geometry.iloc[0].length == pytest.approx(LineString([(0, 0), (10, 10)]).length)
 

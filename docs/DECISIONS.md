@@ -246,3 +246,46 @@ existed; they are recorded here so the review has one place to look.
   was a silent out-of-bounds write; it only raised with `NUMBA_DISABLE_JIT=1`,
   which is exactly why the spec insists that path keeps working. Found by running
   the suite both ways after step 7. Two regression tests pin it.
+
+## 2026-09-03 (evening) — change of primary validation case
+
+- **The primary validation case moved from Lismore, NSW to Hurricane Harvey /
+  Houston, 2017.** Decided by Thomas after I established what is reachable by API.
+  Why: every Harvey input is public and keyless, including the 1 m bare-earth lidar
+  (USGS 3DEP via the TNM Products API, 53 GeoTIFF tiles over the Houston AOI on
+  anonymous S3), whereas the Australian equivalent (ELVIS) delivers an emailed ZIP
+  from an Angular SPA with no documented REST API. Two consequences beyond
+  convenience: the gauge datum, which the original brief called the thing that
+  "bites everyone", is an explicit API field (`alt_datum_cd = NAVD88`); and
+  validation improves from an Otsu threshold on SAR backscatter to 2,298
+  ground-surveyed high-water marks. The original brief already named Harvey as the
+  secondary case for exactly the ground-truth reason, so this reorders rather than
+  contradicts it.
+  **What was given up, and it is real:** experiment 4, the population-grid
+  disagreement, wanted a small town, because that is where mesh blocks, WorldPop and
+  HRSL diverge by tens of percent. Across a metro the size of Houston they agree
+  fairly well, so that experiment is weaker. This is stated in `docs/SPEC.md`, in the
+  README's limits section, and will be stated in the write-up. Lismore is retained as
+  the secondary case and the experiment should be re-run there if it happens.
+  Also given up: the Australian framing, and the Lismore levee as the HAND-breaks
+  demonstration — replaced by the Addicks and Barker reservoir releases, which are
+  arguably a sharper example, since a controlled release is water arriving by a route
+  no terrain-following model can infer at all.
+- **Default analysis CRS changed from EPSG:7856 (GDA2020 / MGA zone 56) to EPSG:6587
+  (NAD83(2011) / Texas South Central).** Both are projected in true metres. The
+  synthetic fixture's default CRS and origin moved with it so the fixtures stay
+  consistent with the analysis CRS and `read_raster` does not reject them. EPSG:7856
+  remains an accepted value, so the Lismore case needs only a config change.
+- **Whole-world Mercator is now refused as an analysis CRS.** Why: EPSG:3857 passed
+  the old check — it is projected and its axis unit is nominally the metre — but the
+  scale factor is 1/cos(latitude), so at Houston a "metre" is about 15% too long and
+  areas are out by 30%. This is not hypothetical: both the USGS 3DEP and the NSW
+  elevation image services serve 3857 natively, so it is the CRS a fetched raster is
+  most likely to arrive in. Detection is by projection method name — refuse when it
+  contains "Mercator" but not "Transverse" — which catches 3857, 900913, 3785 and
+  World Mercator (3395) while leaving UTM, MGA and Lambert Conformal Conic alone.
+  Alternative: blocklist EPSG:3857 by code — rejected because 900913 and 3785 are the
+  same projection under different codes.
+- **The survey-foot counter-example in the CRS tests changed from EPSG:2277 to
+  EPSG:6588.** Why: 6588 is the US-survey-foot twin of the new analysis CRS, so it is
+  the specific mistake most likely to be made on this project. 2277 is kept too.

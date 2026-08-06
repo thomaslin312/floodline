@@ -50,7 +50,7 @@ def pysheds_fill_depressions() -> Callable[[np.ndarray], np.ndarray]:
             affine=Affine(1.0, 0.0, 0.0, 0.0, -1.0, 0.0),
             shape=data.shape,
             nodata=np.float64(np.nan),
-            crs=pyproj.Proj("EPSG:7856"),
+            crs=pyproj.Proj("EPSG:6587"),
         )
         raster = PyshedsRaster(data, viewfinder=finder)
         return np.asarray(Grid(viewfinder=finder).fill_depressions(raster), dtype=np.float64)
@@ -80,7 +80,7 @@ def pysheds_flow_direction() -> Callable[..., np.ndarray]:
             affine=Affine(cellsize, 0.0, 0.0, 0.0, -cellsize, 0.0),
             shape=data.shape,
             nodata=np.float64(np.nan),
-            crs=pyproj.Proj("EPSG:7856"),
+            crs=pyproj.Proj("EPSG:6587"),
         )
         raster = PyshedsRaster(data, viewfinder=finder)
         grid = Grid(viewfinder=finder)
@@ -106,7 +106,7 @@ def pysheds_accumulation() -> Callable[..., np.ndarray]:
             affine=Affine(cellsize, 0.0, 0.0, 0.0, -cellsize, 0.0),
             shape=data.shape,
             nodata=np.float64(np.nan),
-            crs=pyproj.Proj("EPSG:7856"),
+            crs=pyproj.Proj("EPSG:6587"),
         )
         raster = PyshedsRaster(data, viewfinder=finder)
         grid = Grid(viewfinder=finder)
@@ -138,7 +138,7 @@ def pysheds_hand() -> Callable[..., np.ndarray]:
             affine=Affine(cellsize, 0.0, 0.0, 0.0, -cellsize, 0.0),
             shape=data.shape,
             nodata=np.float64(np.nan),
-            crs=pyproj.Proj("EPSG:7856"),
+            crs=pyproj.Proj("EPSG:6587"),
         )
         raster = PyshedsRaster(data, viewfinder=finder)
         grid = Grid(viewfinder=finder)
