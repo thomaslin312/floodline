@@ -2,11 +2,14 @@
 
 Three conversions, in order, each of which has bitten someone:
 
-1. **Gauge zero to AHD.** A gauge reading is relative to that gauge's own datum,
-   which is not recoverable from the reading. `HydraulicsConfig.require_gauge_datum`
-   refuses to guess: there is no default offset, and a run without one stops rather
-   than placing the whole flood at the wrong elevation.
-2. **AHD to depth above the channel bed.** The HAND model floods a cell when its
+1. **Raw reading to metres on the vertical datum.** Two things the reading cannot
+   tell you: its unit and its datum. USGS NWIS reports gauge height in *feet* -- a
+   41.9 ft Harvey peak is 12.8 m, and treating it as metres would put three times
+   the water over Houston. And the reading is relative to that gauge's own zero,
+   which is not recoverable from the reading either. Both
+   `require_gauge_reading_unit` and `require_gauge_datum` refuse to guess: a run
+   without them stops, rather than placing the whole flood at the wrong elevation.
+2. **Datum elevation to depth above the channel bed.** The HAND model floods a cell when its
    height above the nearest drainage is below the water depth *in the channel*, not
    below an absolute elevation. So the gauge's AHD stage is turned into a depth by
    subtracting the conditioned elevation of the channel cell the gauge sits on.
@@ -35,7 +38,7 @@ from floodline.terrain.flowdir import D8_CODES, downstream_index
 __all__ = [
     "GaugeStage",
     "constant_stage",
-    "gauge_reading_to_ahd",
+    "gauge_reading_to_datum",
     "resolve_gauge",
     "slope_stage",
     "stage_field",
@@ -49,28 +52,34 @@ def _resolve(config: Config | HydraulicsConfig | None) -> HydraulicsConfig:
     return config if config is not None else HydraulicsConfig()
 
 
-def gauge_reading_to_ahd(
-    reading_m: float, *, config: Config | HydraulicsConfig | None = None
+def gauge_reading_to_datum(
+    reading: float, *, config: Config | HydraulicsConfig | None = None
 ) -> float:
-    """Convert a gauge reading to an AHD elevation.
+    """Convert a raw gauge reading to an elevation in metres on the vertical datum.
+
+    Two conversions, both of which need a value the reading itself cannot supply:
+    the unit (NWIS reports feet) and the datum offset (gauge zero to NAVD88 or AHD).
+    Both refuse to guess.
 
     Raises
     ------
     ValueError
-        If `hydraulics.gauge_datum_offset_m` has not been set.
+        If `gauge_reading_unit` or `gauge_datum_offset_m` has not been set.
     """
-    return reading_m + _resolve(config).require_gauge_datum()
+    hydraulics = _resolve(config)
+    unit = hydraulics.require_gauge_reading_unit()
+    return reading * unit.metres + hydraulics.require_gauge_datum()
 
 
 @dataclass(frozen=True, slots=True)
 class GaugeStage:
     """A gauge reading resolved against a specific channel cell."""
 
-    reading_m: float
-    """The raw gauge reading, relative to gauge zero."""
+    reading: float
+    """The raw gauge reading, relative to gauge zero, in its own unit."""
 
-    ahd_m: float
-    """The same reading as an AHD elevation."""
+    datum_elevation_m: float
+    """The same reading in metres on the vertical datum (NAVD88 here, AHD in AU)."""
 
     bed_elevation_m: float
     """Conditioned elevation of the channel cell the gauge sits on."""
@@ -83,7 +92,7 @@ class GaugeStage:
 
 
 def resolve_gauge(
-    reading_m: float,
+    reading: float,
     filled_dem: npt.NDArray[np.floating],
     gauge_cell: tuple[int, int],
     *,
@@ -93,8 +102,8 @@ def resolve_gauge(
 
     Parameters
     ----------
-    reading_m
-        Gauge reading, relative to gauge zero.
+    reading
+        Gauge reading, relative to gauge zero, in `hydraulics.gauge_reading_unit`.
     filled_dem
         The conditioned DEM. Using anything else here mixes datums.
     gauge_cell
@@ -112,7 +121,7 @@ def resolve_gauge(
         reading is below the channel bed.
     """
     hydraulics = _resolve(config)
-    ahd = reading_m + hydraulics.require_gauge_datum()
+    elevation = gauge_reading_to_datum(reading, config=hydraulics)
 
     row, col = gauge_cell
     rows, cols = filled_dem.shape
@@ -123,15 +132,21 @@ def resolve_gauge(
     if not np.isfinite(bed):
         raise ValueError(f"gauge cell {gauge_cell} is nodata in the DEM")
 
-    depth = ahd - bed
+    depth = elevation - bed
     if depth < 0:
+        unit = hydraulics.require_gauge_reading_unit().value
         raise ValueError(
-            f"gauge reading {reading_m} m converts to {ahd:.3f} m AHD, which is below "
-            f"the channel bed at {gauge_cell} ({bed:.3f} m AHD). Check the datum "
-            "offset and that the gauge is snapped to the right cell."
+            f"gauge reading {reading} {unit} converts to {elevation:.3f} m on the "
+            f"vertical datum, which is below the channel bed at {gauge_cell} "
+            f"({bed:.3f} m). Check the reading unit, the datum offset, and that the "
+            "gauge is snapped to the right cell."
         )
     return GaugeStage(
-        reading_m=reading_m, ahd_m=ahd, bed_elevation_m=bed, depth_m=depth, cell=(row, col)
+        reading=reading,
+        datum_elevation_m=elevation,
+        bed_elevation_m=bed,
+        depth_m=depth,
+        cell=(row, col),
     )
 
 

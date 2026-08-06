@@ -18,7 +18,7 @@ from hypothesis.extra import numpy as hnp
 
 from floodline.config import Config, Connectivity
 from floodline.hydraulics.inundate import inundate
-from floodline.hydraulics.stage import gauge_reading_to_ahd, resolve_gauge
+from floodline.hydraulics.stage import gauge_reading_to_datum, resolve_gauge
 from floodline.terrain._neighbours import neighbour_offsets
 
 SETTINGS = settings(
@@ -212,8 +212,10 @@ def test_d4_filtering_is_stricter_than_d8(
 @SETTINGS
 @given(reading=st.floats(-5.0, 30.0), offset=st.floats(-50.0, 50.0))
 def test_datum_conversion_is_an_exact_shift(reading: float, offset: float) -> None:
-    cfg = Config.model_validate({"hydraulics": {"gauge_datum_offset_m": offset}})
-    assert gauge_reading_to_ahd(reading, config=cfg) == reading + offset
+    cfg = Config.model_validate(
+        {"hydraulics": {"gauge_datum_offset_m": offset, "gauge_reading_unit": "m"}}
+    )
+    assert gauge_reading_to_datum(reading, config=cfg) == reading + offset
 
 
 @SETTINGS
@@ -221,7 +223,9 @@ def test_datum_conversion_is_an_exact_shift(reading: float, offset: float) -> No
 def test_resolved_depth_is_reading_plus_offset_minus_bed(
     reading: float, bed: float, offset: float
 ) -> None:
-    cfg = Config.model_validate({"hydraulics": {"gauge_datum_offset_m": offset}})
+    cfg = Config.model_validate(
+        {"hydraulics": {"gauge_datum_offset_m": offset, "gauge_reading_unit": "m"}}
+    )
     dem = np.full((3, 3), bed)
     if reading + offset - bed < 0:
         return  # refused, covered by a unit test

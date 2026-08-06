@@ -195,8 +195,8 @@ def _prepare_conditioned(tmp_path: Path, cfg_text: str) -> tuple[Path, Path]:
     return filled, cfg
 
 
-def test_inundate_refuses_without_a_gauge_datum(tmp_path: Path) -> None:
-    """The headline safeguard: no datum, no run."""
+def test_inundate_refuses_without_the_gauge_conversions(tmp_path: Path) -> None:
+    """The headline safeguard: no reading unit and no datum, no run."""
     filled, cfg = _prepare_conditioned(
         tmp_path, "[floodline.terrain]\nstream_threshold_cells = 200\n"
     )
@@ -217,7 +217,7 @@ def test_inundate_refuses_without_a_gauge_datum(tmp_path: Path) -> None:
     )
     assert result.exit_code != 0
     assert isinstance(result.exception, ValueError)
-    assert "gauge_datum_offset_m is not set" in str(result.exception)
+    assert "is not set" in str(result.exception)
 
 
 def test_inundate_writes_a_depth_raster(tmp_path: Path) -> None:
@@ -226,7 +226,7 @@ def test_inundate_writes_a_depth_raster(tmp_path: Path) -> None:
     filled, cfg = _prepare_conditioned(
         tmp_path,
         "[floodline.terrain]\nstream_threshold_cells = 200\n"
-        "[floodline.hydraulics]\ngauge_datum_offset_m = 0.0\n",
+        "[floodline.hydraulics]\ngauge_datum_offset_m = 0.0\ngauge_reading_unit = 'm'\n",
     )
     # find a stream cell to put the gauge on
     from floodline.io.raster import read_raster
@@ -255,7 +255,7 @@ def test_inundate_writes_a_depth_raster(tmp_path: Path) -> None:
     )
     assert result.exit_code == 0, result.stdout
     assert "cells wet" in result.stdout
-    assert "m AHD" in result.stdout
+    assert "m on datum" in result.stdout
 
     with rasterio.open(out) as src:
         depth = src.read(1, masked=True)
@@ -270,7 +270,7 @@ def test_inundate_warns_when_the_gauge_is_off_the_network(tmp_path: Path) -> Non
     filled, cfg = _prepare_conditioned(
         tmp_path,
         "[floodline.terrain]\nstream_threshold_cells = 200\n"
-        "[floodline.hydraulics]\ngauge_datum_offset_m = 0.0\n",
+        "[floodline.hydraulics]\ngauge_datum_offset_m = 0.0\ngauge_reading_unit = 'm'\n",
     )
     from floodline.io.raster import read_raster
     from floodline.terrain.route import route_terrain
@@ -297,3 +297,52 @@ def test_inundate_warns_when_the_gauge_is_off_the_network(tmp_path: Path) -> Non
     )
     assert result.exit_code == 0, result.stdout
     assert "not a stream cell" in result.stderr
+
+
+def test_fetch_list_shows_every_source() -> None:
+    result = runner.invoke(app, ["fetch", "--list"])
+    assert result.exit_code == 0
+    for name in ("usgs-dem", "usgs-gauge", "usgs-hwm", "fema-nfip-claims", "sentinel1-search"):
+        assert name in result.stdout
+
+
+def test_fetch_rejects_an_unknown_source(tmp_path: Path) -> None:
+    result = runner.invoke(app, ["fetch", "nope", "--dest", str(tmp_path)])
+    assert result.exit_code != 0
+
+
+def test_fetch_writes_a_manifest_and_reports_failures(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The CLI must exit non-zero when a source fails, and still write the manifest."""
+    import httpx
+
+    from floodline.io import sources as src
+
+    def fake_client(settings: object | None = None) -> httpx.Client:
+        return httpx.Client(
+            transport=httpx.MockTransport(lambda request: httpx.Response(503)),
+            base_url="https://example.test",
+        )
+
+    monkeypatch.setattr(src, "make_client", fake_client)
+    cfg = tmp_path / "fast.toml"
+    cfg.write_text("[floodline.sources]\nmax_attempts = 1\nbackoff_seconds = 0.0\n")
+    manifest = tmp_path / "MANIFEST.md"
+    result = runner.invoke(
+        app,
+        [
+            "fetch",
+            "usgs-hwm",
+            "--dest",
+            str(tmp_path),
+            "--manifest",
+            str(manifest),
+            "--config",
+            str(cfg),
+        ],
+    )
+    assert result.exit_code == 1
+    assert "FAILED" in result.stderr
+    assert manifest.exists()
+    assert "Sources that did not fetch" in manifest.read_text()

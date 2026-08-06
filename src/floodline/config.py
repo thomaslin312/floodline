@@ -8,6 +8,7 @@ literal that a user might reasonably want to change.
 from __future__ import annotations
 
 import tomllib
+from datetime import date
 from enum import StrEnum
 from pathlib import Path
 from typing import Annotated, Any, Self
@@ -39,6 +40,23 @@ class FlowDirMethod(StrEnum):
 
     D8 = "d8"
     DINF = "dinf"
+
+
+class LengthUnit(StrEnum):
+    """Units a gauge reading can arrive in."""
+
+    METRE = "m"
+    FOOT = "ft"
+    US_SURVEY_FOOT = "usft"
+
+    @property
+    def metres(self) -> float:
+        """Metres per unit."""
+        return {
+            LengthUnit.METRE: 1.0,
+            LengthUnit.FOOT: 0.3048,
+            LengthUnit.US_SURVEY_FOOT: 1200.0 / 3937.0,
+        }[self]
 
 
 class StageMethod(StrEnum):
@@ -213,6 +231,14 @@ class HydraulicsConfig(Frozen):
         "and assuming zero silently would put the whole flood at the wrong elevation. "
         "Set it explicitly - 0.0 is a legitimate value, but it has to be chosen.",
     )
+    gauge_reading_unit: LengthUnit | None = Field(
+        default=None,
+        description="Unit the raw gauge readings are in. No default, for the same "
+        "reason the datum has none: USGS NWIS reports gauge height in FEET, and "
+        "feeding 41.9 ft to a model that assumes metres puts 41.9 m of water over "
+        "Houston. The unit is stated in the NWIS response; it has to be carried "
+        "across deliberately.",
+    )
     stage_method: StageMethod = Field(
         default=StageMethod.CONSTANT,
         description="Constant applies the gauge's depth-above-drainage everywhere; "
@@ -234,6 +260,23 @@ class HydraulicsConfig(Frozen):
         default=True, description="Drop wet regions not connected to a stream cell."
     )
     manning_n: Positive = Field(default=0.035, description="Manning's n for the synthetic rating.")
+
+    def require_gauge_reading_unit(self) -> LengthUnit:
+        """Return `gauge_reading_unit`, refusing to proceed if it was never set.
+
+        Raises
+        ------
+        ValueError
+            If `gauge_reading_unit` is None.
+        """
+        if self.gauge_reading_unit is None:
+            raise ValueError(
+                "hydraulics.gauge_reading_unit is not set. USGS NWIS reports gauge "
+                "height (parameter 00065) in feet; a reading of 41.9 ft is 12.8 m, "
+                "and treating it as metres would put three times the water over the "
+                "city. Set it to 'ft' for NWIS, or 'm' if your readings are metric."
+            )
+        return self.gauge_reading_unit
 
     def require_gauge_datum(self) -> float:
         """Return `gauge_datum_offset_m`, refusing to proceed if it was never set.
@@ -349,6 +392,98 @@ class ValidationConfig(Frozen):
     )
 
 
+class SourcesConfig(Frozen):
+    """How `io.sources` talks to the outside world."""
+
+    max_attempts: int = Field(
+        default=4,
+        ge=1,
+        description="Attempts per request before giving up. Public agency APIs return "
+        "transient 5xx often enough that one attempt is not a fair test of whether a "
+        "dataset is reachable.",
+    )
+    backoff_seconds: NonNegative = Field(
+        default=2.0, description="Base for exponential backoff between attempts."
+    )
+    connect_timeout_s: Positive = Field(default=30.0)
+    read_timeout_s: Positive = Field(
+        default=300.0, description="Generous: some DEM tiles are hundreds of megabytes."
+    )
+    retry_status_codes: tuple[int, ...] = Field(
+        default=(429, 500, 502, 503, 504),
+        description="HTTP statuses worth retrying. 4xx other than 429 will not "
+        "improve on a second attempt.",
+    )
+
+
+class CaseConfig(Frozen):
+    """The event being modelled: area, dates, and the identifiers each source needs.
+
+    Every value here is an input to `io.sources`, which is why none of them is a
+    literal buried in a fetch function. Swapping case - to Lismore, say - is a
+    config change, not a code change.
+    """
+
+    name: str = Field(default="harvey_houston_2017", description="Slug used in filenames.")
+    description: str = Field(
+        default="Hurricane Harvey over Houston, Texas, 26 August - 1 September 2017"
+    )
+    aoi_bbox_wgs84: tuple[float, float, float, float] = Field(
+        default=(-95.80, 29.50, -95.00, 30.10),
+        description="(west, south, east, north) in EPSG:4326. Used to query every "
+        "source. Geographic on purpose: it is a query parameter, not an analysis CRS.",
+    )
+    event_start: date = Field(default=date(2017, 8, 25))
+    event_end: date = Field(default=date(2017, 9, 2))
+    peak_start: date = Field(
+        default=date(2017, 8, 29), description="Start of the window to look for a SAR scene."
+    )
+    peak_end: date = Field(default=date(2017, 8, 31))
+
+    gauge_sites: tuple[str, ...] = Field(
+        default=("08074000", "08074500", "08076000"),
+        description="USGS NWIS site numbers. Site metadata carries the vertical datum, "
+        "which is what hydraulics.gauge_datum_offset_m needs.",
+    )
+    stn_event_id: int = Field(
+        default=180, description="USGS Short-Term Network flood event id (2017 Harvey)."
+    )
+    fema_disaster_number: int = Field(
+        default=4332, description="FEMA disaster declaration number (Hurricane Harvey, TX)."
+    )
+    dem_resolutions_m: tuple[int, ...] = Field(
+        default=(1, 10, 30),
+        description="3DEP resolutions to fetch, which is the resolution experiment. "
+        "1/9 arc-second (~3 m) is mapped but not included by default: it has patchy "
+        "US coverage and returns zero tiles over Houston.",
+    )
+    dem_max_download_gb: Positive = Field(
+        default=10.0,
+        description="Refuse a DEM fetch whose planned total exceeds this. The full "
+        "AOI at 1 m is about 57 GB, which is easy to start by accident and, at "
+        "roughly 125 bytes per cell of peak memory, far past what the global "
+        "priority-flood can hold in one pass. Raise it deliberately, or shrink the AOI.",
+    )
+    overture_release: str = Field(
+        default="2026-08-19.0", description="Overture Maps release to read buildings from."
+    )
+
+    @model_validator(mode="after")
+    def _check_window(self) -> Self:
+        west, south, east, north = self.aoi_bbox_wgs84
+        if not (west < east and south < north):
+            raise ValueError(
+                f"aoi_bbox_wgs84 must be (w, s, e, n) increasing, got {self.aoi_bbox_wgs84}"
+            )
+        if not (west >= -180 and east <= 180 and south >= -90 and north <= 90):
+            raise ValueError(f"aoi_bbox_wgs84 is out of range: {self.aoi_bbox_wgs84}")
+        if self.event_start > self.event_end:
+            raise ValueError("event_start must not be after event_end")
+        if self.peak_start > self.peak_end:
+            raise ValueError("peak_start must not be after peak_end")
+        return self
+
+
 class PathsConfig(Frozen):
     """Where things live. Nothing under `raw` is ever committed."""
 
@@ -369,6 +504,8 @@ class Config(Frozen):
     damage: DamageConfig = Field(default_factory=DamageConfig)
     monte_carlo: MonteCarloConfig = Field(default_factory=MonteCarloConfig)
     validation: ValidationConfig = Field(default_factory=ValidationConfig)
+    case: CaseConfig = Field(default_factory=CaseConfig)
+    sources: SourcesConfig = Field(default_factory=SourcesConfig)
     paths: PathsConfig = Field(default_factory=PathsConfig)
 
     @classmethod

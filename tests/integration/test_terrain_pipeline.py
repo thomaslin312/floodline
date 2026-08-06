@@ -116,7 +116,11 @@ def test_dem_to_hand_to_three_nested_extents(tmp_path: Path) -> None:
     cfg = Config.model_validate(
         {
             "terrain": {"stream_threshold_cells": 200, "min_stream_length_cells": 5},
-            "hydraulics": {"gauge_datum_offset_m": 0.0, "min_depth_m": 0.05},
+            "hydraulics": {
+                "gauge_datum_offset_m": 0.0,
+                "gauge_reading_unit": "m",
+                "min_depth_m": 0.05,
+            },
         }
     )
     catchment = make_synthetic_catchment(rows=140, cols=110, n_pits=6, seed=21)
