@@ -37,6 +37,37 @@ Stated first, on purpose. HAND is a screening model, not a hydraulic one.
   small town, so this comparison is weaker here than it would have been at Lismore.
   That is the main thing given up by choosing Harvey as the primary case.
 
+## What it currently gets wrong
+
+Run end to end on real Houston terrain, the model over-predicts flood depth by
+metres, and the reason is understood rather than mysterious.
+
+Validated against 16 USGS surveyed high-water marks in the gauged watershed
+(HUC 1204010403, Whiteoak Bayou–Buffalo Bayou, 491 km² at 10 m):
+
+| | 30 m, whole AOI | 10 m, watershed-scoped |
+|---|---|---|
+| mean water-surface residual | +5.38 m | +6.72 m |
+| RMSE | 5.86 m | 7.86 m |
+| within 1 m | 2% | 12% |
+
+Finer data made it *worse*. At 30 m the channel bed at the gauge reads 4.81 m
+NAVD88; at 10 m it reads 0.89 m, because the channel is actually resolved. The
+model converts gauge stage to a threshold as `stage − bed`, so that grew from
+7.97 m to 11.89 m and everything flooded deeper.
+
+Asking the marks what the threshold should have been: `WSE − (elevation of that
+cell's own drainage)` ranges from **−0.19 m to 12.32 m**, median 4.42 m. Fitting the
+best possible single value still gives RMSE 4.13 m and **0% of marks within a
+metre**. So a spatially constant HAND threshold cannot reproduce this event at any
+value — the water surface is not a fixed height above local drainage across a
+watershed with many independent tributaries. The water actually stood a median of
+0.58 m above the ground at the marks; the model was putting metres over everything.
+
+This is a statement about the method, not the DEM. The fix is a per-reach synthetic
+rating curve (`hydraulics/rating.py`, in the spec, not yet built) driven by
+discharge rather than stage.
+
 ## Status
 
 Phase 0 (scaffold) and Phase 1 (terrain core) are done, and Phase 2's hydraulics
