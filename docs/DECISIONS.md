@@ -415,3 +415,44 @@ experiment and the multi-gauge stage work exist to quantify. The spec predicted 
 first half of this: "SRTM 30 m is much worse — which is what most global flood
 products use." It is worth stating in the write-up that a 97% hit rate accompanied
 a 5.9 m RMSE.
+
+## 2026-09-04
+
+- **Sentinel-1 dropped as a validation reference.** Thomas has no Planetary Computer
+  access, and every RTC path needs a credential — MPC declares
+  `msft:requires_account`, Copernicus Data Space and ASF need their own logins. The
+  only keyless option is raw GRD on AWS, which is not terrain-corrected, so using it
+  would mean the SNAP-style preprocessing the spec explicitly rules out. This costs
+  the extent-CSI-against-SAR experiment and nothing else: the 659 surveyed
+  high-water marks are the better reference anyway, being ground-truthed water
+  surface elevations rather than a backscatter threshold that is blind under canopy
+  and in dense urban areas. To be stated in the README as a source that did not work
+  out, per the convention.
+- **1 m deferred, not abandoned.** At 10 m a typical Houston single-family footprint
+  (~15 x 12 m) is **1.8 cells**; at 30 m it is **0.2**, and at 1 m it is 180. So 10 m
+  is adequate for extent and for the resolution comparison, and marginal for
+  per-building depth — a p90 over two cells is barely a statistic. Revisit for the
+  damage step if the building-level numbers look noisy, and then on a single
+  subwatershed rather than the metro.
+- **The unit of work is a watershed, not a bounding box.** Measured on the Houston
+  30 m grid: computing the terrain chain on a clipped 800x800 window instead of the
+  full grid left **4.3% of HAND cells more than 0.5 m out, worst case 10.8 m**, lost
+  **12% of the stream network**, and saw a maximum flow accumulation of 340,293 cells
+  against the true 886,740 — because the window cannot see its own contributing area.
+  93.6% of cells were identical, which is exactly what makes this dangerous: it looks
+  fine. A HUC is hydrologically complete, so the same computation over one is correct
+  throughout. `case.huc_level` defaults to 10 (21 units over the AOI, median 540 km2,
+  largest 1136 km2 = 25.5M cells = 3.2 GB at 10 m — comfortable). At 1 m the largest
+  is 2,546M cells, which is the concrete reason 1 m needs either a much larger machine
+  or a tiled priority-flood with boundary merge.
+- **Cells outside the watershed boundary become nodata rather than being left in.**
+  Why: filling and routing then treat the divide as the edge of the data, which is
+  correct — water leaving the watershed has left the domain. Alternative: clip to the
+  bounding box only — rejected, since it reintroduces exactly the contributing-area
+  error the watershed unit exists to avoid.
+- **Storage: raw stays local, derived products are what would go online.** `data/raw`
+  is 890 MB and fully reproducible from public APIs via `sources.py` with checksums in
+  the manifest, so hosting it duplicates something already reproducible. The terrain
+  products (HAND, flow direction, streams) are the expensive part and the part an
+  interactive layer reads windows of; COGs on object storage with HTTP range reads is
+  what they are for, and the spec already mandates COG output. Not built yet.

@@ -373,3 +373,115 @@ def test_ingest_errors_on_an_empty_directory(tmp_path: Path) -> None:
     result = runner.invoke(app, ["ingest", str(empty), str(tmp_path / "o.tif")])
     assert result.exit_code == 1
     assert "no .tif files" in result.stderr
+
+
+def test_watersheds_command_reports_missing_input(tmp_path: Path) -> None:
+    result = runner.invoke(app, ["watersheds", "--path", str(tmp_path / "nope.geojson")])
+    assert result.exit_code == 1
+    assert "floodline fetch usgs-watersheds" in result.stderr
+
+
+def test_ingest_huc_reports_an_unknown_code(tmp_path: Path, geographic_tile_writer: Any) -> None:
+    import json
+
+    tiles = tmp_path / "tiles"
+    tiles.mkdir()
+    geographic_tile_writer(tiles / "USGS_1_x_20180510.tif", west=-95.6, south=29.7)
+    sheds = tmp_path / "w.geojson"
+    sheds.write_text(
+        json.dumps(
+            {
+                "type": "FeatureCollection",
+                "features": [
+                    {
+                        "type": "Feature",
+                        "properties": {"huc10": "1111111111", "name": "X", "areasqkm": 1.0},
+                        "geometry": {
+                            "type": "Polygon",
+                            "coordinates": [
+                                [
+                                    [-95.6, 29.7],
+                                    [-95.5, 29.7],
+                                    [-95.5, 29.8],
+                                    [-95.6, 29.8],
+                                    [-95.6, 29.7],
+                                ]
+                            ],
+                        },
+                    }
+                ],
+            }
+        )
+    )
+    result = runner.invoke(
+        app,
+        [
+            "ingest",
+            str(tiles),
+            str(tmp_path / "o.tif"),
+            "--huc",
+            "0000000000",
+            "--watersheds",
+            str(sheds),
+        ],
+    )
+    assert result.exit_code == 1
+    assert "no watershed 0000000000" in result.stderr
+
+
+def test_ingest_clips_to_a_named_watershed(tmp_path: Path, geographic_tile_writer: Any) -> None:
+    import json
+
+    tiles = tmp_path / "tiles"
+    tiles.mkdir()
+    geographic_tile_writer(
+        tiles / "USGS_1_x_20180510.tif", west=-95.7, south=29.6, size=0.4, res=0.005
+    )
+    sheds = tmp_path / "w.geojson"
+    sheds.write_text(
+        json.dumps(
+            {
+                "type": "FeatureCollection",
+                "features": [
+                    {
+                        "type": "Feature",
+                        "properties": {"huc10": "1204010407", "name": "Buffalo", "areasqkm": 500.0},
+                        "geometry": {
+                            "type": "Polygon",
+                            "coordinates": [
+                                [
+                                    [-95.60, 29.70],
+                                    [-95.45, 29.70],
+                                    [-95.45, 29.82],
+                                    [-95.60, 29.82],
+                                    [-95.60, 29.70],
+                                ]
+                            ],
+                        },
+                    }
+                ],
+            }
+        )
+    )
+    out = tmp_path / "dem.tif"
+    result = runner.invoke(
+        app,
+        [
+            "ingest",
+            str(tiles),
+            str(out),
+            "--resolution",
+            "100",
+            "--huc",
+            "1204010407",
+            "--watersheds",
+            str(sheds),
+        ],
+    )
+    assert result.exit_code == 0, result.stdout
+    assert "clipping to HUC 1204010407 Buffalo" in result.stdout
+
+    with rasterio.open(out) as src:
+        data = src.read(1, masked=True)
+    assert data.mask.any(), "cells outside the boundary must be nodata"
+    assert (~data.mask).any(), "cells inside it must not be"
