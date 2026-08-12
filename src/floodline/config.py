@@ -373,7 +373,12 @@ class ExposureConfig(Frozen):
 class DamageConfig(Frozen):
     """Depth-damage curves and costs."""
 
-    curve_family: CurveFamily = Field(default=CurveFamily.JRC_OCEANIA)
+    curve_family: CurveFamily = Field(default=CurveFamily.HAZUS)
+    currency: str = Field(
+        default="USD",
+        description="Denomination of replacement_cost_per_m2, carried into every output "
+        "so a total is never a bare number.",
+    )
     max_curve_depth_m: Positive = Field(
         default=6.0, description="Depth beyond which the curve is held at its terminal value."
     )
@@ -387,7 +392,9 @@ class DamageConfig(Frozen):
             "industrial": 1500.0,
             "other": 1800.0,
         },
-        description="AUD per m2 of floor area by building class.",
+        description="Replacement cost per m2 of floor area by building class, in "
+        "`currency`. Assumptions, not quotes: they are order-of-magnitude US "
+        "rebuild rates and the Monte Carlo samples cost_sigma_frac around them.",
     )
     default_class: str = Field(default="residential")
 
@@ -411,8 +418,10 @@ class MonteCarloConfig(Frozen):
         default=0.25, description="1-sigma relative error on replacement cost."
     )
     curve_family_weights: dict[CurveFamily, Fraction] = Field(
-        default_factory=lambda: {CurveFamily.JRC_OCEANIA: 0.7, CurveFamily.JRC_GLOBAL: 0.3},
-        description="Sampling weights over curve families.",
+        default_factory=lambda: {CurveFamily.HAZUS: 0.6, CurveFamily.JRC_GLOBAL: 0.4},
+        description="Sampling weights over curve families. HAZUS leads because the "
+        "validation case is US; JRC_GLOBAL carries the disagreement between families, "
+        "which is the largest single term in the interval at depth.",
     )
     interval: tuple[Fraction, Fraction] = Field(
         default=(0.05, 0.95), description="Reported credible interval quantiles."
