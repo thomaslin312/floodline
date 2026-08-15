@@ -552,20 +552,208 @@ def exposure(
     depth: Annotated[Path, typer.Argument(exists=True, dir_okay=False, help="Depth raster.")],
     buildings: Annotated[Path, typer.Argument(exists=True, help="Building footprints.")],
     out: Annotated[Path, typer.Argument(help="Output GeoParquet.")],
+    population: Annotated[
+        Path | None,
+        typer.Option(help="Population grid on the depth raster's own grid."),
+    ] = None,
+    unclamped_depth: Annotated[
+        Path | None,
+        typer.Option(
+            help="stage - HAND before the floor at zero, so dry ground is negative. "
+            "Supply it: without it the Monte Carlo cannot tell a building the water "
+            "missed by a centimetre from one it missed by five metres."
+        ),
+    ] = None,
     config: ConfigOption = None,
 ) -> None:
-    """Intersect the depth raster with buildings and population."""
-    _not_implemented("exposure", 2)
+    """Attach a water depth to every building footprint.
+
+    Footprints must already be in the depth raster's CRS; a mismatch is refused
+    rather than reprojected, because a silent reprojection is how an exposure table
+    ends up describing the wrong ground.
+    """
+    from floodline.exposure.buildings import building_depths
+    from floodline.exposure.population import population_affected
+    from floodline.io.raster import read_raster
+    from floodline.io.vector import read_vector, write_vector
+
+    resolved = load_config(config)
+    raster = read_raster(depth, config=resolved)
+    footprints = read_vector(buildings, config=resolved)
+
+    if footprints.crs != raster.crs:
+        found = footprints.crs.to_string() if footprints.crs is not None else "no CRS"
+        typer.secho(
+            f"error: footprints are in {found} but the depth raster is in "
+            f"{raster.crs.to_string()}. Reproject the footprints first.",
+            fg=typer.colors.RED,
+            err=True,
+        )
+        raise typer.Exit(code=1)
+
+    margin = None
+    if unclamped_depth is not None:
+        margin_raster = read_raster(unclamped_depth, config=resolved)
+        if margin_raster.data.shape != raster.data.shape:
+            typer.secho(
+                f"error: unclamped depth is {margin_raster.data.shape} but the depth raster "
+                f"is {raster.data.shape}; they must be the same grid.",
+                fg=typer.colors.RED,
+                err=True,
+            )
+            raise typer.Exit(code=1)
+        margin = margin_raster.data
+
+    result = building_depths(
+        raster.data,
+        raster.transform,
+        footprints,
+        unclamped_depth=margin,
+        config=resolved,
+        default_class=resolved.damage.default_class,
+    )
+    path = write_vector(out, result.buildings, config=resolved)
+
+    dropped = ""
+    if result.n_dropped_small or result.n_outside_raster:
+        dropped = (
+            f"; dropped {result.n_dropped_small:,} under "
+            f"{resolved.exposure.min_building_area_m2:g} m2"
+            f", {result.n_outside_raster:,} off-raster"
+        )
+    typer.echo(
+        f"wrote {path} ({result.n_inundated:,} of {len(result.buildings):,} buildings above "
+        f"finished floor, {result.n_wet_ground:,} with water on the ground"
+        f", depth by {resolved.exposure.building_depth_stat.value}{dropped})"
+    )
+    if not result.has_margin:
+        typer.secho(
+            "note: no --unclamped-depth given, so every dry building records a depth of "
+            "exactly zero and `floodline damage` will hold them dry through the whole "
+            "Monte Carlo. The count interval will be conditional on this extent.",
+            fg=typer.colors.YELLOW,
+            err=True,
+        )
+
+    if population is not None:
+        grid = read_raster(population, config=resolved)
+        if grid.data.shape != raster.data.shape:
+            typer.secho(
+                f"error: population grid is {grid.data.shape} but the depth raster is "
+                f"{raster.data.shape}. Resample it onto the depth grid first — this tool "
+                "will not, because resampling a population count either duplicates or "
+                "invents people and the choice is yours to state.",
+                fg=typer.colors.RED,
+                err=True,
+            )
+            raise typer.Exit(code=1)
+        people = population_affected(raster.data, grid.data, config=resolved)
+        typer.echo(
+            f"{people.people_affected:,.0f} people in cells deeper than "
+            f"{people.threshold_m:g} m ({people.share_affected:.1%} of "
+            f"{people.people_total:,.0f} in the grid). One grid, one estimate: these "
+            "products disagree by tens of percent, most of all in small towns."
+        )
 
 
 @app.command()
 def damage(
     exposed: Annotated[Path, typer.Argument(exists=True, dir_okay=False, help="Exposure table.")],
     out: Annotated[Path, typer.Argument(help="Output GeoParquet.")],
+    curves: Annotated[
+        Path | None, typer.Option(help="Transcribed curve tables as JSON; see damage.curves.")
+    ] = None,
+    samples: Annotated[
+        int | None, typer.Option(help="Monte Carlo draws; overrides config.")
+    ] = None,
     config: ConfigOption = None,
 ) -> None:
-    """Apply depth-damage curves and Monte Carlo uncertainty."""
-    _not_implemented("damage", 3)
+    """Apply depth-damage curves and a Monte Carlo interval to an exposure table.
+
+    Reads what `floodline exposure` wrote. The point estimate uses the configured
+    curve family; the interval samples stage error, DEM error, curve family and
+    replacement cost. It does not sample storey counts, floor area, freeboard, class
+    assignment or footprint completeness, so it is a lower bound on the real spread.
+    """
+    from floodline.damage.curves import load_curves
+    from floodline.damage.estimate import estimate_damage
+    from floodline.damage.uncertainty import monte_carlo_damage
+    from floodline.io.vector import read_vector, write_vector
+
+    resolved = load_config(config)
+    table = read_vector(exposed, config=resolved)
+
+    required = {"floor_depth_m", "floor_area_m2", "building_class", "storeys"}
+    missing = required - set(table.columns)
+    if missing:
+        typer.secho(
+            f"error: {exposed.name} is missing {', '.join(sorted(missing))}. "
+            "Run `floodline exposure` to produce it.",
+            fg=typer.colors.RED,
+            err=True,
+        )
+        raise typer.Exit(code=1)
+
+    curve_sets = load_curves(curves, config=resolved) if curves is not None else None
+    monte_carlo = (
+        resolved.monte_carlo
+        if samples is None
+        else resolved.monte_carlo.model_copy(update={"n_samples": samples})
+    )
+
+    args = (
+        table["floor_depth_m"].to_numpy(),
+        table["floor_area_m2"].to_numpy(),
+        table["building_class"].to_numpy(dtype=object),
+    )
+    storeys = table["storeys"].to_numpy()
+    family = resolved.damage.curve_family
+    point = estimate_damage(
+        *args,
+        storeys=storeys,
+        config=resolved,
+        curves=curve_sets.get(family) if curve_sets else None,
+        family=family,
+    )
+    margins = table["floor_margin_m"].to_numpy() if "floor_margin_m" in table.columns else None
+    interval = monte_carlo_damage(
+        *args,
+        storeys=storeys,
+        floor_margin_m=margins,
+        monte_carlo=monte_carlo,
+        damage=resolved.damage,
+        curve_sets=curve_sets,
+    )
+
+    priced = table.copy()
+    priced["damage"] = point.per_building
+    path = write_vector(out, priced, config=resolved)
+
+    unit = resolved.damage.currency
+    low, high = interval.count_interval
+    lo_q, hi_q = interval.quantiles
+    conditional = " (conditional on this extent)" if interval.count_interval_conditional else ""
+    typer.echo(
+        f"wrote {path} ({point.n_damaged:,} of {point.n_buildings:,} buildings damaged"
+        f", {low:,}-{high:,} across the interval{conditional})"
+    )
+    typer.echo(
+        f"{unit} {point.total:,.0f} on {family.value} curves"
+        f" — {int(lo_q * 100)}-{int(hi_q * 100)}% interval {unit} {interval.lower:,.0f}"
+        f" to {unit} {interval.upper:,.0f} over {interval.n_samples:,} draws"
+        f" (loss ratio {point.loss_ratio:.1%} of {unit} {point.exposed_value_total:,.0f} exposed)"
+    )
+    for name, amount in point.by_class.items():
+        typer.echo(f"  {name:<12} {unit} {amount:>15,.0f}")
+    if not interval.curves_verified:
+        typer.secho(
+            "warning: the bundled curve constants carry the shape of each published family "
+            "but their digits have not been checked against the source tables. Building "
+            "counts and loss ratios stand; do not quote the currency totals. Pass --curves "
+            "with transcribed tables to clear this.",
+            fg=typer.colors.YELLOW,
+            err=True,
+        )
 
 
 @app.command()

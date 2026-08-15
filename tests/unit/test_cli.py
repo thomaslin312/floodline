@@ -10,6 +10,7 @@ from typer.testing import CliRunner
 
 from floodline import __version__
 from floodline.cli import app
+from floodline.io.raster import CrsError
 
 runner = CliRunner()
 
@@ -53,17 +54,49 @@ def test_synth_writes_a_cog(tmp_path: Path) -> None:
         assert src.nodata is not None
 
 
-@pytest.mark.parametrize("stage", ["exposure", "damage"])
+@pytest.mark.parametrize("stage", ["validate", "report"])
 def test_unimplemented_stages_exit_2(stage: str, tmp_path: Path) -> None:
     dummy = tmp_path / "in.tif"
     dummy.write_bytes(b"")
     args = {
-        "exposure": [stage, str(dummy), str(dummy), str(tmp_path / "o.parquet")],
-        "damage": [stage, str(dummy), str(tmp_path / "o.parquet")],
+        "validate": [stage, str(dummy), str(dummy)],
+        "report": [stage, str(tmp_path / "o.html")],
     }[stage]
     result = runner.invoke(app, args)
     assert result.exit_code == 2
     assert "not implemented" in result.stderr
+
+
+def test_damage_refuses_a_table_that_is_not_an_exposure_table(tmp_path: Path) -> None:
+    import geopandas as gpd
+    from shapely.geometry import Point
+
+    table = tmp_path / "wrong.parquet"
+    gpd.GeoDataFrame({"id": [1]}, geometry=[Point(0, 0)], crs="EPSG:6587").to_parquet(table)
+    result = runner.invoke(app, ["damage", str(table), str(tmp_path / "o.parquet")])
+    assert result.exit_code == 1
+    assert "floodline exposure" in result.stderr
+
+
+def test_exposure_refuses_footprints_in_the_wrong_crs(tmp_path: Path) -> None:
+    import geopandas as gpd
+    from shapely.geometry import box
+
+    raw = tmp_path / "raw.tif"
+    assert runner.invoke(app, ["synth", str(raw), "--rows", "40", "--cols", "40"]).exit_code == 0
+    footprints = tmp_path / "b.parquet"
+    gpd.GeoDataFrame({"id": [1]}, geometry=[box(0, 0, 20, 20)], crs="EPSG:32615").to_parquet(
+        footprints
+    )
+
+    # read_vector refuses the mismatch against the analysis CRS before the command's
+    # own raster-vs-footprint check is reached; either way nothing is written.
+    result = runner.invoke(
+        app, ["exposure", str(raw), str(footprints), str(tmp_path / "o.parquet")]
+    )
+    assert result.exit_code != 0
+    assert isinstance(result.exception, CrsError)
+    assert not (tmp_path / "o.parquet").exists()
 
 
 def test_condition_fills_a_synthetic_dem(tmp_path: Path) -> None:

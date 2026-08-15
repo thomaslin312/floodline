@@ -2,16 +2,23 @@
 
 Flood extent, exposure and damage estimation from a DEM and a gauge reading.
 
-Given a lidar DEM, a stream network and a water level at a river gauge, floodline
+Given a lidar DEM, a stream network and a discharge at a river gauge, floodline
 produces an inundation extent and depth raster (HAND method), intersects it with
 building footprints and population grids, and estimates people affected and direct
-economic damage using published depth–damage curves — with a Monte Carlo uncertainty
-band, validated against Hurricane Harvey over Houston, Texas, 26 August – 1
-September 2017.
+economic damage using depth–damage curves, with a Monte Carlo uncertainty band.
 
 **The claim being tested:** a screening-grade flood damage model built from open data
-can reproduce the extent of a real major flood to within a stated CSI and put the
+can reproduce the extent of a real major flood to within a stated error and put the
 observed building count inside its 90% interval.
+
+**How far that claim has actually been taken.** The extent half is done and measured:
+against 2,298 USGS surveyed high-water marks from Hurricane Harvey, the modelled water
+surface has an RMSE of 1.60 m in the best-validated watershed. The exposure and damage
+half runs end to end and is tested, but has not been validated against anything, and
+its depth–damage curve constants are not transcribed from the source tables — see
+[Damage: what is and is not trustworthy](#damage-what-is-and-is-not-trustworthy).
+CSI is not reported at all, because it needs an observed extent polygon and the
+Sentinel-1 route was dropped for want of credentials.
 
 The full brief is in [docs/SPEC.md](docs/SPEC.md); the working rules are in
 [CONTRIBUTING.md](CONTRIBUTING.md).
@@ -70,20 +77,48 @@ and bias are reported alongside it.
 
 ## Status
 
-Phase 0 (scaffold) and Phase 1 (terrain core) are done, and Phase 2's hydraulics
-half — stage handling and inundation — is in. Nothing has been run against real
-Lismore data yet, so this README contains no flood results. It will not contain
-any that were not actually produced. The numbers below are runtimes and
-synthetic-fixture diagnostics, measured on this machine.
+Terrain, hydraulics, exposure and damage all run. Validation is where the gaps are:
+extent is measured against surveyed high-water marks, and nothing else is measured
+against anything. Every number in this README was produced by running the code on
+this machine.
 
 | Phase | Scope | State |
 |---|---|---|
 | 0 | Scaffold, config, raster I/O, synthetic fixture, CLI, CI | done |
 | 1 | `fill`, `flowdir`, `flowacc`, `streams`, `hand` — numba, property-tested | done, plus flat resolution |
-| 2 | Stage handling, inundation, buildings and population | hydraulics done; exposure next |
-| 3 | Depth–damage curves, costs, Monte Carlo | not started |
+| 2 | Stage handling, inundation, buildings, population | done |
+| 3 | Depth–damage curves, costs, Monte Carlo | code done; curve constants unverified |
 | 4 | SAR validation, resolution and population experiments | not started |
 | 5 | Rendered report and write-up | not started |
+| — | Live compute service and national map UI (unplanned, built anyway) | done |
+
+Building footprints and population grids are inputs, not downloads: `floodline
+exposure` takes them as files. There is no fetcher for Overture or for the population
+products yet, so nothing has been run on real footprints.
+
+## Damage: what is and is not trustworthy
+
+The pipeline is real and tested. The constants are not all real.
+
+**Trustworthy:** the count of buildings the model floods, the loss *ratio*, the
+relative comparison between curve families, and how the interval responds to each
+source of error. These follow from the depth raster and the curve shapes.
+
+**Not trustworthy:** any absolute currency figure. The bundled curves carry the shape
+of each published family — HAZUS residential saturating near two-thirds, the JRC
+continental curves rising faster to unity — but their digits have not been checked
+against FEMA's technical manual or Huizinga et al. (2017). Every bundled curve is
+marked `verified=False`, that flag propagates into the result object, and the CLI
+prints a warning on every run. Transcribe real tables and pass them with
+`floodline damage --curves`, which sets the flag and silences the warning.
+Replacement costs per m² are likewise stated assumptions, not quotes.
+
+**What the Monte Carlo covers:** gauge stage error, DEM vertical error, curve-family
+choice, and replacement cost. **What it does not:** storey counts, floor area,
+finished-floor freeboard, building class assignment, footprint-database completeness,
+and HAND's structural assumption. The interval is a lower bound on the real
+uncertainty — an honest account of four known errors, not of everything that could be
+wrong.
 
 ## Install
 
@@ -146,6 +181,25 @@ security policy forbids `fetch` to external hosts, so a page delivered that way 
 only carry what was inlined into it.
 
 ## Use
+
+Exposure and damage, once you have a depth raster and footprints in the analysis CRS:
+
+```bash
+uv run floodline exposure depth.tif buildings.parquet exposed.parquet \
+    --unclamped-depth margin.tif --population pop.tif
+```
+
+```bash
+uv run floodline damage exposed.parquet damage.parquet --samples 1000
+```
+
+`--unclamped-depth` is `stage - HAND` before the floor at zero, so dry ground carries
+a negative value. It matters more than it looks: the depth raster records every dry
+building as exactly 0, which loses the difference between a building the water missed
+by a centimetre and one it missed by five metres. Without it the Monte Carlo holds
+every dry building dry, and the count interval becomes conditional on the
+deterministic extent rather than a real interval.
+
 
 ```bash
 uv run floodline --help

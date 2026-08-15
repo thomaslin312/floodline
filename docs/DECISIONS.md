@@ -1051,3 +1051,68 @@ Two defects the port surfaced, both fixed:
 Accepted cost: the globe is WebGL2-only, where the raster-tile map was not. A browser
 without it now gets an explicit message naming the API endpoint instead of a blank
 rectangle.
+
+## 2026-09-05 — exposure and damage built; curve constants shipped unverified
+
+Phases 2b and 3 implemented: `exposure/buildings.py`, `exposure/population.py`,
+`damage/curves.py`, `damage/costs.py`, `damage/estimate.py`, `damage/uncertainty.py`,
+and the `exposure` and `damage` CLI commands, which previously exited 2. 70 new tests;
+the suite is 563.
+
+Judgment calls made along the way:
+
+- **Bundled curve constants carry each family's shape but are not transcribed from the
+  source tables, and are marked `verified=False`.** Inventing digits and labelling them
+  "Huizinga et al. 2017" would be exactly the dishonesty the conventions forbid, and
+  refusing to run without transcribed tables would ship a pipeline nobody can execute.
+  Instead the flag propagates: `DamageEstimate.curves_verified`, `DamageInterval`, a
+  CLI warning on every run, and a README section. Ratios and counts stand; currency
+  totals do not. `load_curves` takes real tables and sets the flag.
+  Rejected: shipping the constants unflagged, and shipping no constants at all.
+- **`p90` stays the default depth statistic.** `max` is decided by whichever cell the
+  DEM dug lowest, `centroid` misses buildings whose centre sits on a locally high cell.
+  Demonstrated in a test: one 9 m pit under a footprint of 0.5 m water gives max 9.0 m
+  and p90 under 3 m.
+- **Damage is capped to the storeys water can reach** (`costs.storey_exposure`).
+  Multiplying by total floor area prices a metre of water against every floor of a
+  tower. Uncapped remains available for comparison with published figures that use it.
+- **Damage defaults moved to the US case.** `curve_family` HAZUS rather than
+  JRC_OCEANIA, MC weights HAZUS 0.6 / JRC_GLOBAL 0.4, and a new `currency` field
+  defaulting to USD so a total is never a bare number. The primary case moved to
+  Harvey; the spec's own source table says HAZUS for the US. Cost magnitudes are
+  unchanged and now explicitly labelled assumptions.
+- **`population_affected` refuses a grid that is not on the depth grid.** Resampling a
+  population count either duplicates people (nearest) or invents them (bilinear), and
+  which is wrong is the caller's to state.
+
+## 2026-09-05 — the Monte Carlo perturbs a signed margin, not the clamped depth
+
+Caught by running the CLI end to end rather than by a unit test. On the synthetic
+catchment the deterministic estimate was 57 buildings damaged and the Monte Carlo's
+count interval came back 67-219 — the point estimate below its own lower bound.
+
+Cause: `floor_depth_m` is clamped at zero, so a building the water missed by a
+centimetre and one it missed by five metres both record 0.0. Adding symmetric noise to
+a value floored at zero can only push it upward, so roughly half of the 168 dry
+buildings were manufactured into the flood on every draw.
+
+Fix: `building_depths` now takes an optional `unclamped_depth` field (`stage - HAND`,
+negative on dry ground) and emits a signed `floor_margin_m`; the Monte Carlo perturbs
+that and clamps afterwards. The same run now gives 57-58. Where no margin is supplied
+the draws perturb only already-wet buildings and `count_interval_conditional` is set,
+so a narrow interval is never mistaken for a confident one. Three tests cover it:
+far-below-floor buildings stay dry under a 0.3 m stage sigma, just-below-floor
+buildings are correctly uncertain, and the point estimate lies inside its own interval.
+
+Rejected: perturbing the clamped depth and widening `min_depth_m` to compensate, which
+would have hidden the bias rather than removed it.
+
+## 2026-09-05 — README corrected to match what the code does
+
+The opening described the full pipeline in the present tense while `damage/` was an
+empty package, and the Status section still said "nothing has been run against real
+Lismore data yet, so this README contains no flood results" — stale in three ways at
+once, since the case is Harvey, results exist, and it disclaimed them. Rewritten to
+separate what is built from what is validated, to state the CSI gap outright, and to
+add a "what is and is not trustworthy" section for damage. This is the convention the
+repo already had; the README had drifted out of compliance with it.
