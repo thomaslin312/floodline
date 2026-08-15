@@ -103,7 +103,7 @@ warn_unreachable = true
 disallow_any_generics = true
 
 [[tool.mypy.overrides]]
-module = ["numba.*", "rasterio.*", "rioxarray.*", "contextily.*", "pyogrio.*"]
+module = ["numba.*", "rasterio.*", "rioxarray.*", "contextily.*", "pyogrio.*", "pyarrow.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

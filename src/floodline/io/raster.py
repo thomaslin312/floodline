@@ -21,7 +21,7 @@ from pyproj import CRS
 from rasterio.crs import CRS as RioCRS
 from rasterio.enums import Resampling
 from rasterio.shutil import copy as rio_copy
-from rasterio.transform import Affine
+from rasterio.transform import Affine, array_bounds
 from rasterio.windows import Window
 
 from floodline.config import Config, RasterConfig, validate_projected_crs
@@ -78,6 +78,13 @@ class Raster:
         """Return the area of one cell in square metres."""
         x_size, y_size = self.cellsize
         return x_size * y_size
+
+    @property
+    def bounds(self) -> tuple[float, float, float, float]:
+        """Return (west, south, east, north) in CRS units."""
+        rows, cols = self.shape
+        west, south, east, north = array_bounds(rows, cols, self.transform)
+        return float(west), float(south), float(east), float(north)
 
     def valid_mask(self) -> npt.NDArray[np.bool_]:
         """Return a boolean mask that is True where the cell holds real data."""

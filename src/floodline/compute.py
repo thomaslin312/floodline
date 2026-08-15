@@ -76,6 +76,7 @@ __all__ = [
     "utm_crs_for",
     "watershed_by_huc",
     "watershed_for_point",
+    "wgs84_bounds",
 ]
 
 # GDAL settings that make /vsicurl range reads on a COG behave. Without
@@ -321,7 +322,7 @@ def compute_watershed(
     try:
         start = time.perf_counter()
         context = FetchContext(config=resolved, dest=resolved.paths.raw, client=active)
-        west, south, east, north = _to_wgs84_bounds(unit, resolved)
+        west, south, east, north = wgs84_bounds(unit, resolved)
         items = find_dem_tiles(context, int(resolution_m), (west, south, east, north))
         urls = [f"/vsicurl/{item['downloadURL']}" for item in items if item.get("downloadURL")]
         timings["find_tiles"] = time.perf_counter() - start
@@ -507,7 +508,7 @@ def compute_watershed(
     return ComputeResult(bundle=bundle, seconds=timings, tiles_read=len(urls), warnings=warnings)
 
 
-def _to_wgs84_bounds(unit: Watershed, config: Config) -> tuple[float, float, float, float]:
+def wgs84_bounds(unit: Watershed, config: Config) -> tuple[float, float, float, float]:
     """Return the watershed's bounds in EPSG:4326, which is what the tile query wants."""
     back = Transformer.from_crs(config.crs.analysis, CRS.from_epsg(4326), always_xy=True)
     west, south, east, north = unit.bounds
@@ -534,7 +535,7 @@ def gauge_for_watershed(
     Its peak of record is used as the discharge: the worst flow that gauge has
     actually measured, rather than a design figure from a regression.
     """
-    west, south, east, north = _to_wgs84_bounds(unit, context.config)
+    west, south, east, north = wgs84_bounds(unit, context.config)
     try:
         sites = find_gauges(context, (west, south, east, north))
     except (SourceError, httpx.HTTPError):
