@@ -20,7 +20,7 @@ dist/
 .coverage
 htmlcov/
 
-# outputs
+# outputs — figures and rendered pages are regenerated, never committed
 outputs/
 *.tif
 *.tiff

@@ -1,0 +1,563 @@
+<title>Whiteoak Bayou Flood Plate</title>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=Public+Sans:ital,wght@0,400;0,500;0,600;1,400&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+  :root {
+    --paper:      #eef2f1;
+    --plate:      #ffffff;
+    --sunk:       #e3e9e8;
+    --ink:        #0e1d23;
+    --ink-soft:   #3a4d54;
+    --muted:      #64787e;
+    --rule:       #c9d5d4;
+    --rule-soft:  #dde5e4;
+    --water:      #0d7c8a;
+    --water-deep: #085966;
+    --over:       #b8543a;
+    --close:      #3f7d54;
+    --dry:        #8b969a;
+    --grid:       #d6e0df;
+    --shadow:     0 1px 2px rgba(14,29,35,.07), 0 8px 24px -12px rgba(14,29,35,.18);
+    --display: "Archivo", "Helvetica Neue", Arial, sans-serif;
+    --body: "Public Sans", "Helvetica Neue", Arial, sans-serif;
+    --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper:      #0c181d;
+      --plate:      #13242b;
+      --sunk:       #0f1f25;
+      --ink:        #e7eeed;
+      --ink-soft:   #b3c4c6;
+      --muted:      #8ba0a4;
+      --rule:       #274049;
+      --rule-soft:  #1d323a;
+      --water:      #3aa9b6;
+      --water-deep: #7fd0d8;
+      --over:       #e0785a;
+      --close:      #63b47c;
+      --dry:        #6e8288;
+      --grid:       #21383f;
+      --shadow:     0 1px 2px rgba(0,0,0,.4), 0 10px 28px -14px rgba(0,0,0,.6);
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper:      #0c181d;
+    --plate:      #13242b;
+    --sunk:       #0f1f25;
+    --ink:        #e7eeed;
+    --ink-soft:   #b3c4c6;
+    --muted:      #8ba0a4;
+    --rule:       #274049;
+    --rule-soft:  #1d323a;
+    --water:      #3aa9b6;
+    --water-deep: #7fd0d8;
+    --over:       #e0785a;
+    --close:      #63b47c;
+    --dry:        #6e8288;
+    --grid:       #21383f;
+    --shadow:     0 1px 2px rgba(0,0,0,.4), 0 10px 28px -14px rgba(0,0,0,.6);
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--body);
+    font-size: 15px;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 28px 22px 64px; }
+
+  /* ---------- masthead ---------- */
+  .mast { display: flex; flex-direction: column; gap: 14px; padding-bottom: 18px; border-bottom: 2px solid var(--ink); }
+  .eyebrow {
+    font-family: var(--mono); font-size: 11.5px; font-weight: 500;
+    letter-spacing: .14em; text-transform: uppercase; color: var(--muted);
+    display: flex; flex-wrap: wrap; gap: 6px 14px;
+  }
+  h1 {
+    font-family: var(--display); font-weight: 700; font-size: clamp(30px, 4.4vw, 46px);
+    line-height: 1.04; letter-spacing: -.021em; margin: 0; text-wrap: balance;
+  }
+  h1 .sub { display: block; font-weight: 500; font-size: .46em; letter-spacing: .01em; color: var(--ink-soft); margin-top: .5em; }
+  .standfirst { max-width: 62ch; color: var(--ink-soft); margin: 0; }
+
+  /* ---------- facts strip ---------- */
+  .facts {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(122px, 1fr));
+    border-bottom: 1px solid var(--rule); margin: 0; padding: 0;
+  }
+  .facts div { padding: 14px 16px 15px; border-right: 1px solid var(--rule-soft); }
+  .facts div:last-child { border-right: 0; }
+  .facts dt { font-family: var(--mono); font-size: 10.5px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+  .facts dd { margin: 3px 0 0; font-family: var(--display); font-weight: 600; font-size: 20px; font-variant-numeric: tabular-nums; letter-spacing: -.01em; }
+  .facts dd small { font-family: var(--body); font-weight: 400; font-size: 12px; color: var(--muted); letter-spacing: 0; }
+
+  /* ---------- section headers ---------- */
+  .sec { margin-top: 40px; }
+  .sec > h2 {
+    font-family: var(--display); font-weight: 600; font-size: 13px;
+    letter-spacing: .12em; text-transform: uppercase; color: var(--muted);
+    margin: 0 0 4px; display: flex; align-items: baseline; gap: 10px;
+  }
+  .sec > h2::after { content: ""; flex: 1; height: 1px; background: var(--rule); }
+  .sec > p.lede { margin: 0 0 18px; max-width: 66ch; color: var(--ink-soft); }
+
+  /* ---------- the plate ---------- */
+  .instrument { display: grid; grid-template-columns: 232px minmax(0, 1fr); gap: 22px; align-items: start; }
+  @media (max-width: 780px) { .instrument { grid-template-columns: 1fr; } }
+
+  .rail { display: flex; flex-direction: column; gap: 20px; }
+  .rail h3 { font-family: var(--mono); font-size: 10.5px; letter-spacing: .11em; text-transform: uppercase; color: var(--muted); margin: 0 0 8px; }
+
+  .switch { display: flex; flex-direction: column; gap: 1px; background: var(--rule); border: 1px solid var(--rule); border-radius: 3px; overflow: hidden; }
+  .switch button {
+    appearance: none; border: 0; text-align: left; cursor: pointer;
+    background: var(--plate); color: var(--ink); font-family: var(--body);
+    font-size: 13.5px; padding: 10px 12px; display: flex; flex-direction: column; gap: 2px;
+  }
+  .switch button .k { font-weight: 600; }
+  .switch button .v { font-family: var(--mono); font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .switch button[aria-pressed="true"] { background: var(--ink); color: var(--paper); }
+  .switch button[aria-pressed="true"] .v { color: var(--paper); opacity: .72; }
+  .switch button:focus-visible { outline: 2px solid var(--water); outline-offset: -2px; }
+
+  .layers { display: flex; flex-direction: column; gap: 2px; }
+  .layer { display: grid; grid-template-columns: 13px 1fr; gap: 9px; align-items: center; padding: 5px 0; font-size: 13.5px; cursor: pointer; }
+  .layer input { margin: 0; accent-color: var(--water); width: 13px; height: 13px; }
+  .layer .swatch { display: inline-block; width: 22px; height: 8px; border-radius: 1px; vertical-align: 1px; margin-right: 7px; }
+  .layer .rng { grid-column: 2; font-family: var(--mono); font-size: 10.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .opacity { display: flex; flex-direction: column; gap: 6px; }
+  .opacity label { font-family: var(--mono); font-size: 10.5px; letter-spacing: .11em; text-transform: uppercase; color: var(--muted); }
+  .opacity input { width: 100%; accent-color: var(--water); }
+
+  .plate {
+    position: relative; background: var(--sunk); border: 1px solid var(--rule);
+    box-shadow: var(--shadow); overflow: hidden;
+  }
+  .canvas { position: relative; width: 100%; }
+  .canvas img { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+  .pins { position: absolute; inset: 0; }
+  .pin {
+    position: absolute; width: 15px; height: 15px; margin: -7.5px 0 0 -7.5px;
+    border-radius: 50%; border: 2px solid var(--plate); padding: 0;
+    cursor: pointer; appearance: none; transition: transform .12s ease;
+  }
+  .pin:hover, .pin:focus-visible, .pin[data-active="true"] { transform: scale(1.5); z-index: 4; outline: none; }
+  .pin.dry { background: transparent; border-color: var(--dry); border-style: dashed; }
+  .gaugepin {
+    position: absolute; width: 0; height: 0; margin: 0;
+    border-left: 7px solid transparent; border-right: 7px solid transparent;
+    border-bottom: 12px solid var(--ink); transform: translate(-7px, -12px);
+  }
+  .gaugelabel {
+    position: absolute; transform: translate(10px, -18px); white-space: nowrap;
+    font-family: var(--mono); font-size: 10.5px; font-weight: 500;
+    background: var(--ink); color: var(--paper); padding: 2px 5px; border-radius: 2px;
+  }
+  .readout {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(112px, 1fr));
+    border-top: 1px solid var(--rule); background: var(--plate);
+  }
+  .readout div { padding: 9px 13px 11px; border-right: 1px solid var(--rule-soft); }
+  .readout div:last-child { border-right: 0; }
+  .readout dt { font-family: var(--mono); font-size: 10px; letter-spacing: .09em; text-transform: uppercase; color: var(--muted); }
+  .readout dd { margin: 2px 0 0; font-family: var(--mono); font-weight: 500; font-size: 14.5px; font-variant-numeric: tabular-nums; }
+  .hint { color: var(--muted); font-size: 12.5px; font-style: italic; }
+
+  /* ---------- charts ---------- */
+  .charts { display: grid; grid-template-columns: minmax(0,1.08fr) minmax(0,1fr); gap: 30px; align-items: start; }
+  @media (max-width: 860px) { .charts { grid-template-columns: 1fr; } }
+  figure { margin: 0; }
+  figcaption { font-size: 12.5px; color: var(--muted); margin-top: 10px; max-width: 56ch; }
+  svg { display: block; width: 100%; height: auto; overflow: visible; }
+  .ct { font-family: var(--mono); font-size: 9.5px; fill: var(--muted); }
+  .ct.b { font-weight: 500; fill: var(--ink-soft); }
+
+  .key { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 12.5px; color: var(--ink-soft); margin: 0 0 14px; }
+  .key span { display: inline-flex; align-items: center; gap: 6px; }
+  .key i { width: 11px; height: 11px; border-radius: 50%; display: inline-block; }
+
+  /* ---------- notes ---------- */
+  .notes { margin-top: 42px; padding-top: 22px; border-top: 2px solid var(--ink); display: grid; grid-template-columns: repeat(auto-fit, minmax(258px,1fr)); gap: 26px; }
+  .notes h3 { font-family: var(--display); font-size: 14.5px; font-weight: 600; margin: 0 0 6px; }
+  .notes p { margin: 0; font-size: 13.5px; color: var(--ink-soft); }
+  code { font-family: var(--mono); font-size: .9em; background: var(--sunk); padding: .1em .34em; border-radius: 2px; }
+  .foot { margin-top: 34px; font-size: 12px; color: var(--muted); font-family: var(--mono); }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div class="wrap">
+  <header class="mast">
+    <div class="eyebrow">
+      <span>HUC-10 __HUC__</span><span>EPSG:6587</span><span>10 m 3DEP</span><span>Hurricane Harvey</span><span>27 Aug 2017 13:30 CDT</span>
+    </div>
+    <h1>__NAME__<span class="sub">Two ways to turn one gauge into a flood, measured against 16 surveyed high-water marks</span></h1>
+    <p class="standfirst">Every layer below was produced by the pipeline from public data — USGS 3DEP elevation, a USGS streamgage, and USGS survey marks. The switch on the left swaps the model that converted discharge into water depth. Nothing here is illustrative; the marks are where surveyors actually found the waterline.</p>
+  </header>
+
+  <dl class="facts" id="facts"></dl>
+
+  <section class="sec">
+    <h2>The plate</h2>
+    <p class="lede">Pins are surveyed high-water marks, coloured by how far the model's water surface sits above or below the one the surveyors recorded. Hollow dashed pins are marks the model left dry — a miss.</p>
+    <div class="instrument">
+      <div class="rail">
+        <div>
+          <h3>Stage model</h3>
+          <div class="switch" id="switch"></div>
+        </div>
+        <div>
+          <h3>Layers</h3>
+          <div class="layers" id="layers"></div>
+        </div>
+        <div class="opacity">
+          <label for="op">Overlay opacity <span id="opval" style="font-variant-numeric:tabular-nums">85%</span></label>
+          <input type="range" id="op" min="20" max="100" value="85" step="5">
+        </div>
+      </div>
+      <div>
+        <div class="plate">
+          <div class="canvas" id="canvas"></div>
+          <dl class="readout" id="readout"></dl>
+        </div>
+        <p class="hint" id="hint">Hover or tap a pin to read its surveyed and modelled water surface.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="sec">
+    <h2>Mark by mark</h2>
+    <p class="lede">One row per surveyed mark. The distance between the two dots is the improvement at that point; a dot on the dashed line at the left edge means that model left the mark dry.</p>
+    <div class="charts">
+      <figure>
+        <div class="key">
+          <span><i style="background:var(--over)"></i>One constant stage</span>
+          <span><i style="background:var(--water)"></i>Per-reach rating curves</span>
+          <span><i style="background:transparent;border:1.5px dashed var(--dry)"></i>Left dry</span>
+        </div>
+        <svg id="dumbbell" viewBox="0 0 470 400" role="img" aria-label="Residual per surveyed mark under both models"></svg>
+        <figcaption>Residual = modelled water surface minus surveyed water surface. Positive is too much water. The constant-stage model reaches +12.1 m; the rating curves stay inside +2.8 m, and miss six marks entirely.</figcaption>
+      </figure>
+      <figure>
+        <svg id="rating" viewBox="0 0 470 360" role="img" aria-label="Stage-discharge rating curves for four main-stem reaches"></svg>
+        <figcaption>Synthetic rating curves for the four reaches carrying the most water, built from each reach's own HAND cross-section and Manning's equation. Markers show the discharge each reach was assigned and the stage the curve returns. Reach 412 is 127 m long on a floored slope, so it needs far more stage to pass the same flow — the loose end noted in the project's decision log.</figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <section class="notes">
+    <div>
+      <h3>Why a constant fails</h3>
+      <p>HAND measures each floodplain cell against its <em>nearest</em> drainage, which across 491 km² is usually a small tributary rather than the main stem. The threshold that would place the water correctly ranges from −0.19 m to 12.32 m across these 16 marks, so no single value fits. Fitting the best possible constant still misses every mark by more than a metre.</p>
+    </div>
+    <div>
+      <h3>Finer data made it worse</h3>
+      <p>At 30 m the channel bed at the gauge reads 4.81 m NAVD88; at 10 m it reads 0.89 m, because 10 m resolves the channel. <code>stage − bed</code> therefore grew from 7.97 m to 11.89 m and the constant model flooded deeper. Resolution only helps once the stage conversion is right.</p>
+    </div>
+    <div>
+      <h3>The improvement cost recall</h3>
+      <p>Ten of sixteen marks fall inside the rating-curve extent, against sixteen of sixteen before. The constant model "hit" every mark by flooding 98% of the watershed. That is why hit rate alone is a useless metric, and why bias belongs beside it.</p>
+    </div>
+    <div>
+      <h3>What this is not</h3>
+      <p>A screening model, not a hydraulic one. Manning's equation assumes steady uniform flow, the cross-sections come from a DEM rather than a survey, roughness is one guess per reach, and one gauge's discharge is spread to ungauged reaches by drainage-area ratio — so a storm that hit one tributary and missed another is not represented.</p>
+    </div>
+  </section>
+
+  <p class="foot" id="foot"></p>
+</div>
+
+<script id="payload" type="application/json">__PAYLOAD__</script>
+<script>
+(function () {
+  "use strict";
+  const D = JSON.parse(document.getElementById("payload").textContent);
+  const N = D.notes;
+  const css = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+
+  /* ---------------- facts ---------------- */
+  const facts = [
+    ["Watershed", N.area_km2.toLocaleString(), "km² HUC-10"],
+    ["Grid", (N.cells / 1e6).toFixed(1), "M cells at 10 m"],
+    ["Flats resolved", N.flats_resolved.toLocaleString(), "cells"],
+    ["Reaches", N.reaches.toLocaleString(), N.curves + " with a curve"],
+    ["Peak discharge", N.gauge_discharge_cms.toLocaleString(), "m³/s at 08074500"],
+    ["Reach stage", N.stage_median.toFixed(2), "m median, " + N.stage_max.toFixed(1) + " m max"],
+  ];
+  document.getElementById("facts").innerHTML = facts
+    .map(([k, v, u]) => `<div><dt>${k}</dt><dd>${v} <small>${u}</small></dd></div>`).join("");
+
+  /* ---------------- models ---------------- */
+  const MODELS = {
+    rating: { label: "Per-reach rating curves", depth: "depth", extent: "wet_rating",
+              area: N.rating_area_km2, key: "rating",
+              stat: "RMSE 1.38 m · 10 of 16 wet" },
+    constant: { label: "One constant stage", depth: "depth_const", extent: "wet_const",
+                area: N.const_area_km2, key: "constant",
+                stat: "RMSE 7.86 m · 16 of 16 wet" },
+  };
+  let model = "rating";
+  let active = null;
+
+  document.getElementById("switch").innerHTML = Object.entries(MODELS).map(([id, m]) =>
+    `<button type="button" data-model="${id}" aria-pressed="${id === model}">
+       <span class="k">${m.label}</span>
+       <span class="v">${m.area.toFixed(0)} km² · ${m.stat}</span>
+     </button>`).join("");
+
+  /* ---------------- layers ---------------- */
+  const ORDER = ["elevation", "hand", "depth", "depth_const", "streams", "wet_rating", "wet_const"];
+  const SWATCH = { elevation: "linear-gradient(90deg,#3a7d44,#c9b271,#efefef)",
+                   hand: "linear-gradient(90deg,#440154,#21918c,#fde725)",
+                   depth: "linear-gradient(90deg,#deebf7,#08306b)",
+                   depth_const: "linear-gradient(90deg,#deebf7,#08306b)",
+                   streams: "#00e5c0", wet_rating: "#22c3ff", wet_const: "#ff9a3c" };
+  const meta = {};
+  D.layers.forEach((L) => { meta[L.name] = L; });
+
+  const visible = { elevation: true, hand: false, depth: true, depth_const: false,
+                    streams: true, wet_rating: false, wet_const: false };
+
+  const canvas = document.getElementById("canvas");
+  canvas.style.aspectRatio = D.width + " / " + D.height;
+  canvas.innerHTML = ORDER.map((name) =>
+    `<img id="im-${name}" src="${D.uris[name]}" alt="">`).join("") + `<div class="pins" id="pins"></div>`;
+
+  function shownLayers() {
+    const m = MODELS[model];
+    const hidden = new Set(model === "rating" ? ["depth_const", "wet_const"] : ["depth", "wet_rating"]);
+    return ORDER.filter((n) => !hidden.has(n));
+  }
+
+  function renderLayerList() {
+    const rows = shownLayers().map((name) => {
+      const L = meta[name];
+      const rng = L.vmin === null || L.vmin === undefined ? ""
+        : `<span class="rng">${L.vmin.toFixed(1)} – ${L.vmax.toFixed(1)} ${L.units}</span>`;
+      return `<label class="layer">
+        <input type="checkbox" data-layer="${name}" ${visible[name] ? "checked" : ""}>
+        <span><span class="swatch" style="background:${SWATCH[name] || "var(--muted)"}"></span>${L.label}</span>
+        ${rng}
+      </label>`;
+    });
+    document.getElementById("layers").innerHTML = rows.join("");
+  }
+
+  const opacity = () => document.getElementById("op").value / 100;
+
+  function paint() {
+    const shown = new Set(shownLayers());
+    ORDER.forEach((name, i) => {
+      const el = document.getElementById("im-" + name);
+      const on = shown.has(name) && visible[name];
+      el.style.display = on ? "block" : "none";
+      el.style.opacity = name === "elevation" ? 1 : opacity();
+      el.style.zIndex = i + 1;
+    });
+    document.querySelectorAll("#switch button").forEach((b) => {
+      b.setAttribute("aria-pressed", String(b.dataset.model === model));
+    });
+    paintPins();
+    paintReadout(active);
+  }
+
+  /* ---------------- residual colour ---------------- */
+  function residualColour(v) {
+    if (v === null) return null;
+    const a = Math.abs(v);
+    if (a <= 1) return css("--close");
+    if (a <= 3) return "color-mix(in oklab, " + css("--close") + " 35%, " + css("--over") + ")";
+    return css("--over");
+  }
+
+  function paintPins() {
+    const key = MODELS[model].key;
+    const pins = D.marks.map((m, i) => {
+      const v = m[key];
+      const colour = residualColour(v);
+      const cls = v === null ? "pin dry" : "pin";
+      const style = `left:${(m.px / D.width) * 100}%;top:${(m.py / D.height) * 100}%;` +
+                    (colour ? `background:${colour};` : "");
+      const title = v === null ? "left dry by this model" : (v > 0 ? "+" : "") + v.toFixed(2) + " m";
+      return `<button type="button" class="${cls}" style="${style}" data-i="${i}"
+                aria-label="Mark ${i + 1}, ${title}"></button>`;
+    });
+    const g = D.gauge;
+    pins.push(`<span class="gaugepin" style="left:${(g.px / D.width) * 100}%;top:${(g.py / D.height) * 100}%"></span>`);
+    pins.push(`<span class="gaugelabel" style="left:${(g.px / D.width) * 100}%;top:${(g.py / D.height) * 100}%">${g.site}</span>`);
+    document.getElementById("pins").innerHTML = pins.join("");
+    document.querySelectorAll(".pin").forEach((p) => {
+      p.addEventListener("mouseenter", () => { active = +p.dataset.i; paintReadout(active); markActive(); });
+      p.addEventListener("focus", () => { active = +p.dataset.i; paintReadout(active); markActive(); });
+      p.addEventListener("click", () => { active = +p.dataset.i; paintReadout(active); markActive(); });
+    });
+    markActive();
+  }
+  function markActive() {
+    document.querySelectorAll(".pin").forEach((p) => {
+      p.dataset.active = String(+p.dataset.i === active);
+    });
+  }
+
+  function paintReadout(i) {
+    const r = document.getElementById("readout");
+    const g = D.gauge;
+    if (i === null || i === undefined) {
+      r.innerHTML = [
+        ["Model", MODELS[model].label],
+        ["Modelled extent", MODELS[model].area.toFixed(0) + " km²"],
+        ["Of watershed", Math.round((MODELS[model].area / N.unit_area_km2) * 100) + "%"],
+        ["Gauge catchment", g.area_km2.toLocaleString() + " km²"],
+      ].map(([k, v]) => `<div><dt>${k}</dt><dd>${v}</dd></div>`).join("");
+      document.getElementById("hint").textContent =
+        "Hover or tap a pin to read its surveyed and modelled water surface.";
+      return;
+    }
+    const m = D.marks[i];
+    const v = m[MODELS[model].key];
+    r.innerHTML = [
+      ["Surveyed WSE", m.surveyed_m.toFixed(2) + " m"],
+      ["Ground here", m.ground_m.toFixed(2) + " m"],
+      ["HAND here", m.hand_m.toFixed(2) + " m"],
+      ["Residual", v === null ? "left dry" : (v > 0 ? "+" : "") + v.toFixed(2) + " m"],
+    ].map(([k, val]) => `<div><dt>${k}</dt><dd>${val}</dd></div>`).join("");
+    document.getElementById("hint").textContent =
+      `Mark ${i + 1} of ${D.marks.length}, survey quality ${m.quality}. ` +
+      `Water stood ${(m.surveyed_m - m.ground_m).toFixed(2)} m above the ground at this point.`;
+  }
+
+  /* ---------------- dumbbell ---------------- */
+  function drawDumbbell() {
+    const svg = document.getElementById("dumbbell");
+    const L = 58, R = 452, T = 26, rows = D.marks.length;
+    const step = 21, H = T + rows * step + 30;
+    svg.setAttribute("viewBox", `0 0 470 ${H}`);
+    const vals = D.marks.flatMap((m) => [m.rating, m.constant]).filter((v) => v !== null);
+    const lo = Math.min(-1, Math.floor(Math.min(...vals)));
+    const hi = Math.ceil(Math.max(...vals));
+    const x = (v) => L + ((v - lo) / (hi - lo)) * (R - L);
+    const parts = [];
+
+    for (let t = lo; t <= hi; t += 2) {
+      parts.push(`<line x1="${x(t)}" y1="${T - 6}" x2="${x(t)}" y2="${T + rows * step - 8}"
+        stroke="${t === 0 ? css("--rule") : css("--grid")}" stroke-width="${t === 0 ? 1.4 : 1}"/>`);
+      parts.push(`<text class="ct" x="${x(t)}" y="${T - 11}" text-anchor="middle">${t > 0 ? "+" + t : t}</text>`);
+    }
+    parts.push(`<text class="ct b" x="${L}" y="${T + rows * step + 20}">residual, metres  →  too much water</text>`);
+    parts.push(`<line x1="${L - 26}" y1="${T - 6}" x2="${L - 26}" y2="${T + rows * step - 8}"
+      stroke="${css("--dry")}" stroke-width="1" stroke-dasharray="2 3"/>`);
+    parts.push(`<text class="ct" x="${L - 26}" y="${T - 11}" text-anchor="middle">dry</text>`);
+
+    D.marks.forEach((m, i) => {
+      const y = T + i * step + 6;
+      const xc = m.constant === null ? L - 26 : x(m.constant);
+      const xr = m.rating === null ? L - 26 : x(m.rating);
+      parts.push(`<text class="ct" x="${L - 40}" y="${y + 3.5}" text-anchor="end">${i + 1}</text>`);
+      parts.push(`<line x1="${xc}" y1="${y}" x2="${xr}" y2="${y}" stroke="${css("--rule")}" stroke-width="1.4"/>`);
+      parts.push(m.constant === null
+        ? `<circle cx="${xc}" cy="${y}" r="4" fill="none" stroke="${css("--dry")}" stroke-width="1.4" stroke-dasharray="2 2"/>`
+        : `<circle cx="${xc}" cy="${y}" r="4.2" fill="${css("--over")}"/>`);
+      parts.push(m.rating === null
+        ? `<circle cx="${xr}" cy="${y}" r="4" fill="none" stroke="${css("--dry")}" stroke-width="1.4" stroke-dasharray="2 2"/>`
+        : `<circle cx="${xr}" cy="${y}" r="4.2" fill="${css("--water")}"/>`);
+    });
+    svg.innerHTML = parts.join("");
+  }
+
+  /* ---------------- rating curves ---------------- */
+  function drawRating() {
+    const svg = document.getElementById("rating");
+    const L = 52, R = 452, T = 22, B = 296;
+    const curves = D.curves;
+    const qmin = 10;
+    const qmax = Math.max(...curves.map((c) => c.assigned_q)) * 6;
+    const smax = Math.max(...curves.map((c) => c.assigned_stage)) * 1.5;
+    const lx = (q) => L + ((Math.log10(Math.max(q, qmin)) - Math.log10(qmin)) /
+                           (Math.log10(qmax) - Math.log10(qmin))) * (R - L);
+    const ly = (s) => B - (s / smax) * (B - T);
+    const palette = [css("--water-deep"), css("--water"), css("--over"), css("--close")];
+    const parts = [];
+
+    for (let e = 1; Math.pow(10, e) <= qmax; e++) {
+      const q = Math.pow(10, e);
+      parts.push(`<line x1="${lx(q)}" y1="${T}" x2="${lx(q)}" y2="${B}" stroke="${css("--grid")}" stroke-width="1"/>`);
+      parts.push(`<text class="ct" x="${lx(q)}" y="${B + 14}" text-anchor="middle">${q.toLocaleString()}</text>`);
+    }
+    const sstep = smax > 12 ? 4 : 2;
+    for (let s = 0; s <= smax; s += sstep) {
+      parts.push(`<line x1="${L}" y1="${ly(s)}" x2="${R}" y2="${ly(s)}" stroke="${css("--grid")}" stroke-width="1"/>`);
+      parts.push(`<text class="ct" x="${L - 7}" y="${ly(s) + 3.5}" text-anchor="end">${s}</text>`);
+    }
+    parts.push(`<text class="ct b" x="${L}" y="${B + 30}">discharge, m³/s (log)</text>`);
+    parts.push(`<text class="ct b" x="${L - 40}" y="${T + 4}" transform="rotate(-90 ${L - 40} ${T + 4})">stage, m</text>`);
+
+    curves.forEach((c, k) => {
+      const pts = [];
+      for (let i = 0; i < c.stage.length; i++) {
+        if (c.stage[i] > smax) break;
+        if (c.q[i] < qmin) continue;
+        pts.push(`${lx(c.q[i]).toFixed(1)},${ly(c.stage[i]).toFixed(1)}`);
+      }
+      if (pts.length > 1) {
+        parts.push(`<polyline points="${pts.join(" ")}" fill="none" stroke="${palette[k]}" stroke-width="2" stroke-linejoin="round"/>`);
+      }
+      parts.push(`<circle cx="${lx(c.assigned_q)}" cy="${ly(c.assigned_stage)}" r="4.6"
+        fill="${palette[k]}" stroke="${css("--plate")}" stroke-width="1.6"/>`);
+    });
+
+    const rows = curves.map((c, k) =>
+      `<g transform="translate(${L}, ${B + 44 + k * 15})">
+         <rect width="16" height="3" y="-3.5" fill="${palette[k]}"/>
+         <text class="ct" x="24" y="0">reach ${c.link} · ${c.length_m} m · slope ${c.slope.toExponential(1)} · ${c.assigned_q.toFixed(0)} m³/s → ${c.assigned_stage.toFixed(2)} m</text>
+       </g>`);
+    svg.setAttribute("viewBox", `0 0 470 ${B + 44 + curves.length * 15 + 8}`);
+    svg.innerHTML = parts.join("") + rows.join("");
+  }
+
+  /* ---------------- wiring ---------------- */
+  document.getElementById("switch").addEventListener("click", (e) => {
+    const b = e.target.closest("button[data-model]");
+    if (!b) return;
+    model = b.dataset.model;
+    renderLayerList();
+    paint();
+    drawDumbbell();
+  });
+  document.getElementById("layers").addEventListener("change", (e) => {
+    const box = e.target.closest("input[data-layer]");
+    if (!box) return;
+    visible[box.dataset.layer] = box.checked;
+    paint();
+  });
+  const op = document.getElementById("op");
+  op.addEventListener("input", () => {
+    document.getElementById("opval").textContent = op.value + "%";
+    paint();
+  });
+  document.querySelector(".plate").addEventListener("mouseleave", () => {
+    active = null; paintReadout(null); markActive();
+  });
+
+  document.getElementById("foot").textContent =
+    `${N.name} · HUC-10 ${N.huc} · ${N.area_km2} km² · 3DEP 10 m reduced ${D.reduction}× to ` +
+    `${D.width}×${D.height} px · ${D.crs} · peak ${N.peak_time} CDT`;
+
+  renderLayerList();
+  paint();
+  drawDumbbell();
+  drawRating();
+
+  // The charts resolve theme tokens at draw time, so a theme flip has to redraw them
+  // or their labels and marks keep the previous theme's colours.
+  const scheme = window.matchMedia("(prefers-color-scheme: dark)");
+  const redraw = () => { paint(); drawDumbbell(); drawRating(); };
+  if (scheme.addEventListener) scheme.addEventListener("change", redraw);
+  new MutationObserver(redraw).observe(document.documentElement, {
+    attributes: true, attributeFilter: ["data-theme"],
+  });
+})();
+</script>
