@@ -33,15 +33,18 @@ import numpy.typing as npt
 from numba import njit
 
 from floodline.config import Config, HydraulicsConfig, StageMethod
+from floodline.hydraulics.rating import RatingCurve
 from floodline.terrain.flowdir import D8_CODES, downstream_index
 
 __all__ = [
     "GaugeStage",
+    "ReachStages",
     "constant_stage",
     "gauge_reading_to_datum",
     "resolve_gauge",
     "slope_stage",
     "stage_field",
+    "stage_field_from_discharge",
 ]
 
 
@@ -294,3 +297,64 @@ def stage_field(
     if hydraulics.stage_method is StageMethod.CONSTANT:
         return constant_stage(filled_dem.shape, gauge.depth_m)
     return slope_stage(filled_dem, flowdir, gauge, config=hydraulics, cellsize=cellsize)
+
+
+@dataclass(frozen=True, slots=True)
+class ReachStages:
+    """Per-reach stages from a discharge field, and what could not be resolved."""
+
+    stage_m: npt.NDArray[np.float64]
+    """Per-cell stage above local drainage, ready for `inundate`."""
+
+    by_reach: dict[int, float]
+    """Stage in metres, keyed by reach index."""
+
+    reaches_without_a_curve: int
+    """Reaches with no rating curve - too short, or no catchment."""
+
+    reaches_off_the_curve: int
+    """Reaches whose discharge exceeded the tabulated maximum, so stage was capped."""
+
+
+def stage_field_from_discharge(
+    reach_of_cell: npt.NDArray[np.int64],
+    curves: dict[int, RatingCurve],
+    discharge_cms: dict[int, float],
+) -> ReachStages:
+    """Turn per-reach discharge into a per-cell stage field via the rating curves.
+
+    This is what replaces a single gauge stage applied everywhere. Each reach gets
+    the stage its own geometry says carries its own discharge.
+
+    Cells draining to a reach with no discharge, or no curve, get stage zero: the
+    model has nothing to say about them, and zero floods nothing, which is the
+    honest default. `reaches_without_a_curve` reports how much of the network that
+    covers, so silence is visible.
+    """
+    stage = np.zeros(reach_of_cell.shape, dtype=np.float64)
+    by_reach: dict[int, float] = {}
+    missing = 0
+    capped = 0
+
+    for reach, flow in discharge_cms.items():
+        curve = curves.get(reach)
+        if curve is None:
+            missing += 1
+            continue
+        if curve.exceeds_curve(flow):
+            capped += 1
+        by_reach[reach] = curve.stage_for_discharge(flow)
+
+    if by_reach:
+        lookup = np.zeros(max(by_reach) + 1, dtype=np.float64)
+        for reach, value in by_reach.items():
+            lookup[reach] = value
+        within = (reach_of_cell >= 0) & (reach_of_cell < lookup.size)
+        stage[within] = lookup[reach_of_cell[within]]
+
+    return ReachStages(
+        stage_m=stage,
+        by_reach=by_reach,
+        reaches_without_a_curve=missing,
+        reaches_off_the_curve=capped,
+    )

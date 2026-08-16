@@ -196,97 +196,72 @@ def _prepare_conditioned(tmp_path: Path, cfg_text: str) -> tuple[Path, Path]:
     return filled, cfg
 
 
-def test_inundate_refuses_without_the_gauge_conversions(tmp_path: Path) -> None:
-    """The headline safeguard: no reading unit and no datum, no run."""
-    filled, cfg = _prepare_conditioned(
-        tmp_path, "[floodline.terrain]\nstream_threshold_cells = 200\n"
-    )
-    result = runner.invoke(
-        app,
-        [
-            "inundate",
-            str(filled),
-            "3.0",
-            str(tmp_path / "d.tif"),
-            "--gauge-row",
-            "60",
-            "--gauge-col",
-            "45",
-            "--config",
-            str(cfg),
-        ],
-    )
-    assert result.exit_code != 0
-    assert isinstance(result.exception, ValueError)
-    assert "is not set" in str(result.exception)
-
-
-def test_inundate_writes_a_depth_raster(tmp_path: Path) -> None:
+def _conditioned_watershed(tmp_path: Path) -> tuple[Path, Path, int, int]:
+    """A conditioned synthetic DEM plus a gauge cell that sits on the network."""
     import numpy as np
 
-    filled, cfg = _prepare_conditioned(
-        tmp_path,
-        "[floodline.terrain]\nstream_threshold_cells = 200\n"
-        "[floodline.hydraulics]\ngauge_datum_offset_m = 0.0\ngauge_reading_unit = 'm'\n",
-    )
-    # find a stream cell to put the gauge on
     from floodline.io.raster import read_raster
     from floodline.terrain.route import route_terrain
 
+    raw, filled = tmp_path / "raw.tif", tmp_path / "filled.tif"
+    cfg = tmp_path / "c.toml"
+    cfg.write_text("[floodline.terrain]\nstream_threshold_cells = 200\n")
+    runner.invoke(app, ["synth", str(raw), "--rows", "120", "--cols", "90"])
+    runner.invoke(app, ["condition", str(raw), str(filled), "--config", str(cfg)])
+
     raster = read_raster(filled)
     chain = route_terrain(raster.data, cellsize=raster.cellsize, stream_threshold=200)
-    row, col = np.argwhere(chain.streams)[len(np.argwhere(chain.streams)) // 2]
-    reading = float(chain.filled[row, col]) + 4.0
+    cells = np.argwhere(chain.streams)
+    row, col = cells[len(cells) // 2]
+    return filled, cfg, int(row), int(col)
 
+
+def test_inundate_from_discharge_writes_a_depth_raster(tmp_path: Path) -> None:
+    filled, cfg, row, col = _conditioned_watershed(tmp_path)
     out = tmp_path / "depth.tif"
     result = runner.invoke(
         app,
         [
             "inundate",
             str(filled),
-            str(reading),
+            "150",
             str(out),
             "--gauge-row",
-            str(int(row)),
+            str(row),
             "--gauge-col",
-            str(int(col)),
+            str(col),
             "--config",
             str(cfg),
         ],
     )
     assert result.exit_code == 0, result.stdout
-    assert "cells wet" in result.stdout
-    assert "m on datum" in result.stdout
+    assert "rating curves" in result.stdout
+    assert "reach stage median" in result.stdout
 
     with rasterio.open(out) as src:
         depth = src.read(1, masked=True)
         assert src.dtypes[0] == "float32"
     assert depth.min() >= 0.0
-    assert depth.max() <= 4.0 + 1e-3
 
 
-def test_inundate_warns_when_the_gauge_is_off_the_network(tmp_path: Path) -> None:
+def test_inundate_refuses_a_gauge_off_the_network(tmp_path: Path) -> None:
+    """Without a contributing area there is nothing to scale discharge from."""
     import numpy as np
 
-    filled, cfg = _prepare_conditioned(
-        tmp_path,
-        "[floodline.terrain]\nstream_threshold_cells = 200\n"
-        "[floodline.hydraulics]\ngauge_datum_offset_m = 0.0\ngauge_reading_unit = 'm'\n",
-    )
     from floodline.io.raster import read_raster
     from floodline.terrain.route import route_terrain
 
+    filled, cfg, _, _ = _conditioned_watershed(tmp_path)
     raster = read_raster(filled)
     chain = route_terrain(raster.data, cellsize=raster.cellsize, stream_threshold=200)
     row, col = np.argwhere(~chain.streams)[0]
-    reading = float(chain.filled[row, col]) + 2.0
 
     result = runner.invoke(
         app,
         [
             "inundate",
             str(filled),
-            str(reading),
+            "150",
             str(tmp_path / "d.tif"),
             "--gauge-row",
             str(int(row)),
@@ -296,8 +271,36 @@ def test_inundate_warns_when_the_gauge_is_off_the_network(tmp_path: Path) -> Non
             str(cfg),
         ],
     )
-    assert result.exit_code == 0, result.stdout
-    assert "not a stream cell" in result.stderr
+    assert result.exit_code == 1
+    assert "not on the stream network" in result.stderr
+
+
+def test_more_discharge_floods_more(tmp_path: Path) -> None:
+    """The monotonicity invariant, end to end through the rating curves."""
+    filled, cfg, row, col = _conditioned_watershed(tmp_path)
+    areas = []
+    for q in ("50", "500"):
+        out = tmp_path / f"d{q}.tif"
+        result = runner.invoke(
+            app,
+            [
+                "inundate",
+                str(filled),
+                q,
+                str(out),
+                "--gauge-row",
+                str(row),
+                "--gauge-col",
+                str(col),
+                "--config",
+                str(cfg),
+            ],
+        )
+        assert result.exit_code == 0, result.stdout
+        with rasterio.open(out) as src:
+            data = src.read(1, masked=True)
+        areas.append(int((data.filled(0) > 0).sum()))
+    assert areas[1] > areas[0]
 
 
 def test_fetch_list_shows_every_source() -> None:

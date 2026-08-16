@@ -480,23 +480,30 @@ def fetch_usgs_gauge(context: FetchContext) -> list[Artifact]:
         )
     )
 
-    series_params = {
-        "format": "json",
-        "sites": sites,
-        "parameterCd": "00065",  # gauge height, feet
-        "startDT": case.event_start.isoformat(),
-        "endDT": case.event_end.isoformat(),
-    }
-    artifacts.append(
-        download(
-            context,
-            NWIS_IV,
-            target / "gauge_height.json",
-            name="nwis-gauge-height",
-            note=f"parameter 00065, {case.event_start} to {case.event_end}",
-            params=series_params,
+    # 00065 is gauge height in feet; 00060 is discharge in cubic feet per second.
+    # Discharge is what a synthetic rating curve consumes - stage alone cannot be
+    # converted to a per-reach threshold, which is what the constant-stage model
+    # got wrong.
+    for parameter, filename, label in (
+        ("00065", "gauge_height.json", "gauge height, feet"),
+        ("00060", "discharge.json", "discharge, cubic feet per second"),
+    ):
+        artifacts.append(
+            download(
+                context,
+                NWIS_IV,
+                target / filename,
+                name=f"nwis-{parameter}",
+                note=f"parameter {parameter} ({label}), {case.event_start} to {case.event_end}",
+                params={
+                    "format": "json",
+                    "sites": sites,
+                    "parameterCd": parameter,
+                    "startDT": case.event_start.isoformat(),
+                    "endDT": case.event_end.isoformat(),
+                },
+            )
         )
-    )
     return artifacts
 
 
@@ -708,7 +715,7 @@ REGISTRY: dict[str, Source] = {
         ),
         Source(
             name="usgs-gauge",
-            description="USGS NWIS gauge height and site metadata (carries the datum)",
+            description="USGS NWIS gauge height, discharge, and site metadata (the datum)",
             fetch=fetch_usgs_gauge,
         ),
         Source(

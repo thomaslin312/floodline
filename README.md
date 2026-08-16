@@ -37,36 +37,36 @@ Stated first, on purpose. HAND is a screening model, not a hydraulic one.
   small town, so this comparison is weaker here than it would have been at Lismore.
   That is the main thing given up by choosing Harvey as the primary case.
 
-## What it currently gets wrong
+## Where it stands against ground truth
 
-Run end to end on real Houston terrain, the model over-predicts flood depth by
-metres, and the reason is understood rather than mysterious.
+Validated against USGS surveyed high-water marks in the gauged watershed
+(HUC 1204010403, Whiteoak Bayou–Buffalo Bayou, 491 km² at 10 m, 16 quality-1/2
+marks). Harvey peak discharge 1,433 m³/s at gauge 08074500.
 
-Validated against 16 USGS surveyed high-water marks in the gauged watershed
-(HUC 1204010403, Whiteoak Bayou–Buffalo Bayou, 491 km² at 10 m):
+| | mean residual | RMSE | within 1 m | modelled extent |
+|---|---|---|---|---|
+| Constant stage from one gauge | +6.72 m | 7.86 m | 12% | 464 km² (98% of the unit) |
+| Best-fit constant, fitted to the marks | −0.74 m | 4.13 m | 0% | — |
+| **Per-reach synthetic rating curves** | **+1.04 m** | **1.38 m** | **50%** | **117 km² (25%)** |
 
-| | 30 m, whole AOI | 10 m, watershed-scoped |
-|---|---|---|
-| mean water-surface residual | +5.38 m | +6.72 m |
-| RMSE | 5.86 m | 7.86 m |
-| within 1 m | 2% | 12% |
+Two things that matter more than the headline number.
 
-Finer data made it *worse*. At 30 m the channel bed at the gauge reads 4.81 m
-NAVD88; at 10 m it reads 0.89 m, because the channel is actually resolved. The
-model converts gauge stage to a threshold as `stage − bed`, so that grew from
-7.97 m to 11.89 m and everything flooded deeper.
+**A constant HAND threshold cannot work here, at any value.** The threshold that
+would place the water correctly ranges from −0.19 m to 12.32 m across those 16
+points, because HAND measures each floodplain cell against its *nearest* drainage —
+usually a small tributary, not the main stem. Fitting the best possible single value
+still misses every mark by more than a metre. Giving each reach its own stage from
+its own geometry is what fixes it.
 
-Asking the marks what the threshold should have been: `WSE − (elevation of that
-cell's own drainage)` ranges from **−0.19 m to 12.32 m**, median 4.42 m. Fitting the
-best possible single value still gives RMSE 4.13 m and **0% of marks within a
-metre**. So a spatially constant HAND threshold cannot reproduce this event at any
-value — the water surface is not a fixed height above local drainage across a
-watershed with many independent tributaries. The water actually stood a median of
-0.58 m above the ground at the marks; the model was putting metres over everything.
+**Finer data made the constant-threshold model worse, not better.** At 30 m the
+channel bed at the gauge reads 4.81 m NAVD88; at 10 m it reads 0.89 m, because 10 m
+resolves the channel. `stage − bed` therefore grew from 7.97 m to 11.89 m and
+everything flooded deeper. Resolution only helps once the stage conversion is right.
 
-This is a statement about the method, not the DEM. The fix is a per-reach synthetic
-rating curve (`hydraulics/rating.py`, in the spec, not yet built) driven by
-discharge rather than stage.
+**And the improvement cost recall.** 10 of 16 marks now fall inside the modelled
+extent, against 16 of 16 before. The old model "hit" every mark by flooding 98% of
+the watershed. This is exactly why hit rate alone is a useless metric and why CSI
+and bias are reported alongside it.
 
 ## Status
 

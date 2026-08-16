@@ -32,7 +32,13 @@ from shapely.geometry import LineString
 from floodline.config import Config, TerrainConfig
 from floodline.terrain.flowdir import FLOW_NODATA, downstream_index
 
-__all__ = ["prune_stream_mask", "stream_mask", "stream_network"]
+__all__ = [
+    "link_raster",
+    "partition_links",
+    "prune_stream_mask",
+    "stream_mask",
+    "stream_network",
+]
 
 
 def _resolve_terrain(config: Config | TerrainConfig | None) -> TerrainConfig:
@@ -171,7 +177,7 @@ def prune_stream_mask(
     return kept.reshape(rows, cols)
 
 
-def _partition_into_links(
+def partition_links(
     mask_flat: npt.NDArray[np.bool_],
     receiver: npt.NDArray[np.int64],
     upstream: npt.NDArray[np.int64],
@@ -200,6 +206,30 @@ def _partition_into_links(
             walker = target
         links.append(cells)
     return links
+
+
+def link_raster(
+    mask: npt.NDArray[np.bool_], flowdir: npt.NDArray[np.int16]
+) -> tuple[npt.NDArray[np.int64], list[list[int]]]:
+    """Return a per-cell link index for the stream network, and the partition itself.
+
+    Off-network cells are -1. Indices are positions in the returned partition, which
+    is *not* the same numbering as `stream_network`'s `link_id` — that one drops
+    degenerate links and renumbers. Rating curves need every link including the
+    degenerate ones, so they use these indices.
+    """
+    if mask.shape != flowdir.shape:
+        raise ValueError(f"mask shape {mask.shape} does not match flowdir {flowdir.shape}")
+    rows, cols = mask.shape
+    mask_flat = np.ascontiguousarray(mask).ravel()
+    receiver = np.ascontiguousarray(downstream_index(flowdir)).ravel()
+    upstream = _upstream_counts(mask_flat, receiver)
+    links = partition_links(mask_flat, receiver, upstream)
+
+    ids = np.full(rows * cols, -1, dtype=np.int64)
+    for index, cells in enumerate(links):
+        ids[cells] = index
+    return ids.reshape(rows, cols), links
 
 
 def _strahler_orders(
@@ -297,7 +327,7 @@ def stream_network(
     acc_flat = np.ascontiguousarray(accumulation, dtype=np.float64).ravel()
     upstream = _upstream_counts(mask_flat, receiver)
 
-    links = _partition_into_links(mask_flat, receiver, upstream)
+    links = partition_links(mask_flat, receiver, upstream)
     orders = _strahler_orders(links, receiver, mask_flat, acc_flat)
 
     def centre(cell: int) -> tuple[float, float]:
