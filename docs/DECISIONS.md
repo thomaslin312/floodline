@@ -1116,3 +1116,84 @@ once, since the case is Harvey, results exist, and it disclaimed them. Rewritten
 separate what is built from what is validated, to state the CSI gap outright, and to
 add a "what is and is not trustworthy" section for damage. This is the convention the
 repo already had; the README had drifted out of compliance with it.
+
+## 2026-09-05 — what is actually reachable for buildings and population, measured
+
+The exposure pipeline had no data behind it. Every candidate source was probed rather
+than assumed, and the results decided the design.
+
+| Source | Result | Consequence |
+|---|---|---|
+| Overture buildings, S3 | anonymous listing works | primary footprints |
+| Microsoft US Building Footprints | 206, range-readable | noted, unused |
+| WorldPop USA 100 m | 200, 494 MB, **Range ignored** | download once, cache |
+| GHS-POP global 100 m | server honours Range, but zip directory sits at the end | too slow, unused |
+| LandScan Global / USA | **403**, registration form | recorded unavailable |
+| Census ACS block groups | **"Missing Key"** | needs `CENSUS_API_KEY` |
+| TIGERweb block-group geometry | layer 10, open | usable once a key exists |
+
+Two findings worth keeping:
+
+- **WorldPop advertises `Accept-Ranges: bytes` and does not honour it.** A Range
+  request returns 200 with the whole body, which GDAL reports as "Range downloading
+  not supported by this server!". The DEM pattern of reading only the window that
+  matters does not transfer. The national raster is fetched once to `data/cache`
+  (494 MB) and windowed locally after. The download is opt-in behind
+  `floodline fetch-population`, because a function that quietly spends half a
+  gigabyte is one nobody can safely call from a script.
+- **LandScan is gated.** ORNL publishes it under CC BY but every download path is
+  behind a registration form. The project's rule is that a source needing a login is
+  recorded as unavailable, not worked around, so it is named in the module docstring
+  and left out.
+
+Overture is read with pyarrow rather than DuckDB, which the spec named. pyarrow is
+already in the stack for GeoParquet and does the same predicate pushdown on the `bbox`
+struct column; adding a second query engine to save one step was not worth the install.
+Measured on release 2026-08-19.0: a 6 x 4 km Houston window took 83 s to open the
+dataset and 210 s to read 12,151 buildings; the full Whiteoak Bayou box returned
+459,667 buildings in 183 s. The file listing is cached per release because it is the
+expensive part of a cold open, and results are cached per bounding box. If this becomes
+the bottleneck, DuckDB's spatial extension is the next thing to try.
+
+## 2026-09-05 — historical context: where a discharge sits in its gauge's record
+
+`hydraulics/frequency.py`. Log-Pearson III by method of moments on log10 of the annual
+peaks with the station skew - Bulletin 17B in the form still used for quick work. Full
+17C is not implemented: no Expected Moments Algorithm, no regional skew weighting, no
+Multiple Grubbs-Beck low-outlier test. That is why the empirical rank is reported
+alongside the fitted return period rather than replaced by it: where the two disagree,
+the rank is the fact and the fit is the model.
+
+The normal quantile comes from `statistics.NormalDist.inv_cdf` rather than scipy. scipy
+is present transitively but undeclared, and pulling a declared dependency on it for one
+function was worse than using the standard library.
+
+On real data this immediately earned its caveats. Harvey's 1,433 m3/s at 08074500 is
+rank 1 of 90 years, and the log-Pearson III fit puts it past a 1-in-1000-year flow -
+which is not a finding about Harvey, it is the fit failing. A century of urbanisation
+upstream is exactly the non-stationarity the method assumes away. So a saturated fit now
+reports `fit_saturated` and returns no number, instead of printing "1-in-10,000 year"
+as though it meant something.
+
+## 2026-09-05 — three bugs the first real run caught that no unit test did
+
+Running `assess_watershed` on Whiteoak Bayou with live Overture footprints surfaced
+three defects in code that passed 563 tests.
+
+1. **NaN damage interval.** The margin grid marks undefined HAND with `-inf`. A
+   footprint straddling that boundary handed `np.percentile` a window mixing `-inf`
+   with real depths; its linear interpolation evaluates `-inf + inf`, returns NaN, and
+   the NaN propagated to `USD nan to USD nan`. `_reduce` now excludes non-finite cells
+   before reducing and keeps the sentinel only when every cell is undefined. Two tests
+   cover both cases.
+2. **A denominator that meant nothing.** Overture is queried on the watershed's
+   bounding box, which over a meandering HUC holds far more ground than the unit. The
+   run reported "42,556 of 499,769 buildings" and 19,851 footprints outside the DEM
+   entirely. Footprints are now clipped to the watershed polygon, and the count that
+   was dropped is reported rather than hidden.
+3. **A saturated frequency fit printed as a number**, covered above.
+
+The lesson recorded rather than the fix: all three are shape-of-real-data bugs that a
+synthetic fixture cannot produce, because the synthetic catchment has no undefined
+HAND, no bounding-box overhang and no 90-year gauge record. The integration test on
+real data is worth its runtime.

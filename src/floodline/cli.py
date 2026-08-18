@@ -756,6 +756,165 @@ def damage(
         )
 
 
+@app.command("fetch-population")
+def fetch_population(
+    product: Annotated[
+        str, typer.Option(help="worldpop_constrained, worldpop_unconstrained or ghs_pop.")
+    ] = "worldpop_constrained",
+    iso3: Annotated[str, typer.Option(help="Three-letter country code.")] = "USA",
+    year: Annotated[int, typer.Option(help="Product year.")] = 2020,
+    cache: Annotated[Path, typer.Option(help="Where to keep it.")] = Path("data/cache"),
+) -> None:
+    """Download a national population raster once, so windows can be read locally.
+
+    Neither WorldPop nor GHS-POP can be windowed over HTTP: WorldPop advertises
+    `Accept-Ranges: bytes` and then ignores the Range header, and GHS-POP is a zip
+    whose directory sits at the end of a multi-gigabyte file. WorldPop USA 2020
+    constrained is 494 MB and this is a one-time cost.
+    """
+    from floodline.io.population import PopulationProduct, ensure_population_raster
+
+    try:
+        chosen = PopulationProduct(product)
+    except ValueError as exc:
+        typer.secho(
+            f"error: unknown product {product!r}; known: "
+            f"{', '.join(p.value for p in PopulationProduct)}",
+            fg=typer.colors.RED,
+            err=True,
+        )
+        raise typer.Exit(code=2) from exc
+
+    typer.echo(f"fetching {chosen.value} for {iso3} {year} — this is hundreds of megabytes")
+    path = ensure_population_raster(chosen, iso3=iso3, year=year, cache_dir=cache, download=True)
+    typer.echo(f"cached {path} ({path.stat().st_size / 1e6:,.0f} MB)")
+
+
+@app.command()
+def assess(
+    huc: Annotated[str, typer.Argument(help="Hydrologic unit code, e.g. 1204010403.")],
+    out: Annotated[
+        Path | None, typer.Option(help="Write the priced building table here as GeoParquet.")
+    ] = None,
+    resolution: Annotated[int, typer.Option(help="Cell size in metres.")] = 30,
+    discharge_cms: Annotated[
+        float | None, typer.Option(help="Override the gauge peak. Label it a scenario if you do.")
+    ] = None,
+    samples: Annotated[int | None, typer.Option(help="Monte Carlo draws.")] = None,
+    buildings: Annotated[bool, typer.Option(help="Fetch Overture footprints.")] = True,
+    population: Annotated[bool, typer.Option(help="Read a population grid.")] = True,
+    download_population: Annotated[
+        bool,
+        typer.Option(help="Allow the one-time 494 MB national population download."),
+    ] = False,
+    config: ConfigOption = None,
+) -> None:
+    """Run the whole chain for one watershed on live data: terrain to damage.
+
+    Reads 3DEP over HTTP, finds the watershed's own gauge, places the modelled
+    discharge in that gauge's record, pulls Overture footprints and a population
+    grid, and prices the result with a Monte Carlo band. Every stage that cannot
+    reach its data is reported as a gap rather than filled with a default.
+
+    The Overture read is the slow part — minutes, not seconds — and is cached under
+    `data/cache` per release and bounding box.
+    """
+    from floodline.assess import NoDischargeError, assess_watershed, buildings_geoparquet
+    from floodline.compute import watershed_by_huc
+    from floodline.io.vector import write_vector
+
+    resolved = load_config(config)
+    unit, resolved = watershed_by_huc(huc, config=resolved)
+    typer.echo(
+        f"{unit.name} — HUC-{len(unit.huc)} {unit.huc} — {unit.area_km2:,.0f} km2 — "
+        f"{resolved.crs.analysis.to_string()}"
+    )
+
+    try:
+        result = assess_watershed(
+            unit,
+            config=resolved,
+            resolution_m=float(resolution),
+            discharge_cms=discharge_cms,
+            samples=samples,
+            with_buildings=buildings,
+            with_population=population,
+            download_population=download_population,
+        )
+    except NoDischargeError as exc:
+        typer.secho(f"error: {exc}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=1) from exc
+
+    source = "observed at a gauge" if result.gauged else "supplied, not observed"
+    typer.echo(f"\ndischarge {result.discharge_cms:,.0f} m3/s ({source})")
+    if result.history is not None:
+        typer.echo(f"  {result.history.summary()}")
+        for peak in result.history.larger_floods[:3]:
+            typer.echo(
+                f"    larger on record: {peak.water_year}  "
+                f"{peak.discharge_cms:,.0f} m3/s  ({peak.date})"
+            )
+    typer.echo(
+        f"\nflooded {result.flooded_km2:,.1f} km2 at {resolution} m, "
+        f"max depth {result.max_depth_m:.1f} m"
+    )
+
+    if result.buildings is not None:
+        exposed = result.buildings
+        typer.echo(
+            f"buildings  {exposed.n_inundated:,} above finished floor of "
+            f"{len(exposed.buildings):,} in the window "
+            f"({exposed.n_wet_ground:,} with water on the ground)"
+        )
+    if result.people is not None:
+        typer.echo(
+            f"people     {result.people.people_affected:,.0f} of "
+            f"{result.people.people_total:,.0f} in the window "
+            f"({result.people.share_affected:.1%}) — one grid, one estimate"
+        )
+
+    if result.damage is not None and result.interval is not None:
+        unit_name = resolved.damage.currency
+        low, high = result.interval.count_interval
+        lo_q, hi_q = result.interval.quantiles
+        typer.echo(
+            f"damage     {unit_name} {result.damage.total:,.0f} on "
+            f"{result.damage.family.value} curves, "
+            f"{int(lo_q * 100)}-{int(hi_q * 100)}% {unit_name} "
+            f"{result.interval.lower:,.0f} to {result.interval.upper:,.0f} "
+            f"({low:,}-{high:,} buildings)"
+        )
+        typer.echo(
+            f"           loss ratio {result.damage.loss_ratio:.1%} of "
+            f"{unit_name} {result.damage.exposed_value_total:,.0f} exposed"
+        )
+        if not result.interval.curves_verified:
+            typer.secho(
+                "warning: curve constants are unverified — counts and ratios stand, "
+                "currency totals do not.",
+                fg=typer.colors.YELLOW,
+                err=True,
+            )
+
+    for gap in result.gaps:
+        typer.secho(f"gap: {gap}", fg=typer.colors.YELLOW, err=True)
+    for note in result.warnings:
+        typer.secho(f"warning: {note}", fg=typer.colors.YELLOW, err=True)
+
+    if out is not None:
+        frame = buildings_geoparquet(result)
+        if frame is None:
+            typer.secho(
+                "nothing to write: exposure or damage did not run.",
+                fg=typer.colors.YELLOW,
+                err=True,
+            )
+        else:
+            typer.echo(f"wrote {write_vector(out, frame, config=resolved)}")
+
+    typer.echo("\ntimings: " + ", ".join(f"{k} {v:.1f}s" for k, v in result.seconds.items()))
+
+
 @app.command()
 def validate(
     modelled: Annotated[Path, typer.Argument(exists=True, dir_okay=False, help="Modelled extent.")],
