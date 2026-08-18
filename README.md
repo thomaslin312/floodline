@@ -91,10 +91,38 @@ this machine.
 | 4 | SAR validation, resolution and population experiments | not started |
 | 5 | Rendered report and write-up | not started |
 | — | Live compute service and national map UI (unplanned, built anyway) | done |
+| — | Overture and population fetchers, flood-frequency context, `assess` | done |
 
-Building footprints and population grids are inputs, not downloads: `floodline
-exposure` takes them as files. There is no fetcher for Overture or for the population
-products yet, so nothing has been run on real footprints.
+## Where the data actually comes from
+
+Every source below was probed, not assumed. Two of the obvious ones do not work, and
+the design follows from that rather than around it.
+
+| Source | Probe result | Used |
+|---|---|---|
+| USGS 3DEP, TNM API | COG range reads over `/vsicurl/` | yes — DEM |
+| USGS NWIS peak flow | open RDB | yes — discharge and the 90-year record |
+| USGS STN high-water marks | open JSON | yes — validation |
+| USGS WBD MapServer | open | yes — watershed boundaries |
+| Overture Maps buildings | anonymous S3, GeoParquet with a `bbox` column | yes — footprints |
+| WorldPop 100 m | 494 MB, **advertises `Accept-Ranges` and ignores it** | yes — downloaded once |
+| GHS-POP 100 m | zip directory at the end of a multi-GB file | no — too slow to window |
+| Microsoft US Building Footprints | 206, range-readable | no — Overture carries height and class |
+| LandScan Global / USA | **403**, registration form | no — gated |
+| Census ACS block groups | **"Missing Key"** | no — needs `CENSUS_API_KEY` |
+
+The WorldPop result is the one that shapes the code. Its server says it supports HTTP
+range requests and then answers one with `200` and the entire body, so the windowed
+read that works for 3DEP is impossible. The national raster is fetched once and
+windowed locally afterwards, and that download is opt-in:
+
+```bash
+uv run floodline fetch-population
+```
+
+LandScan would be the better product and is licensed CC BY, but every download path is
+behind a registration form. The rule here is that a source needing a login is recorded
+as unavailable rather than worked around, so it is named and left out.
 
 ## Damage: what is and is not trustworthy
 
@@ -182,7 +210,19 @@ only carry what was inlined into it.
 
 ## Use
 
-Exposure and damage, once you have a depth raster and footprints in the analysis CRS:
+The whole chain for any US watershed, on live data — terrain, hydraulics, footprints,
+population, damage, and where the discharge sits in its gauge's record:
+
+```bash
+uv run floodline assess 1204010403 --resolution 30 --samples 800 --out damage.parquet
+```
+
+Every stage that cannot reach its data is reported as a gap rather than filled with a
+default. The Overture read is the slow part, minutes rather than seconds, and is cached
+per release and bounding box under `data/cache`.
+
+Exposure and damage separately, once you have a depth raster and footprints in the
+analysis CRS:
 
 ```bash
 uv run floodline exposure depth.tif buildings.parquet exposed.parquet \

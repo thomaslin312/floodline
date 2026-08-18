@@ -1197,3 +1197,35 @@ The lesson recorded rather than the fix: all three are shape-of-real-data bugs t
 synthetic fixture cannot produce, because the synthetic catchment has no undefined
 HAND, no bounding-box overhang and no 90-year gauge record. The integration test on
 real data is worth its runtime.
+
+## 2026-09-05 — first real end-to-end run, and what it produced
+
+`floodline assess 1204010403 --resolution 30 --samples 800`, every stage live:
+
+```
+discharge 1,433 m3/s (observed at a gauge)
+  1,433 m3/s is the largest in 90 years of record.
+flooded 112.2 km2 at 30 m, max depth 10.9 m
+buildings  42,556 above finished floor of 256,436 in the watershed
+people     98,412 of 1,704,551 (5.8%) - WorldPop 2020 constrained, one grid
+damage     USD 3.83bn on hazus curves, 5-95% USD 1.77bn to 9.99bn
+           (19,027-71,236 buildings), loss ratio 0.9% of USD 423bn exposed
+timings: dem 13.3s, terrain 0.3s, hydraulics 2.8s, buildings 45.6s,
+         population 0.4s, damage 29.6s
+```
+
+Read the currency figures as unverified: the curve constants are not transcribed, and
+the run says so. The building count, the loss ratio and the interval's *shape* are the
+parts that stand.
+
+The count interval is wide - 19,027 to 71,236 against a point of 42,556 - and that is
+the model being honest rather than the model being bad. Whiteoak Bayou is very flat, so
+a large share of buildings sit within a few tens of centimetres of the modelled water
+surface, and a 0.15 m stage sigma moves tens of thousands of them across the threshold.
+A narrow interval here would have meant the perturbation was not reaching the buildings
+it should.
+
+Flood history is now on the web bundle too, since `compute_watershed` already fetches
+the annual peak series to pick the event's own peak. The map panel prints it at 1.00x
+and stays quiet once the slider moves, because "largest in 90 years" is a fact about
+the observed discharge, not about an arbitrary multiple of it.

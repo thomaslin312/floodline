@@ -725,6 +725,24 @@ function updatePanel(wet, maxd, mult){
       `${mult.toFixed(2)}× a severe-flood scenario of ${(q/(bundle.area_km2||1)).toFixed(1)} m³/s per km² `
       + `— no gauge in this basin, so this is assumed, not measured`;
   }
+  // Where this flow sits in the gauge's own record. A depth map answers "how deep";
+  // a reader asks "how unusual" first, and the annual peak series is already fetched.
+  if (g && g.history && Math.abs(mult - 1) < 0.005) {
+    const h = g.history;
+    let line = h.summary;
+    if (h.fit_saturated) {
+      line += " The fitted distribution cannot place it — a century of urbanisation "
+        + "upstream breaks the stationarity that fit assumes.";
+    }
+    $("qnote").innerHTML += `<br><span style="color:var(--ink-2)">${line}</span>`;
+    if (h.larger_floods && h.larger_floods.length) {
+      const named = h.larger_floods
+        .map(f => `${f.water_year} (${f.cms.toLocaleString()} m³/s)`).join(", ");
+      $("qnote").innerHTML +=
+        `<br><span style="color:var(--ink-3)">Larger on record: ${named}.</span>`;
+    }
+  }
+
   // Say plainly when the marks and the discharge come from different floods.
   const events = [...new Set((bundle.marks||[]).map(m=>m.event))].filter(Boolean);
   if(events.length && !(g && g.event_discharge_cms)){

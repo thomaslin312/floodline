@@ -39,6 +39,7 @@ from shapely.ops import transform as shapely_transform
 from shapely.prepared import prep
 
 from floodline.config import Config
+from floodline.hydraulics.frequency import flood_frequency
 from floodline.hydraulics.rating import (
     build_rating_curves,
     discharge_by_area_ratio,
@@ -488,7 +489,7 @@ def compute_watershed(
         hand=to_data_uri(encode_hand(hand_r)),
         reach=to_data_uri(encode_reach_ids(reach_i)),
         stage_table=to_data_uri(encode_stage_table(len(links), curves, flows, ladder)),
-        gauge=gauge,
+        gauge=_with_history(gauge, reference_discharge),
         marks=marks,
         stats={
             "cells": int(dem.data.size),
@@ -506,6 +507,40 @@ def compute_watershed(
     timings["encode"] = time.perf_counter() - start
 
     return ComputeResult(bundle=bundle, seconds=timings, tiles_read=len(urls), warnings=warnings)
+
+
+def _with_history(gauge: dict[str, Any] | None, discharge_cms: float) -> dict[str, Any] | None:
+    """Add where this discharge sits in the gauge's own record.
+
+    The annual peak series is already fetched to pick the event's own peak, so the
+    rank and return period cost nothing beyond the arithmetic. A depth map answers
+    "how deep"; this answers "how unusual", which is the question a reader asks first.
+    """
+    if gauge is None or not gauge.get("series"):
+        return gauge
+    fit = flood_frequency(gauge["series"], site=str(gauge.get("site", "")))
+    context = fit.context_for(discharge_cms)
+    return {
+        **gauge,
+        "history": {
+            "rank": context.rank,
+            "n_years": context.n_years,
+            "exceeds_record": context.exceeds_record,
+            "empirical_return_period_years": round(context.empirical_return_period_years, 1),
+            "fitted_return_period_years": (
+                round(context.fitted_return_period_years)
+                if context.fitted_return_period_years is not None
+                else None
+            ),
+            "extrapolated": context.extrapolated,
+            "fit_saturated": context.fit_saturated,
+            "summary": context.summary(),
+            "larger_floods": [
+                {"water_year": p.water_year, "cms": round(p.discharge_cms), "date": p.date}
+                for p in context.larger_floods[:5]
+            ],
+        },
+    }
 
 
 def wgs84_bounds(unit: Watershed, config: Config) -> tuple[float, float, float, float]:
