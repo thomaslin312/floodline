@@ -77,17 +77,28 @@ def _resolve(config: Config | ExposureConfig | None) -> ExposureConfig:
 
 
 def _reduce(values: npt.NDArray[np.float64], stat: BuildingDepthStat) -> float:
-    """Reduce the depths under one footprint to a single depth."""
+    """Reduce the cells under one footprint to a single value.
+
+    Non-finite cells are excluded before reducing rather than passed through. The
+    margin grid marks undefined HAND with -inf, and a footprint that straddles the
+    boundary would otherwise hand `np.percentile` a window mixing -inf with real
+    depths: its linear interpolation evaluates `-inf + inf`, returns NaN, and that
+    NaN propagates all the way to a NaN damage interval. A building half over
+    undefined ground is described by the half the model can see.
+    """
     if values.size == 0:
         return 0.0
-    if not np.any(np.isfinite(values)):
-        return float(values[0])
+    finite = values[np.isfinite(values)]
+    if finite.size == 0:
+        # Every cell undefined: keep the sentinel so the caller knows, rather than
+        # inventing a zero that would read as "dry".
+        return float(values.flat[0])
     if stat is BuildingDepthStat.MAX:
-        return float(values.max())
+        return float(finite.max())
     if stat is BuildingDepthStat.MEAN:
-        return float(values.mean())
+        return float(finite.mean())
     if stat is BuildingDepthStat.P90:
-        return float(np.percentile(values, 90))
+        return float(np.percentile(finite, 90))
     raise ValueError(f"{stat} is not reduced from a cell sample")
 
 

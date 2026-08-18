@@ -209,3 +209,36 @@ def test_unclamped_field_must_share_the_depth_grid() -> None:
             unclamped_depth=np.zeros((3, 3)),
             config=_config(),
         )
+
+
+def test_a_footprint_straddling_undefined_ground_does_not_produce_nan() -> None:
+    # The margin grid marks undefined HAND with -inf. Mixing it with real depths
+    # inside np.percentile evaluates -inf + inf and yields NaN, which propagated all
+    # the way to a NaN damage interval on the first real Houston run.
+    grid = _depth({(1, 1): 1.0, (1, 2): 1.0, (2, 1): 1.0, (2, 2): 1.0})
+    unclamped = np.full((10, 10), -np.inf)
+    unclamped[1, 1] = 1.0
+    unclamped[1, 2] = 0.8
+    result = building_depths(
+        grid,
+        TRANSFORM,
+        _buildings((1.1, 7.1, 2.9, 8.9)),
+        unclamped_depth=unclamped,
+        config=_config(),
+    )
+    margin = result.buildings["floor_margin_m"].iloc[0]
+    assert np.isfinite(margin), "a straddling footprint must not produce NaN"
+
+
+def test_a_footprint_wholly_over_undefined_ground_stays_dry() -> None:
+    grid = _depth({})
+    unclamped = np.full((10, 10), -np.inf)
+    result = building_depths(
+        grid,
+        TRANSFORM,
+        _buildings((1.1, 7.1, 2.9, 8.9)),
+        unclamped_depth=unclamped,
+        config=_config(),
+    )
+    assert result.buildings["floor_margin_m"].iloc[0] == -np.inf
+    assert result.n_inundated == 0
