@@ -145,7 +145,7 @@ def _tile_date(path: Path) -> date | None:
         return None
 
 
-def select_tiles(paths: Sequence[Path], *, config: Config | None = None) -> list[TileGroup]:
+def select_tiles(paths: Sequence[Path | str], *, config: Config | None = None) -> list[TileGroup]:
     """Group tiles by footprint and pick one vintage from each group.
 
     Grouping is by the tile's actual bounds rather than by its name, so a change in
@@ -156,10 +156,10 @@ def select_tiles(paths: Sequence[Path], *, config: Config | None = None) -> list
     strategy = resolved.case.dem_vintage
 
     groups: dict[tuple[float, ...], list[Path]] = {}
-    for path in paths:
-        with rasterio.open(path) as src:
+    for source in paths:
+        with rasterio.open(source) as src:
             key = tuple(round(v, _FOOTPRINT_PRECISION) for v in src.bounds)
-        groups.setdefault(key, []).append(path)
+        groups.setdefault(key, []).append(Path(str(source)))
 
     selected: list[TileGroup] = []
     for footprint, members in sorted(groups.items()):
@@ -201,7 +201,7 @@ def estimate_cells(
 
 
 def ingest_dem(
-    paths: Sequence[Path],
+    paths: Sequence[Path | str],
     *,
     resolution_m: float,
     config: Config | None = None,
@@ -214,7 +214,10 @@ def ingest_dem(
     Parameters
     ----------
     paths
-        Tiles to ingest. Duplicated footprints are resolved by `select_tiles`.
+        Tiles to ingest, as local paths or GDAL virtual filesystem URLs such as
+        `/vsicurl/https://...`. A remote cloud-optimised GeoTIFF is read by range
+        request, so only the blocks the output touches are transferred. Duplicated
+        footprints are resolved by `select_tiles`.
     resolution_m
         Output cell size in metres. This is a real choice, not the source
         resolution: reprojecting from degrees has no natural metre equivalent.
@@ -243,7 +246,7 @@ def ingest_dem(
     analysis = resolved.crs.analysis
     dst_crs = RioCRS.from_wkt(analysis.to_wkt())
     groups = select_tiles(paths, config=resolved)
-    chosen = [group.chosen for group in groups]
+    chosen: list[Path | str] = [group.chosen for group in groups]
 
     bounds: tuple[float, float, float, float] | None = None
     if watershed is not None:
