@@ -1229,3 +1229,30 @@ Flood history is now on the web bundle too, since `compute_watershed` already fe
 the annual peak series to pick the event's own peak. The map panel prints it at 1.00x
 and stays quiet once the slider moves, because "largest in 90 years" is a fact about
 the observed discharge, not about an arbitrary multiple of it.
+
+## 2026-09-05 — a second watershed, and what the interval width is actually telling us
+
+`floodline assess 020402031008` — City of Philadelphia–Schuylkill River, HUC-12, 86 km2,
+EPSG:26918. A different UTM zone, a different gauge, and a confined valley rather than a
+coastal plain, so it exercises the parts of the chain Houston cannot.
+
+|  | Whiteoak Bayou (TX) | Philadelphia (PA) |
+|---|---|---|
+| discharge | 1,433 m3/s, rank 1 of 90 | 3,823 m3/s, rank 1 of 90 |
+| flooded | 112.2 km2 | 30.5 km2 |
+| max depth | 10.9 m | 18.5 m |
+| buildings above floor | 42,556 of 256,436 | 24,100 of 110,530 |
+| people | 98,412 of 1,704,551 (5.8%) | 62,781 of 581,093 (10.8%) |
+| loss ratio | 0.9% | 3.9% |
+| count interval | 19,027–71,236 | 21,799–26,121 |
+
+The last row is the interesting one. Houston's building-count interval spans 3.7x;
+Philadelphia's spans 1.2x, on the same stage and DEM sigmas. That is the terrain
+talking, not the parameters. Whiteoak Bayou is flat enough that tens of thousands of
+buildings sit within a few tens of centimetres of the modelled water surface, so a
+0.15 m stage error moves them all across the threshold at once; the Schuylkill runs in a
+valley where the same error moves almost nobody. An uncertainty band that came out the
+same width in both places would have been describing the priors rather than the ground.
+
+Neither figure in the currency rows should be quoted: the curve constants are still
+untranscribed, and both runs say so.
