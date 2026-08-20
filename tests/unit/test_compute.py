@@ -32,7 +32,7 @@ def feature(huc: str = "1204010403", level: int = 10) -> dict[str, Any]:
 
 
 def test_lookup_by_huc_returns_an_analysis_crs_watershed() -> None:
-    unit = watershed_by_huc("1204010403", client=wbd_client([feature()]))
+    unit, _ = watershed_by_huc("1204010403", client=wbd_client([feature()]))
     assert unit.huc == "1204010403"
     assert unit.area_km2 == pytest.approx(491.0)
     west, _, east, _ = unit.bounds
@@ -41,7 +41,7 @@ def test_lookup_by_huc_returns_an_analysis_crs_watershed() -> None:
 
 def test_the_huc_digit_count_selects_the_level() -> None:
     """A 12-digit code is a subwatershed; the caller should not have to say so."""
-    unit = watershed_by_huc("120401040302", client=wbd_client([feature("120401040302", 12)]))
+    unit, _ = watershed_by_huc("120401040302", client=wbd_client([feature("120401040302", 12)]))
     assert unit.huc == "120401040302"
 
 
@@ -62,7 +62,7 @@ def test_point_lookup_picks_the_containing_polygon() -> None:
             ],
         },
     }
-    unit = watershed_for_point(-95.5, 29.8, client=wbd_client([far, feature()]))
+    unit, _ = watershed_for_point(-95.5, 29.8, client=wbd_client([far, feature()]))
     assert unit.huc == "1204010403"
 
 
@@ -75,9 +75,11 @@ def test_an_oversized_watershed_is_refused_before_any_network_work() -> None:
     """Depression filling is global, so the whole grid must fit in memory at once."""
     from floodline.compute import compute_watershed
 
-    unit = watershed_by_huc("1204010403", client=wbd_client([feature()]))
+    unit, local = watershed_by_huc("1204010403", client=wbd_client([feature()]))
     with pytest.raises(ValueError, match=r"over the .* limit"):
-        compute_watershed(unit, resolution_m=1.0, max_cells=1_000_000, client=wbd_client([]))
+        compute_watershed(
+            unit, resolution_m=1.0, max_cells=1_000_000, config=local, client=wbd_client([])
+        )
 
 
 def test_gdal_retry_settings_are_present_and_numeric() -> None:
@@ -97,3 +99,35 @@ def test_config_round_trips_through_json() -> None:
     again = Config.model_validate(json.loads(cfg.model_dump_json()))
     assert again.terrain.stream_threshold_cells == 5000
     assert again.crs.analysis.to_epsg() == 6587
+
+
+def test_the_analysis_crs_follows_the_watershed() -> None:
+    """A fixed CRS only works for a fixed study area.
+
+    EPSG:6587 is Texas South Central: right for Houston, meaningless in Oregon. For a
+    tool that takes any watershed in the country the projection has to follow it.
+    """
+    from floodline.compute import utm_crs_for
+
+    _, texas = watershed_by_huc("1204010403", client=wbd_client([feature()]))
+    assert texas.crs.analysis.to_epsg() == 26915, "Houston is UTM zone 15N"
+
+    assert utm_crs_for(-122.7, 45.5).to_epsg() == 26910, "Portland is zone 10N"
+    assert utm_crs_for(-80.2, 25.8).to_epsg() == 26917, "Miami is zone 17N"
+    assert utm_crs_for(-95.4, 29.8).name.endswith("15N")
+
+
+def test_every_continental_utm_zone_is_a_valid_analysis_crs() -> None:
+    from floodline.compute import utm_crs_for
+    from floodline.config import validate_projected_crs
+
+    for lon in range(-124, -66, 6):
+        crs = utm_crs_for(float(lon), 40.0)
+        assert validate_projected_crs(crs).is_projected
+
+
+def test_southern_latitudes_are_refused_rather_than_silently_wrong() -> None:
+    from floodline.compute import utm_crs_for
+
+    with pytest.raises(ValueError, match="southern hemisphere"):
+        utm_crs_for(151.2, -33.9)

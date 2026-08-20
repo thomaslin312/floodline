@@ -94,6 +94,39 @@ uv sync --all-extras --all-groups
 uv run pre-commit install
 ```
 
+## Any watershed in the United States
+
+```bash
+uv sync --all-extras --all-groups
+uv run floodline serve          # then open http://127.0.0.1:8000
+```
+
+Click anywhere in the US, or type a ZIP code, address, or HUC code. The service
+fetches the watershed boundary, finds the 3DEP tiles that intersect it, reads them
+over HTTP range requests without downloading them, runs the whole chain, and
+returns a bundle the browser uses to recompute the flood live as you move a
+discharge slider. Measured cold, over an ordinary connection:
+
+| Watershed | Area | Total |
+|---|---:|---:|
+| Lower North Branch Chicago River | 109 km² | 13 s |
+| Upper Biscayne Bay, Miami | 165 km² | 16 s |
+| Balch Creek–Willamette, Portland | 168 km² | 21 s |
+| Outlet Charles River, Cambridge | 154 km² | 29 s |
+| Whiteoak Bayou, Houston | 491 km² | 25 s |
+
+Cached afterwards, so the second request is a file read. The analysis CRS follows
+the watershed — a NAD83 UTM zone chosen from its centroid — because a fixed
+projection is only correct for a fixed study area.
+
+Where a watershed has no gauge, which is most of them, the discharge is a
+**scenario** of 5 m³/s per km² (roughly what Harvey delivered at Whiteoak Bayou),
+not an observation. The interface says so wherever it shows a number.
+
+It has to be served rather than published as a static page: an Artifact's content
+security policy forbids `fetch` to external hosts, so a page delivered that way can
+only carry what was inlined into it.
+
 ## Use
 
 ```bash

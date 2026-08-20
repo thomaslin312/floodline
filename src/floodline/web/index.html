@@ -1,0 +1,293 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>floodline — any US watershed</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=Public+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+  :root{--paper:#eef2f1;--plate:#fff;--sunk:#e3e9e8;--ink:#0e1d23;--ink-soft:#3a4d54;--muted:#64787e;
+        --rule:#c9d5d4;--water:#0d7c8a;--over:#b8543a;--close:#3f7d54;--dry:#8b969a;--warn:#8a6a1f;
+        --display:"Archivo",sans-serif;--body:"Public Sans",sans-serif;--mono:"IBM Plex Mono",monospace}
+  @media (prefers-color-scheme:dark){:root{--paper:#0c181d;--plate:#13242b;--sunk:#0f1f25;--ink:#e7eeed;
+        --ink-soft:#b3c4c6;--muted:#8ba0a4;--rule:#274049;--water:#3aa9b6;--over:#e0785a;--close:#63b47c;
+        --dry:#6e8288;--warn:#d6ac4e}}
+  *{box-sizing:border-box}
+  [hidden]{display:none!important}
+  html,body{height:100%;margin:0}
+  body{background:var(--paper);color:var(--ink);font-family:var(--body);font-size:14px;display:flex;flex-direction:column}
+  header{padding:10px 16px;border-bottom:2px solid var(--ink);display:flex;flex-wrap:wrap;gap:10px 18px;align-items:center}
+  h1{font-family:var(--display);font-size:17px;font-weight:700;margin:0;letter-spacing:-.01em}
+  h1 span{font-family:var(--mono);font-size:10.5px;font-weight:400;color:var(--muted);letter-spacing:.1em;text-transform:uppercase;margin-left:8px}
+  form{display:flex;gap:6px;flex:1 1 300px;max-width:440px}
+  input[type=text]{flex:1;padding:6px 9px;border:1px solid var(--rule);border-radius:3px;background:var(--plate);color:var(--ink);font-family:var(--body);font-size:13.5px}
+  button{padding:6px 12px;border:1px solid var(--ink);border-radius:3px;background:var(--ink);color:var(--paper);font-family:var(--body);font-weight:600;font-size:13px;cursor:pointer}
+  button:disabled{opacity:.45;cursor:default}
+  button.ghost{background:var(--plate);color:var(--ink);border-color:var(--rule);font-weight:400}
+  .hintbar{font-size:12.5px;color:var(--muted)}
+  main{flex:1;display:grid;grid-template-columns:minmax(0,1fr) 320px;min-height:0}
+  @media (max-width:820px){main{grid-template-columns:1fr;grid-template-rows:56vh auto}}
+  #map{height:100%;width:100%;background:var(--sunk)}
+  aside{border-left:1px solid var(--rule);background:var(--plate);overflow-y:auto;padding:14px 16px 28px;display:flex;flex-direction:column;gap:14px}
+  h2{font-family:var(--mono);font-size:10.5px;letter-spacing:.11em;text-transform:uppercase;color:var(--muted);margin:0 0 6px}
+  .unitname{font-family:var(--display);font-size:16px;font-weight:600;line-height:1.25;margin:0}
+  .sub{font-family:var(--mono);font-size:11.5px;color:var(--muted)}
+  .q{display:flex;flex-direction:column;gap:5px}
+  .q .row{display:flex;align-items:baseline;gap:7px}
+  .q .big{font-family:var(--display);font-weight:700;font-size:24px;font-variant-numeric:tabular-nums}
+  .q input[type=range]{width:100%;accent-color:var(--water)}
+  dl.stats{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--rule);border:1px solid var(--rule);margin:0}
+  dl.stats>div{background:var(--plate);padding:7px 9px}
+  dt{font-family:var(--mono);font-size:9.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+  dd{margin:2px 0 0;font-family:var(--mono);font-size:13.5px;font-variant-numeric:tabular-nums}
+  .status{font-size:13px;color:var(--ink-soft);border-left:3px solid var(--water);padding:7px 0 7px 10px;min-height:20px}
+  .status.err{border-color:var(--over)}
+  .status.warn{border-color:var(--warn)}
+  .spin{display:inline-block;width:11px;height:11px;border:2px solid var(--rule);border-top-color:var(--water);border-radius:50%;animation:s .8s linear infinite;vertical-align:-1px;margin-right:6px}
+  @keyframes s{to{transform:rotate(360deg)}}
+  @media (prefers-reduced-motion:reduce){.spin{animation:none}}
+  .legend{font-size:12px;color:var(--ink-soft);display:flex;flex-direction:column;gap:4px}
+  .ramp{display:inline-block;width:90px;height:8px;border-radius:1px;background:linear-gradient(90deg,#cfe6f2,#3d8fc0,#0b3f73);vertical-align:0}
+  .note{font-size:12px;color:var(--muted);line-height:1.5}
+  .leaflet-container{font-family:var(--body)}
+</style>
+</head>
+<body>
+<header>
+  <h1>floodline <span>any US watershed</span></h1>
+  <form id="find">
+    <input type="text" id="q" placeholder="ZIP code, address, or 12-digit HUC" autocomplete="off">
+    <button type="submit">Find</button>
+  </form>
+  <span class="hintbar">or click the map</span>
+  <span style="flex:1"></span>
+  <label class="hintbar"><input type="checkbox" id="hi"> 10 m (slower)</label>
+</header>
+<main>
+  <div id="map"></div>
+  <aside>
+    <div>
+      <h2>Watershed</h2>
+      <p class="unitname" id="uname">None selected</p>
+      <p class="sub" id="usub">Click anywhere in the United States, or search above.</p>
+    </div>
+    <div class="status" id="status">Ready.</div>
+    <button id="run" disabled>Compute this watershed</button>
+
+    <div class="q" id="qwrap" hidden>
+      <h2>Discharge at the outlet</h2>
+      <div class="row"><span class="big" id="qval">—</span><span class="sub">m³/s</span></div>
+      <input type="range" id="qs" min="0" max="300" step="2" value="100">
+      <span class="sub" id="qrel"></span>
+    </div>
+
+    <dl class="stats" id="stats" hidden></dl>
+
+    <div class="legend" id="legend" hidden>
+      <span><span class="ramp"></span> depth 0 → 8 m+</span>
+    </div>
+
+    <p class="note" id="caveat" hidden></p>
+  </aside>
+</main>
+
+<script>
+(function(){
+"use strict";
+const $ = (id) => document.getElementById(id);
+const map = L.map("map", {zoomControl:true}).setView([31.5, -96.0], 6);
+L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+  maxZoom: 17, attribution: '&copy; OpenStreetMap contributors'
+}).addTo(map);
+
+let outline = null, overlay = null, unit = null, bundle = null;
+let hand = null, reach = null, lut = null, nMult = 0, busy = false;
+
+function status(text, kind){
+  const el = $("status");
+  el.className = "status" + (kind ? " " + kind : "");
+  el.innerHTML = text;
+}
+
+async function api(path){
+  const r = await fetch(path);
+  if(!r.ok){
+    let detail = r.statusText;
+    try { detail = (await r.json()).detail || detail; } catch(e){}
+    throw new Error(detail);
+  }
+  return r.json();
+}
+
+/* ---------- pick a watershed ---------- */
+async function pick(lon, lat, label){
+  if(busy) return;
+  status('<span class="spin"></span>Identifying the watershed…');
+  try{
+    unit = await api(`/api/watershed?lon=${lon}&lat=${lat}&level=12`);
+    showUnit(label);
+  }catch(e){ status("Could not identify a watershed there: " + e.message, "err"); }
+}
+
+function showUnit(label){
+  if(outline) map.removeLayer(outline);
+  if(overlay){ map.removeLayer(overlay); overlay = null; }
+  bundle = null; hand = null;
+  $("qwrap").hidden = true; $("stats").hidden = true; $("legend").hidden = true; $("caveat").hidden = true;
+
+  outline = L.geoJSON(unit.geometry, {style:{color:"#0d7c8a", weight:2, fillOpacity:0.06}}).addTo(map);
+  map.fitBounds(outline.getBounds(), {padding:[24,24]});
+
+  $("uname").textContent = unit.name || "Unnamed watershed";
+  $("usub").textContent = `HUC-${unit.huc.length} ${unit.huc} · ${unit.area_km2.toLocaleString()} km² · ${unit.analysis_crs}`
+    + (label ? ` · ${label}` : "");
+  $("run").disabled = false;
+  const cells = unit.cells_at["10"];
+  status(unit.too_big_at_10m
+    ? `This watershed is ${(cells/1e6).toFixed(0)}M cells at 10 m — too large for one pass. It will compute at 30 m.`
+    : `Ready. ${(cells/1e6).toFixed(1)}M cells at 10 m.`,
+    unit.too_big_at_10m ? "warn" : null);
+}
+
+/* ---------- compute ---------- */
+async function run(){
+  if(!unit || busy) return;
+  busy = true; $("run").disabled = true;
+  const res = ($("hi").checked && !unit.too_big_at_10m) ? 10 : 30;
+  const t0 = performance.now();
+  const tick = setInterval(() => {
+    status(`<span class="spin"></span>Computing at ${res} m — reading DEM tiles over the network… ${((performance.now()-t0)/1000).toFixed(0)}s`);
+  }, 250);
+  try{
+    bundle = await api(`/api/compute/${unit.huc}?resolution=${res}`);
+    clearInterval(tick);
+    await render();
+    const s = bundle.seconds || {};
+    status(bundle.cached
+      ? "Loaded from cache."
+      : `Computed in ${((performance.now()-t0)/1000).toFixed(1)}s — ${bundle.tiles_read} DEM tiles read, `
+        + `terrain ${(s.terrain||0).toFixed(1)}s.`);
+  }catch(e){
+    clearInterval(tick);
+    status("Compute failed: " + e.message, "err");
+  }finally{ busy = false; $("run").disabled = false; }
+}
+
+function pixels(src){
+  return new Promise((res)=>{
+    const im = new Image();
+    im.onload = () => {
+      const c = document.createElement("canvas");
+      c.width = im.naturalWidth; c.height = im.naturalHeight;
+      const x = c.getContext("2d", {willReadFrequently:true});
+      x.drawImage(im,0,0);
+      res({d:x.getImageData(0,0,c.width,c.height).data, w:c.width, h:c.height});
+    };
+    im.src = src;
+  });
+}
+
+async function render(){
+  const [h,r,t] = await Promise.all([pixels(bundle.hand), pixels(bundle.reach), pixels(bundle.stage_table)]);
+  const n = bundle.width * bundle.height;
+  hand = new Uint8Array(n); reach = new Uint16Array(n);
+  for(let p=0;p<n;p++){ hand[p]=h.d[p*4]; reach[p]=(r.d[p*4]<<8)|r.d[p*4+1]; }
+  nMult = t.w; lut = new Uint8Array(t.w*t.h);
+  for(let p=0;p<t.w*t.h;p++) lut[p]=t.d[p*4];
+
+  $("qwrap").hidden = false; $("stats").hidden = false; $("legend").hidden = false;
+  const warn = (bundle.warnings||[]).join(" · ");
+  $("caveat").hidden = !warn;
+  $("caveat").textContent = warn ? "Note: " + warn : "";
+  paint();
+}
+
+const RAMP=[[207,230,242],[142,193,224],[61,143,192],[26,96,150],[11,63,115],[6,38,74]];
+function ramp(t){const x=Math.min(.999,Math.max(0,t))*(RAMP.length-1),i=Math.floor(x),f=x-i,
+  a=RAMP[i],b=RAMP[Math.min(i+1,RAMP.length-1)];
+  return [a[0]+(b[0]-a[0])*f,a[1]+(b[1]-a[1])*f,a[2]+(b[2]-a[2])*f];}
+
+function paint(){
+  if(!hand) return;
+  const mult = +$("qs").value/100;
+  const M = bundle.multipliers;
+  const span = M[M.length-1]-M[0];
+  const x = Math.min(nMult-1.001, Math.max(0,((mult-M[0])/span)*(nMult-1)));
+  const i0 = Math.floor(x), f = x-i0;
+  const stage = new Float32Array(bundle.n_reaches);
+  for(let i=0;i<bundle.n_reaches;i++){
+    const a=lut[i*nMult+i0], b=lut[i*nMult+Math.min(i0+1,nMult-1)];
+    stage[i]=a+(b-a)*f;
+  }
+  const cv = document.createElement("canvas");
+  cv.width = bundle.width; cv.height = bundle.height;
+  const ctx = cv.getContext("2d");
+  const img = ctx.createImageData(bundle.width, bundle.height);
+  const px = img.data;
+  let wet = 0, maxd = 0;
+  for(let p=0;p<hand.length;p++){
+    const hh = hand[p]; if(hh===255) continue;
+    const rr = reach[p]; if(rr===65535||rr>=bundle.n_reaches) continue;
+    const d = stage[rr]-hh; if(d<=0.5) continue;      // 0.05 m in decimetres
+    wet++; if(d>maxd) maxd=d;
+    const c = ramp(d/80), o=p*4;
+    px[o]=c[0];px[o+1]=c[1];px[o+2]=c[2];px[o+3]=200;
+  }
+  ctx.putImageData(img,0,0);
+
+  const [w,s,e,nn] = bundle.bounds;                    // EPSG:3857
+  const sw = L.Projection.SphericalMercator.unproject(L.point(w,s));
+  const ne = L.Projection.SphericalMercator.unproject(L.point(e,nn));
+  const b = L.latLngBounds(sw, ne);
+  if(overlay) map.removeLayer(overlay);
+  overlay = L.imageOverlay(cv.toDataURL(), b, {opacity:0.82}).addTo(map);
+
+  const cellKm2 = Math.pow(bundle.reduction * (bundle.stats.resolution_m||10), 2)/1e6;
+  const q = bundle.base_discharge_cms * mult;
+  $("qval").textContent = Math.round(q).toLocaleString();
+  $("qrel").textContent = (bundle.gauged
+    ? mult.toFixed(2)+"× the observed peak"
+    : mult.toFixed(2)+"× a severe-flood scenario — no gauge here, so this is assumed")
+    + ` · ${(q/(bundle.area_km2||1)).toFixed(1)} m³/s per km²`;
+  $("stats").innerHTML = [
+    ["Extent", (wet*cellKm2).toFixed(1)+" km²"],
+    ["Of watershed", bundle.stats.valid_km2 ? Math.round(wet*cellKm2/bundle.stats.valid_km2*100)+"%" : "—"],
+    ["Max depth", (maxd/10).toFixed(1)+" m"],
+    ["Reaches", bundle.stats.curves+" curves"],
+    ["Grid", (bundle.stats.cells/1e6).toFixed(1)+"M cells"],
+    ["Resolution", (bundle.stats.resolution_m||10)+" m"],
+  ].map(([k,v])=>`<div><dt>${k}</dt><dd>${v}</dd></div>`).join("");
+}
+
+/* ---------- wiring ---------- */
+map.on("click", (e) => pick(e.latlng.lng, e.latlng.lat, null));
+// Leaflet measures its container when constructed. Inside a grid that has not laid
+// out yet that measurement is wrong, and the tile grid renders at the wrong size.
+new ResizeObserver(() => map.invalidateSize()).observe($("map"));
+requestAnimationFrame(() => map.invalidateSize());
+$("run").addEventListener("click", run);
+let raf=0;
+$("qs").addEventListener("input", ()=>{ if(!raf) raf=requestAnimationFrame(()=>{raf=0;paint();}); });
+$("find").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  const text = $("q").value.trim();
+  if(!text) return;
+  if(/^\d+$/.test(text) && text.length >= 8 && text.length % 2 === 0){
+    status('<span class="spin"></span>Looking up HUC…');
+    try{ unit = await api(`/api/watershed/${text}`); showUnit("by HUC"); }
+    catch(e){ status("No such HUC: " + e.message, "err"); }
+    return;
+  }
+  status('<span class="spin"></span>Geocoding…');
+  try{
+    const g = await api(`/api/geocode?q=${encodeURIComponent(text)}`);
+    map.setView([g.lat, g.lon], 11);
+    await pick(g.lon, g.lat, g.label);
+  }catch(e){ status("Could not find that: " + e.message, "err"); }
+});
+})();
+</script>
+</body>
+</html>

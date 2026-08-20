@@ -289,6 +289,38 @@ def ingest(
 
 
 @app.command()
+def serve(
+    host: Annotated[str, typer.Option(help="Interface to bind.")] = "127.0.0.1",
+    port: Annotated[int, typer.Option(help="Port to listen on.")] = 8000,
+    cache: Annotated[Path, typer.Option(help="Where computed watersheds are kept.")] = Path(
+        "outputs/cache"
+    ),
+    config: ConfigOption = None,
+) -> None:
+    """Serve the map interface: click or search for any US watershed and compute it.
+
+    A page published as an Artifact cannot call an API - its content security policy
+    forbids `fetch` to external hosts - so the interactive version has to be served
+    from the same origin as the service. This is that server, and the same
+    application deploys unchanged anywhere that runs Python.
+    """
+    try:
+        import uvicorn
+    except ModuleNotFoundError as exc:  # pragma: no cover - depends on install extras
+        typer.secho(
+            "the serve extra is not installed. Run: uv sync --all-extras",
+            fg=typer.colors.RED,
+            err=True,
+        )
+        raise typer.Exit(code=1) from exc
+
+    from floodline.service import create_app
+
+    typer.echo(f"floodline on http://{host}:{port}  (cache: {cache})")
+    uvicorn.run(create_app(config=load_config(config), cache_dir=cache), host=host, port=port)
+
+
+@app.command()
 def condition(
     dem: Annotated[Path, typer.Argument(exists=True, dir_okay=False, help="Input DEM.")],
     out: Annotated[Path, typer.Argument(help="Output filled DEM.")],
