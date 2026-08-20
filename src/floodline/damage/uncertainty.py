@@ -100,6 +100,10 @@ def monte_carlo_damage(
     *,
     storeys: npt.ArrayLike | None = None,
     floor_margin_m: npt.ArrayLike | None = None,
+    structure_value: npt.ArrayLike | None = None,
+    contents_value: npt.ArrayLike | None = None,
+    contents_curves: CurveSet | None = None,
+    curves: CurveSet | None = None,
     config: Config | None = None,
     monte_carlo: MonteCarloConfig | None = None,
     damage: DamageConfig | None = None,
@@ -122,6 +126,15 @@ def monte_carlo_damage(
     curve_sets
         Curve sets by family, for when transcribed tables have been loaded. Missing
         families fall back to the bundled constants.
+    curves
+        A single curve set used for every draw, which turns family sampling off. That
+        is the right mode for the published USACE library: there is one library, not
+        an ensemble of competing approximations, so the disagreement term family
+        sampling stands in for does not apply.
+    structure_value, contents_value, contents_curves
+        Passed to `estimate_damage`. Real per-structure values replace the
+        area-times-rate proxy, which makes the cost sigma perturb a valuation rather
+        than a guess.
 
     Returns
     -------
@@ -154,9 +167,15 @@ def monte_carlo_damage(
     weights = weights / weights.sum()
 
     sets: dict[CurveFamily, CurveSet] = {}
-    for family in families:
-        supplied = curve_sets.get(family) if curve_sets else None
-        sets[family] = supplied or bundled_curves(family, config=damage_config)
+    single = curves is not None
+    if curves is not None:
+        families = [curves.family]
+        weights = np.asarray([1.0], dtype=np.float64)
+        sets = {curves.family: curves}
+    else:
+        for family in families:
+            supplied = curve_sets.get(family) if curve_sets else None
+            sets[family] = supplied or bundled_curves(family, config=damage_config)
 
     rng = np.random.default_rng(mc.seed)
     picks = rng.choice(len(families), size=mc.n_samples, p=weights)
@@ -184,6 +203,9 @@ def monte_carlo_damage(
             storeys=counts,
             config=damage_config,
             curves=sets[family],
+            structure_value=structure_value,
+            contents_value=contents_value,
+            contents_curves=contents_curves,
             cost_scale=float(cost_scale[i]),
             cap_storeys=cap_storeys,
         )
@@ -196,8 +218,15 @@ def monte_carlo_damage(
         classes,
         storeys=counts,
         config=damage_config,
-        curves=sets.get(damage_config.curve_family)
-        or bundled_curves(damage_config.curve_family, config=damage_config),
+        curves=(
+            curves
+            if single
+            else sets.get(damage_config.curve_family)
+            or bundled_curves(damage_config.curve_family, config=damage_config)
+        ),
+        structure_value=structure_value,
+        contents_value=contents_value,
+        contents_curves=contents_curves,
         cap_storeys=cap_storeys,
     )
 

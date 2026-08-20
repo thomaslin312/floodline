@@ -35,7 +35,7 @@ import numpy.typing as npt
 
 from floodline.config import Config, CurveFamily, DamageConfig
 
-__all__ = ["CurveSet", "DamageCurve", "bundled_curves", "load_curves"]
+__all__ = ["BUNDLED_FAMILIES", "CurveSet", "DamageCurve", "bundled_curves", "load_curves"]
 
 # Depth in metres above finished floor level. The 0/0.5/1/1.5/2/3/4/5/6 ladder is the
 # one the JRC database publishes on, so a transcribed table drops straight in.
@@ -125,8 +125,11 @@ class DamageCurve:
             np.asarray(self.depths_m, dtype=np.float64),
             np.asarray(self.fractions, dtype=np.float64),
         )
-        # Water below the floor does nothing; np.interp would return fractions[0].
-        out = np.where(depths <= 0.0, 0.0, out)
+        # No clamp at zero. np.interp already holds the curve's first value below its
+        # first point, which is what the curve itself says should happen there. The
+        # bundled curves start at (0 m, 0), so nothing changes for them; the USACE
+        # curves start at -0.61 m and are already at 13% when water reaches the floor,
+        # and a blanket "zero at or below zero" would throw that away.
         if damage.clamp_damage_fraction:
             out = np.clip(out, 0.0, 1.0)
         return np.asarray(out, dtype=np.float64)
@@ -178,6 +181,17 @@ def _resolve(config: Config | DamageConfig | None) -> DamageConfig:
     return config if config is not None else DamageConfig()
 
 
+# Families with constants in this module. CurveFamily.USACE is deliberately absent:
+# it is the published library, loaded from file by `damage.usace`, not approximated
+# here. Iterating CurveFamily and calling bundled_curves on each is therefore wrong,
+# and iterating this instead is right.
+BUNDLED_FAMILIES: tuple[CurveFamily, ...] = (
+    CurveFamily.HAZUS,
+    CurveFamily.JRC_OCEANIA,
+    CurveFamily.JRC_GLOBAL,
+)
+
+
 def bundled_curves(
     family: CurveFamily,
     *,
@@ -185,6 +199,11 @@ def bundled_curves(
 ) -> CurveSet:
     """Return the bundled curve set for `family`, every curve marked unverified."""
     damage = _resolve(config)
+    if family not in _BUNDLED:
+        raise ValueError(
+            f"{family.value} has no bundled approximation - it is the published library. "
+            "Load it with damage.usace.load_usace_curves instead."
+        )
     table = _BUNDLED[family]
     return CurveSet(
         family=family,

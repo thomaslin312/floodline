@@ -9,6 +9,7 @@ from rasterio.transform import Affine
 from shapely.geometry import box
 
 from floodline.config import Config, CurveFamily, ExposureConfig, MonteCarloConfig
+from floodline.damage.curves import BUNDLED_FAMILIES
 from floodline.damage.estimate import estimate_damage
 from floodline.damage.uncertainty import monte_carlo_damage
 from floodline.exposure.buildings import building_depths
@@ -122,7 +123,7 @@ def test_curve_family_choice_moves_the_total_more_than_the_stage_error(
 
     by_family = {
         family: estimate_damage(*args, storeys=storeys, family=family).total
-        for family in CurveFamily
+        for family in BUNDLED_FAMILIES
     }
     spread = max(by_family.values()) - min(by_family.values())
 

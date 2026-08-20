@@ -81,6 +81,9 @@ class CurveFamily(StrEnum):
     JRC_OCEANIA = "jrc_oceania"
     JRC_GLOBAL = "jrc_global"
     HAZUS = "hazus"
+    USACE = "usace"
+    """The published USACE library, keyed by HAZUS occupancy code. Unlike the other
+    three this is not a bundled approximation - see `damage.usace`."""
 
 
 def validate_projected_crs(value: str | int | CRS) -> CRS:
@@ -397,6 +400,12 @@ class DamageConfig(Frozen):
         "rebuild rates and the Monte Carlo samples cost_sigma_frac around them.",
     )
     default_class: str = Field(default="residential")
+    usace_default_occupancy: str = Field(
+        default="RES1-1SNB",
+        description="Occupancy code for structures the USACE library does not cover. "
+        "Single-family, one storey, no basement - the commonest US dwelling, and the "
+        "conservative choice for an unclassified building.",
+    )
 
     @model_validator(mode="after")
     def _default_class_priced(self) -> Self:

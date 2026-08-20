@@ -5,7 +5,7 @@ import pytest
 
 from floodline.config import Config, CurveFamily, DamageConfig, MonteCarloConfig
 from floodline.damage.costs import exposed_value, storey_exposure
-from floodline.damage.curves import bundled_curves
+from floodline.damage.curves import BUNDLED_FAMILIES, bundled_curves
 from floodline.damage.estimate import estimate_damage
 from floodline.damage.uncertainty import monte_carlo_damage
 
@@ -78,9 +78,9 @@ def test_curve_families_disagree_on_the_same_buildings() -> None:
         family: estimate_damage(
             np.full(3, 1.0), AREAS, CLASSES, storeys=STOREYS, family=family
         ).total
-        for family in CurveFamily
+        for family in BUNDLED_FAMILIES
     }
-    assert len(set(totals.values())) == len(CurveFamily)
+    assert len(set(totals.values())) == len(BUNDLED_FAMILIES)
 
 
 def test_mismatched_input_shapes_are_refused() -> None:

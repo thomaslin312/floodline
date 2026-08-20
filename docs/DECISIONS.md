@@ -1256,3 +1256,79 @@ same width in both places would have been describing the priors rather than the 
 
 Neither figure in the currency rows should be quoted: the curve constants are still
 untranscribed, and both runs say so.
+
+## 2026-09-05 — real valuations: NSI structures and the published USACE curves
+
+A depth-damage curve returns a *fraction*, so a damage figure is only as good as the
+valuation it multiplies. Footprint area times a flat rate per class was not a
+valuation. Measured against NSI over one 2 x 2 km Houston box, that proxy overstated
+the total by 1.4x and landed within 30% for only 64% of structures, ranging 0.66x to
+2.08x per building. Replaced with two sources that were built to work together:
+
+- **USACE National Structure Inventory** (`io/nsi.py`) — ~120 million US structures,
+  keyless. Per structure: `val_struct`, `val_cont`, `val_vehic`; a HAZUS `occtype`;
+  real `num_story` and `found_ht`; and night/day population split under and over 65.
+  That single source removes four separate guesses: value, storeys, freeboard, and
+  a gridded population product standing in for people in buildings.
+- **USACE depth-damage curve library** (`damage/usace.py`) — `occtypes.json` from
+  github.com/USACE/go-consequences, MIT, 51 occupancy types, structure *and* contents
+  curves, from the Economic Guidance Memoranda. Loaded `verified=True`, because these
+  are read from the published file rather than typed in from a figure.
+
+They join on `occtype`, which is the reason to prefer this pair over any other
+combination: the inventory and the curve speak the same vocabulary.
+
+Three things this forced:
+
+- **The zero-clamp in `DamageCurve.damage_fraction` had to go.** It forced damage to
+  zero at or below floor level, which is right for the bundled curves (they start at
+  (0 m, 0)) and wrong for USACE, which starts at -0.61 m and is already at 13.4% when
+  water reaches the slab. `np.interp` already holds a curve's first value below its
+  first point, which is what the curve itself says should happen.
+- **`CurveFamily.USACE` has no bundled approximation**, and `bundled_curves` raises for
+  it rather than returning something. `BUNDLED_FAMILIES` now names the three that do,
+  because iterating `CurveFamily` and calling `bundled_curves` on each was a pattern
+  three tests had already adopted.
+- **Family sampling is switched off when a single published library is supplied.** The
+  family term stands in for disagreement between competing approximations; there is
+  one USACE library, so sampling across families would be inventing spread.
+
+**NSI values are modelled, not appraised** — derived from occupancy type, area and
+regional construction costs. Nationally consistent, sound summed over tens of thousands
+of buildings, not sound for any single one. And NSI gives a point plus a footprint area,
+not an outline, so `structure_footprints` squares that area around the point; `p90` over
+a square of the right size beats sampling whichever cell the centroid lands in.
+
+## 2026-09-05 — the numbers moved a long way, and here is the accounting
+
+Same watershed, same discharge, same terrain. Only the inventory and curves changed.
+
+|  | Overture + guessed rates | NSI + USACE |
+|---|---|---|
+| structures | 256,436 | 258,527 |
+| above finished floor | 42,556 | 32,833 |
+| exposed value | USD 423 bn | USD 191 bn |
+| damage | USD 3.83 bn | **USD 17.1 bn** |
+| of which contents | — | USD 6.93 bn |
+| loss ratio | 0.9% | 9.0% |
+| people | 98,412 (WorldPop cells) | 132,389 overnight, 242,010 by day (NSI structures) |
+
+Four independent movements, none of them cancelling:
+
+1. **Exposed value halved** (423 -> 191 bn). The flat rate was too high, as the 1.4x
+   measurement predicted.
+2. **Fewer buildings clear the floor** (42,556 -> 32,833). NSI's real foundation
+   heights are mostly above the 0.15 m freeboard the config assumed, so water that
+   used to reach the floor now does not.
+3. **Contents added USD 6.93 bn**, about 68% on top of structure damage. Previously
+   missing entirely.
+4. **The USACE curves are steeper than the guessed constants** at the depths that
+   matter: 23.3% at one foot against the bundled 13%.
+
+Net: damage up 4.5x on half the exposed value, so the loss ratio moved 0.9% -> 9.0%.
+The old figure was not a worse estimate of the same thing; it was an estimate of a
+different, smaller thing.
+
+Worth its own line: WorldPop says 98,412 people in flooded *cells*, NSI says 132,389
+residents in flooded *structures* — 35% apart on the same flood, from two open sources.
+That gap is the population-disagreement experiment in miniature, and it arrived free.

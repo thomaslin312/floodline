@@ -7,18 +7,18 @@ import numpy as np
 import pytest
 
 from floodline.config import CurveFamily, DamageConfig
-from floodline.damage.curves import DamageCurve, bundled_curves, load_curves
+from floodline.damage.curves import BUNDLED_FAMILIES, DamageCurve, bundled_curves, load_curves
 
 
 def test_every_bundled_family_covers_every_priced_class() -> None:
     priced = set(DamageConfig().replacement_cost_per_m2)
-    for family in CurveFamily:
+    for family in BUNDLED_FAMILIES:
         assert set(bundled_curves(family).curves) == priced
 
 
 def test_bundled_curves_are_marked_unverified() -> None:
     # The flag is what stops a currency figure being quoted off digits nobody checked.
-    for family in CurveFamily:
+    for family in BUNDLED_FAMILIES:
         assert bundled_curves(family).verified is False
 
 
@@ -29,7 +29,7 @@ def test_dry_and_below_floor_is_zero_damage() -> None:
 
 def test_damage_is_non_decreasing_in_depth() -> None:
     depths = np.linspace(0.0, 10.0, 200)
-    for family in CurveFamily:
+    for family in BUNDLED_FAMILIES:
         for curve in bundled_curves(family).curves.values():
             fractions = curve.damage_fraction(depths)
             assert np.all(np.diff(fractions) >= -1e-12), f"{family}/{curve.building_class}"
@@ -45,7 +45,7 @@ def test_curve_is_held_beyond_max_depth_not_extrapolated() -> None:
 
 def test_fractions_stay_within_unit_interval() -> None:
     depths = np.linspace(0.0, 50.0, 500)
-    for family in CurveFamily:
+    for family in BUNDLED_FAMILIES:
         for curve in bundled_curves(family).curves.values():
             fractions = curve.damage_fraction(depths)
             assert fractions.min() >= 0.0

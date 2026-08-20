@@ -756,6 +756,28 @@ def damage(
         )
 
 
+@app.command("fetch-curves")
+def fetch_curves(
+    cache: Annotated[Path, typer.Option(help="Where to keep it.")] = Path("data/cache"),
+) -> None:
+    """Download the USACE depth-damage curve library (about half a megabyte).
+
+    51 HAZUS occupancy types, structure and contents curves for each, from the USACE
+    Economic Guidance Memoranda by way of github.com/USACE/go-consequences (MIT).
+    These are the published values, so damage totals computed with them lose the
+    "unverified" warning that the bundled approximations carry.
+    """
+    from floodline.damage.usace import ensure_usace_curves, load_usace_curves
+
+    path = ensure_usace_curves(cache_dir=cache, download=True)
+    curves = load_usace_curves(path)
+    typer.echo(
+        f"cached {path} ({path.stat().st_size / 1e3:,.0f} kB) — "
+        f"{len(curves.codes)} occupancy types, "
+        f"{len(curves.contents.curves)} with contents curves"
+    )
+
+
 @app.command("fetch-population")
 def fetch_population(
     product: Annotated[
@@ -807,6 +829,13 @@ def assess(
         bool,
         typer.Option(help="Allow the one-time 494 MB national population download."),
     ] = False,
+    inventory: Annotated[
+        str,
+        typer.Option(help="nsi (values per structure) or overture (geometry only)."),
+    ] = "nsi",
+    download_curves: Annotated[
+        bool, typer.Option(help="Allow the USACE curve library download if not cached.")
+    ] = False,
     config: ConfigOption = None,
 ) -> None:
     """Run the whole chain for one watershed on live data: terrain to damage.
@@ -840,6 +869,8 @@ def assess(
             with_buildings=buildings,
             with_population=population,
             download_population=download_population,
+            inventory=inventory,
+            download_curves=download_curves,
         )
     except NoDischargeError as exc:
         typer.secho(f"error: {exc}", fg=typer.colors.RED, err=True)
@@ -863,8 +894,13 @@ def assess(
         exposed = result.buildings
         typer.echo(
             f"buildings  {exposed.n_inundated:,} above finished floor of "
-            f"{len(exposed.buildings):,} in the window "
+            f"{len(exposed.buildings):,} ({result.inventory}) "
             f"({exposed.n_wet_ground:,} with water on the ground)"
+        )
+    if result.night_population is not None:
+        typer.echo(
+            f"residents  {result.night_population:,.0f} overnight in flooded structures, "
+            f"{result.day_population:,.0f} present by day (NSI, per structure)"
         )
     if result.people is not None:
         typer.echo(
@@ -888,6 +924,12 @@ def assess(
             f"           loss ratio {result.damage.loss_ratio:.1%} of "
             f"{unit_name} {result.damage.exposed_value_total:,.0f} exposed"
         )
+        if result.contents_damage:
+            structure_only = result.damage.total - result.contents_damage
+            typer.echo(
+                f"           structure {unit_name} {structure_only:,.0f} + "
+                f"contents {unit_name} {result.contents_damage:,.0f}"
+            )
         if not result.interval.curves_verified:
             typer.secho(
                 "warning: curve constants are unverified — counts and ratios stand, "

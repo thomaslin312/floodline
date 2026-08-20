@@ -13,6 +13,7 @@ silently substitutes a default is worse than one that reports a hole.
 
 from __future__ import annotations
 
+import json
 import time
 from dataclasses import dataclass, field
 from typing import Any
@@ -22,11 +23,13 @@ import httpx
 import numpy as np
 import numpy.typing as npt
 import rasterio
+import shapely
 
-from floodline.compute import gauge_for_watershed, wgs84_bounds
+from floodline.compute import gauge_for_watershed, geometry_wgs84, wgs84_bounds
 from floodline.config import Config
 from floodline.damage.estimate import DamageEstimate, estimate_damage
 from floodline.damage.uncertainty import DamageInterval, monte_carlo_damage
+from floodline.damage.usace import UsaceCurves, ensure_usace_curves, load_usace_curves
 from floodline.exposure.buildings import BuildingExposure, building_depths
 from floodline.exposure.population import PopulationExposure, population_affected
 from floodline.hydraulics.frequency import HistoricalContext, flood_frequency
@@ -38,6 +41,7 @@ from floodline.hydraulics.rating import (
 )
 from floodline.hydraulics.stage import stage_field_from_discharge
 from floodline.io.ingest import Watershed, ingest_dem
+from floodline.io.nsi import fetch_nsi_structures, structure_footprints
 from floodline.io.overture import fetch_overture_buildings
 from floodline.io.population import PopulationProduct, read_population_window
 from floodline.io.raster import Raster
@@ -83,6 +87,17 @@ class Assessment:
     damage: DamageEstimate | None
     interval: DamageInterval | None
 
+    inventory: str = "none"
+    """Which structure inventory the exposure came from."""
+
+    night_population: float | None = None
+    """Residents in the structures the model floods, from NSI's own per-structure
+    counts. More direct than a gridded product: people in flooded buildings, not
+    people in flooded cells."""
+
+    day_population: float | None = None
+    contents_damage: float | None = None
+
     seconds: dict[str, float] = field(default_factory=dict)
     gaps: list[str] = field(default_factory=list)
     """Stages that could not run, and why. Empty means every input was found."""
@@ -100,6 +115,8 @@ def assess_watershed(
     max_cells: int = 60_000_000,
     with_buildings: bool = True,
     with_population: bool = True,
+    inventory: str = "nsi",
+    download_curves: bool = False,
     download_population: bool = False,
     population_product: PopulationProduct = PopulationProduct.WORLDPOP_CONSTRAINED,
     samples: int | None = None,
@@ -205,9 +222,67 @@ def assess_watershed(
 
         # ---- exposure ------------------------------------------------------
         exposure: BuildingExposure | None = None
-        if with_buildings:
+        damage_curves: UsaceCurves | None = None
+        night_pop: float | None = None
+        day_pop: float | None = None
+        used_inventory = "none"
+
+        if with_buildings and inventory == "nsi":
             started = time.perf_counter()
             try:
+                # NSI is the only open US inventory that carries a value per structure,
+                # and a depth-damage fraction is a fraction *of* something. Overture has
+                # better geometry and no valuation; a flat rate per class overstated a
+                # Houston sample by 1.4x.
+                shape = shapely.from_geojson(json.dumps(geometry_wgs84(unit, config)))
+                nsi = fetch_nsi_structures(shape, cache_key=unit.huc)
+                if not len(nsi.structures):
+                    gaps.append("NSI returned no structures inside this watershed")
+                else:
+                    boxes = structure_footprints(nsi.structures.to_crs(config.crs.analysis))
+                    boxes["building_class"] = boxes["occtype"]
+                    boxes["num_floors"] = boxes["num_story"]
+                    exposure = building_depths(
+                        depth_raster.data,
+                        depth_raster.transform,
+                        boxes,
+                        unclamped_depth=margin,
+                        config=config,
+                        class_column="building_class",
+                        storeys_column="num_floors",
+                        default_class=config.damage.usace_default_occupancy,
+                    )
+                    frame = exposure.buildings
+                    # NSI records a real foundation height per structure, so the single
+                    # global freeboard constant is not needed and not used here.
+                    frame["floor_depth_m"] = np.maximum(frame["depth_m"] - frame["found_ht_m"], 0.0)
+                    frame["floor_margin_m"] = frame["floor_margin_m"] + (
+                        config.exposure.floor_height_m - frame["found_ht_m"]
+                    )
+                    wet = frame["floor_depth_m"] > 0.0
+                    night_pop = float(frame.loc[wet, "pop_night"].sum())
+                    day_pop = float(frame.loc[wet, "pop_day"].sum())
+                    used_inventory = "nsi"
+            except Exception as exc:
+                gaps.append(f"NSI unavailable: {type(exc).__name__}: {exc}")
+            timings["nsi"] = time.perf_counter() - started
+
+            started = time.perf_counter()
+            try:
+                damage_curves = load_usace_curves(
+                    ensure_usace_curves(download=download_curves), config=config
+                )
+            except Exception as exc:
+                gaps.append(
+                    f"USACE curve library unavailable ({type(exc).__name__}: {exc}), so "
+                    "damage falls back to the unverified bundled constants"
+                )
+            timings["curves"] = time.perf_counter() - started
+
+        elif with_buildings:
+            started = time.perf_counter()
+            try:
+                used_inventory = "overture"
                 fetched = fetch_overture_buildings(
                     (west, south, east, north),
                     config=config,
@@ -264,7 +339,15 @@ def assess_watershed(
                 frame["building_class"].to_numpy(dtype=object),
             )
             storeys = frame["storeys"].to_numpy()
-            damage = estimate_damage(*args, storeys=storeys, config=config)
+            extra: dict[str, Any] = {}
+            if damage_curves is not None and "val_struct" in frame.columns:
+                extra = {
+                    "structure_value": frame["val_struct"].to_numpy(),
+                    "contents_value": frame["val_cont"].to_numpy(),
+                    "contents_curves": damage_curves.contents,
+                    "curves": damage_curves.structure,
+                }
+            damage = estimate_damage(*args, storeys=storeys, config=config, **extra)
             mc = config.monte_carlo
             if samples is not None:
                 mc = mc.model_copy(update={"n_samples": samples})
@@ -274,6 +357,7 @@ def assess_watershed(
                 floor_margin_m=frame["floor_margin_m"].to_numpy(),
                 monte_carlo=mc,
                 damage=config.damage,
+                **extra,
             )
             timings["damage"] = time.perf_counter() - started
 
@@ -292,6 +376,10 @@ def assess_watershed(
             people=people,
             damage=damage,
             interval=interval,
+            inventory=used_inventory,
+            night_population=night_pop,
+            day_population=day_pop,
+            contents_damage=damage.contents_total if damage is not None else None,
             seconds=timings,
             gaps=gaps,
             warnings=warnings,

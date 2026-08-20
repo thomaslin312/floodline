@@ -33,6 +33,11 @@ class DamageEstimate:
     exposed_value_total: float
     """Replacement value of every building considered, damaged or not."""
 
+    contents_total: float
+    """Damage to contents, when a contents curve and a contents value were supplied.
+    Zero otherwise, which is an omission rather than a finding: contents are worth
+    roughly as much again as the structure."""
+
     n_buildings: int
     n_damaged: int
     family: CurveFamily
@@ -61,6 +66,9 @@ def estimate_damage(
     building_class: npt.ArrayLike,
     *,
     storeys: npt.ArrayLike | None = None,
+    structure_value: npt.ArrayLike | None = None,
+    contents_value: npt.ArrayLike | None = None,
+    contents_curves: CurveSet | None = None,
     config: Config | DamageConfig | None = None,
     curves: CurveSet | None = None,
     family: CurveFamily | None = None,
@@ -77,7 +85,17 @@ def estimate_damage(
     floor_area_m2
         Footprint area times storeys.
     building_class
-        Class per building, used to pick both the curve and the cost rate.
+        Class per building, used to pick both the curve and the cost rate. With the
+        USACE library this holds HAZUS occupancy codes rather than the four generic
+        classes, and the same array keys both curve sets.
+    structure_value
+        Replacement value per building, overriding `floor_area x rate`. Supply it
+        whenever a real inventory is available: area times a flat rate per class
+        overstated a Houston sample by 1.4x and was within 30% for only 64% of
+        buildings.
+    contents_value, contents_curves
+        Contents priced on their own curve. Both or neither; contents damage is
+        reported separately and included in `total`.
     storeys
         Storey count per building. Required when `cap_storeys` is on, which is what
         stops a metre of water being priced against every floor of a tower block.
@@ -107,20 +125,51 @@ def estimate_damage(
         )
 
     fraction = curve_set.damage_fraction(depths, classes, config=damage_config)
-    value = exposed_value(areas, classes, config=damage_config, cost_scale=cost_scale)
+    if structure_value is None:
+        value = exposed_value(areas, classes, config=damage_config, cost_scale=cost_scale)
+    else:
+        value = np.asarray(structure_value, dtype=np.float64) * cost_scale
+        if value.shape != depths.shape:
+            raise ValueError(
+                f"structure_value shape {value.shape} does not match depth {depths.shape}"
+            )
 
+    # Computed once and reused for contents, so the two components cannot disagree
+    # about how many storeys the water reached.
+    reach = np.ones_like(depths)
     if cap_storeys:
         if storeys is None:
             raise ValueError("cap_storeys is on but no storey count was given")
-        fraction = fraction * storey_exposure(depths, storeys)
+        reach = storey_exposure(depths, storeys)
+    fraction = fraction * reach
 
     per_building = fraction * value
+
+    contents_damage = np.zeros_like(per_building)
+    if contents_value is not None and contents_curves is not None:
+        contents = np.asarray(contents_value, dtype=np.float64) * cost_scale
+        if contents.shape != depths.shape:
+            raise ValueError(
+                f"contents_value shape {contents.shape} does not match depth {depths.shape}"
+            )
+        contents_fraction = (
+            contents_curves.damage_fraction(depths, classes, config=damage_config) * reach
+        )
+        contents_damage = contents_fraction * contents
+        per_building = per_building + contents_damage
+    elif (contents_value is None) != (contents_curves is None):
+        raise ValueError("contents_value and contents_curves must be given together")
 
     by_class: dict[str, float] = {}
     for name in {str(c) for c in classes.ravel()}:
         by_class[name] = float(per_building[classes == name].sum())
 
     notes: list[str] = []
+    if contents_value is None:
+        notes.append(
+            "Contents damage is not included; contents are typically worth about as "
+            "much again as the structure, so this total is low by roughly that much."
+        )
     if not curve_set.verified:
         notes.append(
             "Curve constants are unverified; ratios and counts stand, currency totals do not."
@@ -130,6 +179,7 @@ def estimate_damage(
         total=float(per_building.sum()),
         by_class=dict(sorted(by_class.items())),
         per_building=per_building,
+        contents_total=float(contents_damage.sum()),
         exposed_value_total=float(value.sum()),
         n_buildings=int(depths.size),
         n_damaged=int((per_building > 0).sum()),
