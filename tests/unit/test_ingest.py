@@ -273,3 +273,46 @@ def test_watershed_clipping_respects_the_cell_cap(
     shed = load_watersheds(_watershed_geojson(tmp_path / "w.geojson"), config=Config())[0]
     with pytest.raises(ValueError, match=r"over the .* cap"):
         ingest_dem([tile], resolution_m=1.0, config=Config(), watershed=shed, max_cells=1000)
+
+
+def test_output_grid_matches_the_request_exactly(
+    tmp_path: Path, write_geographic_tile: Any
+) -> None:
+    """Each WarpedVRT is pinned to the output grid, so the result is exactly the ask.
+
+    An unpinned VRT sizes itself from the source: over a 10812x10812 3DEP tile that is
+    a 123M-cell warp grid for a 0.1M-cell output, and GDAL then reads far more source
+    than the window needs. Over a network that was the difference between twelve
+    seconds and not finishing in ten minutes.
+    """
+    from rasterio.crs import CRS as RioCRS
+    from rasterio.warp import transform_bounds
+
+    tile = write_geographic_tile(tmp_path / "t.tif", west=-95.7, south=29.6, size=0.4, res=0.004)
+    aoi = transform_bounds(RioCRS.from_epsg(4326), RioCRS.from_epsg(6587), *AOI, densify_pts=21)
+
+    for resolution in (30.0, 100.0):
+        dem = ingest_dem([tile], resolution_m=resolution, config=Config())
+        cols, rows = estimate_cells(aoi, resolution)
+        assert dem.data.shape == (rows, cols)
+        assert dem.cellsize == pytest.approx((resolution, resolution))
+
+
+def test_tiles_are_combined_without_resampling_twice(
+    tmp_path: Path, write_geographic_tile: Any
+) -> None:
+    """Neighbouring tiles share one output grid, so a seam keeps both sides' values."""
+    left = write_geographic_tile(tmp_path / "l.tif", west=-95.6, south=29.7, size=0.1, value=11.0)
+    right = write_geographic_tile(tmp_path / "r.tif", west=-95.5, south=29.7, size=0.1, value=22.0)
+    dem = ingest_dem([left, right], resolution_m=60.0, config=Config(), clip_to_aoi=False)
+    values = dem.data[np.isfinite(dem.data)]
+    assert set(np.unique(np.round(values))) <= {11.0, 22.0}
+    assert 11.0 in np.round(values) and 22.0 in np.round(values)
+
+
+def test_unclipped_extent_covers_every_tile(tmp_path: Path, write_geographic_tile: Any) -> None:
+    left = write_geographic_tile(tmp_path / "l.tif", west=-95.6, south=29.7, size=0.1)
+    right = write_geographic_tile(tmp_path / "r.tif", west=-95.5, south=29.7, size=0.1)
+    one = ingest_dem([left], resolution_m=60.0, config=Config(), clip_to_aoi=False)
+    both = ingest_dem([left, right], resolution_m=60.0, config=Config(), clip_to_aoi=False)
+    assert both.data.shape[1] > one.data.shape[1], "the union must be wider than one tile"

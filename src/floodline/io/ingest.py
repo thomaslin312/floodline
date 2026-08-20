@@ -35,13 +35,12 @@ from datetime import date
 from pathlib import Path
 
 import numpy as np
-import numpy.typing as npt
 import rasterio
 from pyproj import CRS, Transformer
 from rasterio.crs import CRS as RioCRS
 from rasterio.enums import Resampling
 from rasterio.features import geometry_mask
-from rasterio.merge import merge
+from rasterio.transform import from_origin
 from rasterio.vrt import WarpedVRT
 from rasterio.warp import transform_bounds
 from shapely.geometry import shape
@@ -200,6 +199,22 @@ def estimate_cells(
     )
 
 
+def _union_bounds(
+    paths: Sequence[Path | str], dst_crs: RioCRS
+) -> tuple[float, float, float, float]:
+    """Return the combined extent of `paths` in `dst_crs`."""
+    west = south = float("inf")
+    east = north = float("-inf")
+    for path in paths:
+        with rasterio.open(path) as src:
+            if src.crs is None:
+                raise CrsError(f"{path} has no CRS; floodline will not guess one.")
+            b = transform_bounds(src.crs, dst_crs, *src.bounds, densify_pts=21)
+        west, south = min(west, b[0]), min(south, b[1])
+        east, north = max(east, b[2]), max(north, b[3])
+    return west, south, east, north
+
+
 def ingest_dem(
     paths: Sequence[Path | str],
     *,
@@ -269,36 +284,41 @@ def ingest_dem(
     resampling = Resampling[resolved.raster.warp_resampling]
     nodata = float(resolved.raster.nodata)
 
-    vrts: list[WarpedVRT] = []
-    handles: list[rasterio.DatasetReader] = []
-    try:
-        for path in chosen:
-            src = rasterio.open(path)
-            if src.crs is None:
-                src.close()
-                raise CrsError(f"{path} has no CRS; floodline will not guess one.")
-            handles.append(src)
-            vrts.append(
-                WarpedVRT(
-                    src,
-                    crs=dst_crs,
-                    resampling=resampling,
-                    src_nodata=src.nodata,
-                    nodata=nodata,
-                    warp_mem_limit=resolved.raster.warp_memory_limit_mb,
-                )
-            )
-        data, transform = merge(
-            vrts, bounds=bounds, res=(resolution_m, resolution_m), nodata=nodata
-        )
-    finally:
-        for vrt in vrts:
-            vrt.close()
-        for handle in handles:
-            handle.close()
+    if bounds is None:
+        bounds = _union_bounds(chosen, dst_crs)
+        cols, rows = estimate_cells(bounds, resolution_m)
+    west, _, _, north = bounds
+    transform = from_origin(west, north, resolution_m, resolution_m)
 
-    array: npt.NDArray[np.float32] = np.asarray(data[0], dtype=np.float32)
-    array = np.where(array == np.float32(nodata), np.nan, array)
+    # Every WarpedVRT is pinned to the *output* grid rather than left to size itself
+    # from the source. An unpinned VRT over a 10812x10812 3DEP tile is a 123M-cell
+    # warp grid; pinned to a 10 km window it is 0.1M. GDAL then reads only the source
+    # blocks that window touches, which is the difference between seconds and tens of
+    # minutes over a network. It also means every VRT shares one grid, so combining
+    # them is a per-pixel choice with no resampling left to do.
+    array = np.full((rows, cols), np.nan, dtype=np.float32)
+    for path in chosen:
+        with rasterio.open(path) as src:
+            if src.crs is None:
+                raise CrsError(f"{path} has no CRS; floodline will not guess one.")
+            with WarpedVRT(
+                src,
+                crs=dst_crs,
+                transform=transform,
+                width=cols,
+                height=rows,
+                resampling=resampling,
+                src_nodata=src.nodata,
+                nodata=nodata,
+                warp_mem_limit=resolved.raster.warp_memory_limit_mb,
+            ) as vrt:
+                block = vrt.read(1).astype(np.float32)
+        block = np.where(block == np.float32(nodata), np.nan, block)
+        gaps = np.isnan(array) & ~np.isnan(block)
+        if gaps.any():
+            array[gaps] = block[gaps]
+        if not np.isnan(array).any():
+            break
 
     if watershed is not None:
         # Everything outside the boundary is nodata. Filling and routing then treat
