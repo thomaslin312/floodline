@@ -22,6 +22,7 @@
   h1{font-family:var(--display);font-size:17px;font-weight:700;margin:0;letter-spacing:-.01em}
   h1 span{font-family:var(--mono);font-size:10.5px;font-weight:400;color:var(--muted);letter-spacing:.1em;text-transform:uppercase;margin-left:8px}
   form{display:flex;gap:6px;flex:1 1 300px;max-width:440px}
+  select{padding:4px 6px;border:1px solid var(--rule);border-radius:3px;background:var(--plate);color:var(--ink);font-family:var(--body);font-size:12.5px}
   input[type=text]{flex:1;padding:6px 9px;border:1px solid var(--rule);border-radius:3px;background:var(--plate);color:var(--ink);font-family:var(--body);font-size:13.5px}
   button{padding:6px 12px;border:1px solid var(--ink);border-radius:3px;background:var(--ink);color:var(--paper);font-family:var(--body);font-weight:600;font-size:13px;cursor:pointer}
   button:disabled{opacity:.45;cursor:default}
@@ -61,8 +62,16 @@
     <input type="text" id="q" placeholder="ZIP code, address, or 12-digit HUC" autocomplete="off">
     <button type="submit">Find</button>
   </form>
-  <span class="hintbar">or click the map</span>
+  <span class="hintbar">or click any watershed</span>
   <span style="flex:1"></span>
+  <label class="hintbar">Level
+    <select id="lvl">
+      <option value="8">HUC-8 basin</option>
+      <option value="10">HUC-10 watershed</option>
+      <option value="12" selected>HUC-12 subwatershed</option>
+    </select>
+  </label>
+  <label class="hintbar"><input type="checkbox" id="bnd" checked> Boundaries</label>
   <label class="hintbar"><input type="checkbox" id="hi"> 10 m (slower)</label>
 </header>
 <main>
@@ -102,6 +111,26 @@ L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
   maxZoom: 17, attribution: '&copy; OpenStreetMap contributors'
 }).addTo(map);
 
+// The Watershed Boundary Dataset renders as images and swaps HUC level by scale on
+// its own - regions when zoomed out, subwatersheds when zoomed in - so the whole
+// national grid is browsable without shipping any geometry.
+const ArcGISDynamic = L.TileLayer.extend({
+  getTileUrl: function (coords) {
+    const bounds = this._tileCoordsToBounds(coords);
+    const sw = L.CRS.EPSG3857.project(bounds.getSouthWest());
+    const ne = L.CRS.EPSG3857.project(bounds.getNorthEast());
+    return this.options.base + "/export?bbox=" + [sw.x, sw.y, ne.x, ne.y].join(",")
+      + "&bboxSR=3857&imageSR=3857&size=256,256&layers=show:" + this.options.layers
+      + "&format=png32&transparent=true&dpi=96&f=image";
+  },
+});
+const boundaries = new ArcGISDynamic("", {
+  base: "https://hydro.nationalmap.gov/arcgis/rest/services/wbd/MapServer",
+  layers: "1,2,3,4,5,6",
+  opacity: 0.75,
+  attribution: "USGS Watershed Boundary Dataset",
+}).addTo(map);
+
 let outline = null, overlay = null, unit = null, bundle = null;
 let hand = null, reach = null, lut = null, nMult = 0, busy = false;
 
@@ -124,9 +153,10 @@ async function api(path){
 /* ---------- pick a watershed ---------- */
 async function pick(lon, lat, label){
   if(busy) return;
+  const level = $("lvl").value;
   status('<span class="spin"></span>Identifying the watershed…');
   try{
-    unit = await api(`/api/watershed?lon=${lon}&lat=${lat}&level=12`);
+    unit = await api(`/api/watershed?lon=${lon}&lat=${lat}&level=${level}`);
     showUnit(label);
   }catch(e){ status("Could not identify a watershed there: " + e.message, "err"); }
 }
@@ -268,6 +298,12 @@ map.on("click", (e) => pick(e.latlng.lng, e.latlng.lat, null));
 new ResizeObserver(() => map.invalidateSize()).observe($("map"));
 requestAnimationFrame(() => map.invalidateSize());
 $("run").addEventListener("click", run);
+$("bnd").addEventListener("change", (e) => {
+  if(e.target.checked) boundaries.addTo(map); else map.removeLayer(boundaries);
+});
+$("lvl").addEventListener("change", () => {
+  status("Level changed. Click the map to pick a watershed at this level.");
+});
 let raf=0;
 $("qs").addEventListener("input", ()=>{ if(!raf) raf=requestAnimationFrame(()=>{raf=0;paint();}); });
 $("find").addEventListener("submit", async (ev) => {

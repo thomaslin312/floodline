@@ -101,7 +101,10 @@ uv sync --all-extras --all-groups
 uv run floodline serve          # then open http://127.0.0.1:8000
 ```
 
-Click anywhere in the US, or type a ZIP code, address, or HUC code. The service
+Every watershed in the country is drawn on the map — the boundary layer switches from
+regions to subwatersheds as you zoom — so you can see what you are choosing before you
+choose it. Click one, or type a ZIP code, address, or HUC code, and pick the level
+(HUC-8 basin, HUC-10 watershed, HUC-12 subwatershed) a click should resolve to. The service
 fetches the watershed boundary, finds the 3DEP tiles that intersect it, reads them
 over HTTP range requests without downloading them, runs the whole chain, and
 returns a bundle the browser uses to recompute the flood live as you move a

@@ -828,3 +828,11 @@ under that: 13-29 s cold for a HUC-12, cached afterwards.
   measures its container on construction, which inside a grid that has not laid out
   yet gives a tile grid at the wrong size. Both fixed - a `[hidden]` rule and a
   `ResizeObserver` calling `invalidateSize`.
+
+- **The national watershed grid is now visible, not just clickable.** The first version
+  made you click a blind point and told you afterwards what you had hit. The WBD
+  MapServer renders boundary images and swaps HUC level by map scale on its own -
+  regions when zoomed out, subwatersheds when zoomed in - so a small `L.TileLayer`
+  subclass that builds an `export` URL per tile puts the whole national grid on the map
+  without shipping any geometry. A level selector (8 / 10 / 12) controls what a click
+  resolves to, since the right granularity depends on the question rather than the zoom.
