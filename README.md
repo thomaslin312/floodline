@@ -110,6 +110,8 @@ the design follows from that rather than around it.
 | Microsoft US Building Footprints | 206, range-readable | no — Overture carries height and class |
 | LandScan Global / USA | **403**, registration form | no — gated |
 | Census ACS block groups | **"Missing Key"** | no — needs `CENSUS_API_KEY` |
+| USACE National Structure Inventory | open POST API, keyless | yes — per-structure values |
+| USACE curve library (`go-consequences`) | MIT, machine-readable JSON | yes — depth–damage curves |
 
 The WorldPop result is the one that shapes the code. Its server says it supports HTTP
 range requests and then answers one with `200` and the entire body, so the windowed
@@ -132,14 +134,24 @@ The pipeline is real and tested. The constants are not all real.
 relative comparison between curve families, and how the interval responds to each
 source of error. These follow from the depth raster and the curve shapes.
 
-**Not trustworthy:** any absolute currency figure. The bundled curves carry the shape
-of each published family — HAZUS residential saturating near two-thirds, the JRC
-continental curves rising faster to unity — but their digits have not been checked
-against FEMA's technical manual or Huizinga et al. (2017). Every bundled curve is
-marked `verified=False`, that flag propagates into the result object, and the CLI
-prints a warning on every run. Transcribe real tables and pass them with
-`floodline damage --curves`, which sets the flag and silences the warning.
-Replacement costs per m² are likewise stated assumptions, not quotes.
+**Currency figures are quotable with a stated method**, since both halves now come
+from published sources rather than guesses:
+
+- **Curves** — the USACE library from
+  [go-consequences](https://github.com/USACE/go-consequences) (MIT): 51 HAZUS
+  occupancy types, structure *and* contents curves, from the Economic Guidance
+  Memoranda. `uv run floodline fetch-curves`.
+- **Values** — the USACE [National Structure Inventory](https://nsi.sec.usace.army.mil):
+  a replacement value, contents value, storey count, foundation height and day/night
+  population for each of ~120 million US structures. They join to the curves on
+  `occtype`, which is why this pair rather than any other.
+
+Two caveats remain, and they are real. **NSI values are modelled, not appraised** —
+derived from occupancy type, footprint area and regional construction costs. Sound
+summed over tens of thousands of buildings; not sound for any single one. And the
+three *bundled* curve families (HAZUS, JRC Oceania, JRC Global) are still
+approximations, marked `verified=False`, kept only for cross-family comparison. Run
+without `--inventory nsi` and you get those, with a warning.
 
 **What the Monte Carlo covers:** gauge stage error, DEM vertical error, curve-family
 choice, and replacement cost. **What it does not:** storey counts, floor area,
@@ -212,6 +224,10 @@ only carry what was inlined into it.
 
 The whole chain for any US watershed, on live data — terrain, hydraulics, footprints,
 population, damage, and where the discharge sits in its gauge's record:
+
+```bash
+uv run floodline fetch-curves
+```
 
 ```bash
 uv run floodline assess 1204010403 --resolution 30 --samples 800 --out damage.parquet
