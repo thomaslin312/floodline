@@ -19,14 +19,17 @@ from __future__ import annotations
 
 import json
 import logging
+from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
 import httpx
+import numpy as np
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse, JSONResponse
 from rasterio.errors import RasterioIOError
 
+from floodline.assess import NoDischargeError, assess_watershed, buildings_geoparquet
 from floodline.compute import (
     compute_watershed,
     geometry_wgs84,
@@ -35,6 +38,7 @@ from floodline.compute import (
 )
 from floodline.config import Config
 from floodline.io.sources import SourceError, make_client
+from floodline.report.exposure_bundle import build_exposure_bundle
 
 __all__ = ["create_app"]
 
@@ -51,6 +55,42 @@ ONELINE = "https://geocoding.geo.census.gov/geocoder/locations/onelineaddress"
 def _cache_path(root: Path, huc: str, resolution_m: float) -> Path:
     """Return the cache file for one watershed at one resolution."""
     return root / f"{huc}_{resolution_m:g}m.json"
+
+
+def _exposure_stats(result: Any, config: Config) -> dict[str, Any]:
+    """Flatten an assessment's exposure and damage into JSON-safe summary numbers."""
+    exposed = result.buildings
+    damage = result.damage
+    interval = result.interval
+    low, high = interval.count_interval if interval is not None else (0, 0)
+    return {
+        "inventory": result.inventory,
+        "structures": len(exposed.buildings) if exposed is not None else 0,
+        "inundated": int(exposed.n_inundated) if exposed is not None else 0,
+        "inundated_low": int(low),
+        "inundated_high": int(high),
+        "wet_ground": int(exposed.n_wet_ground) if exposed is not None else 0,
+        "night_population": result.night_population,
+        "day_population": result.day_population,
+        "damage": damage.total if damage is not None else None,
+        "damage_structure": (damage.total - damage.contents_total if damage is not None else None),
+        "damage_contents": damage.contents_total if damage is not None else None,
+        "damage_low": interval.lower if interval is not None else None,
+        "damage_high": interval.upper if interval is not None else None,
+        "quantiles": list(interval.quantiles) if interval is not None else None,
+        "exposed_value": damage.exposed_value_total if damage is not None else None,
+        "loss_ratio": damage.loss_ratio if damage is not None else None,
+        "curves_verified": bool(interval.curves_verified) if interval is not None else False,
+        "curve_family": damage.family.value if damage is not None else None,
+        "by_class": (
+            dict(sorted(damage.by_class.items(), key=lambda kv: -kv[1])[:8])
+            if damage is not None
+            else {}
+        ),
+        "flooded_km2": result.flooded_km2,
+        "max_depth_m": result.max_depth_m,
+        "discharge_cms": result.discharge_cms,
+    }
 
 
 def create_app(
@@ -237,6 +277,79 @@ def create_app(
             result.total_seconds,
             result.tiles_read,
         )
+        return JSONResponse(payload)
+
+    @app.get("/api/exposure/{huc}")
+    def exposure(
+        huc: str,
+        resolution: float = Query(default=30.0, ge=10.0, le=100.0),
+        samples: int = Query(default=400, ge=50, le=5000),
+        refresh: bool = False,
+    ) -> JSONResponse:
+        """Value the structures a watershed's flood reaches, and price the damage.
+
+        Much slower than `/api/compute` and deliberately a separate call: the National
+        Structure Inventory takes a couple of minutes for a watershed this size, so a
+        map should ask for this only when a reader wants it, not on every click.
+        Cached afterwards like the compute bundle.
+        """
+        path = cache / f"{huc}_{resolution:g}m_exposure.json"
+        if path.exists() and not refresh:
+            payload = json.loads(path.read_text())
+            payload["cached"] = True
+            return JSONResponse(payload)
+
+        try:
+            with client() as http:
+                unit, local = watershed_by_huc(huc, config=base, client=http)
+                result = assess_watershed(
+                    unit,
+                    config=local,
+                    resolution_m=resolution,
+                    client=http,
+                    max_cells=max_cells,
+                    samples=samples,
+                    with_population=False,
+                )
+        except NoDischargeError as exc:
+            raise HTTPException(422, str(exc)) from exc
+        except SourceError as exc:
+            raise HTTPException(502, f"upstream data source failed: {exc}") from exc
+        except RasterioIOError as exc:
+            raise HTTPException(502, f"the elevation tiles could not be read ({exc})") from exc
+        except ValueError as exc:
+            raise HTTPException(413, str(exc)) from exc
+
+        frame = buildings_geoparquet(result)
+        if frame is None or result.damage is None:
+            raise HTTPException(
+                502,
+                "exposure could not be built for this watershed: "
+                + ("; ".join(result.gaps) or "no structures returned"),
+            )
+
+        bundle = build_exposure_bundle(
+            huc=huc,
+            inventory=result.inventory,
+            buildings=frame,
+            transform=result.depth.transform,
+            shape=result.depth.data.shape,
+            bounds=result.depth.bounds,
+            reduction=max(1, int(np.ceil(result.depth.data.shape[1] / 800))),
+            currency=local.damage.currency,
+            stats=_exposure_stats(result, local),
+            notes=list(result.damage.notes),
+        )
+        payload = {
+            # ExposureBundle uses slots, so it has no __dict__ to splat.
+            **asdict(bundle),
+            "gaps": result.gaps,
+            "warnings": result.warnings,
+            "seconds": {k: round(v, 2) for k, v in result.seconds.items()},
+            "cached": False,
+        }
+        path.write_text(json.dumps(payload, default=float))
+        logger.info("exposure %s at %gm in %.1fs", huc, resolution, sum(result.seconds.values()))
         return JSONResponse(payload)
 
     @app.get("/api/health")

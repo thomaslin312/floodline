@@ -41,6 +41,7 @@ __all__ = [
     "REACH_NODATA",
     "UnitBundle",
     "encode_hand",
+    "encode_png",
     "encode_reach_ids",
     "encode_stage_table",
     "to_data_uri",
@@ -56,7 +57,7 @@ REACH_NODATA = 65535
 """Reserved 16-bit reach id for a pixel that drains to no reach."""
 
 
-def _png(array: npt.NDArray[np.uint8], mode: str) -> bytes:
+def encode_png(array: npt.NDArray[np.uint8], mode: str) -> bytes:
     """Encode an array as an optimised PNG."""
     buffer = io.BytesIO()
     Image.fromarray(array, mode=mode).save(buffer, format="PNG", optimize=True)
@@ -78,7 +79,7 @@ def encode_hand(hand: npt.NDArray[np.floating]) -> bytes:
     scaled = np.where(
         np.isfinite(hand), np.clip(np.asarray(hand) * HAND_SCALE, 0, HAND_NODATA - 1), HAND_NODATA
     )
-    return _png(scaled.astype(np.uint8), "L")
+    return encode_png(scaled.astype(np.uint8), "L")
 
 
 def encode_reach_ids(reach_of_cell: npt.NDArray[np.integer]) -> bytes:
@@ -95,7 +96,7 @@ def encode_reach_ids(reach_of_cell: npt.NDArray[np.integer]) -> bytes:
             np.zeros(ids.shape, dtype=np.uint8),
         ]
     )
-    return _png(rgb, "RGB")
+    return encode_png(rgb, "RGB")
 
 
 def encode_stage_table(
@@ -118,7 +119,7 @@ def encode_stage_table(
         base = discharge_cms.get(reach, 0.0)
         stages = [curve.stage_for_discharge(base * float(m)) * HAND_SCALE for m in multipliers]
         table[reach] = np.clip(stages, 0, 255).astype(np.uint8)
-    return _png(table, "L")
+    return encode_png(table, "L")
 
 
 @dataclass

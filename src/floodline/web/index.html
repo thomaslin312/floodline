@@ -208,6 +208,8 @@
   /* ---------- legend ---------- */
   .ramp{height:7px;border-radius:4px;margin:7px 0 4px;box-shadow:inset 0 0 0 1px var(--hair);
     background:linear-gradient(90deg,#cfe6f2,#7fb8dc,#3d8fc0,#1a6098,#0b3f73,#062242)}
+  /* Damage runs warm so it never reads as more water. */
+  .ramp.dmg{background:linear-gradient(90deg,#fde3c7,#f7b267,#ef7b45,#d64933,#8c1c13)}
   .rampax{display:flex;justify-content:space-between;font-family:var(--mono);font-size:9px;
     color:var(--ink-3);font-variant-numeric:tabular-nums}
   .keyrow{display:flex;flex-direction:column;gap:5px;margin-top:10px;padding-top:9px;
@@ -260,6 +262,7 @@
     <label class="chip on" id="c-hwm"><input type="checkbox" checked><i></i>Marks</label>
     <label class="chip on" id="c-q"><input type="checkbox" checked><i></i>Best surveys only</label>
     <label class="chip" id="c-hi"><input type="checkbox"><i></i>10 m</label>
+    <label class="chip" id="c-dmg"><input type="checkbox"><i></i>Damage</label>
   </div>
 </section>
 
@@ -283,10 +286,23 @@
     <button class="wide quiet" id="fit" hidden>Find the discharge the marks imply</button>
     <div class="qnote" id="fitnote" hidden></div>
     <dl class="grid" id="stats"></dl>
+
+    <div id="exposure" hidden>
+      <div class="eyebrow" style="margin-top:14px">Exposure and damage</div>
+      <button class="wide quiet" id="expo-run">Value the buildings this reaches</button>
+      <div class="qnote" id="expo-note"></div>
+      <dl class="grid" id="expo-stats" hidden></dl>
+    </div>
   </div>
 </section>
 
 <section class="panel" id="legend">
+  <div id="dmgkey" hidden>
+    <div class="eyebrow">Damage per cell</div>
+    <div class="ramp dmg"></div>
+    <div class="rampax"><span>1k</span><span>100k</span><span>10M</span><span>100M+</span></div>
+    <div style="height:11px"></div>
+  </div>
   <div class="eyebrow">Modelled depth</div>
   <div class="ramp"></div>
   <div class="rampax"><span>0</span><span>0.5</span><span>2</span><span>4.5</span><span>8 m+</span></div>
@@ -415,7 +431,7 @@ window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () 
 const tip = new maplibregl.Popup({closeButton:false, closeOnClick:false, offset:12,
   maxWidth:"280px", focusAfterOpen:false});
 
-let unit=null, bundle=null, gaugeMarker=null;
+let unit=null, bundle=null, gaugeMarker=null, expo=null, modelResolution=30;
 let hand=null, reach=null, lut=null, nMult=0, busy=false, raf=0;
 
 function status(html, kind){ const el=$("status"); el.className="status"+(kind?" "+kind:""); el.innerHTML=html; }
@@ -451,6 +467,10 @@ function clearModel(){
   tip.remove();
   bundle=null; hand=null;
   $("model").hidden = true; $("hwmkey").hidden = true;
+  expo = null;
+  $("exposure").hidden = true; $("expo-stats").hidden = true; $("expo-note").innerHTML = "";
+  $("dmgkey").hidden = true;
+  whenReady(syncDamage);
   $("fitnote").hidden = true; $("fit").hidden = true;
   /* The slider is a multiplier, so it has to go back to 1.00x with the model it
      described. Carrying a best-fit multiplier from one watershed into the next
@@ -512,6 +532,7 @@ async function run(){
   },300);
   try{
     bundle = await api(`/api/compute/${unit.huc}?resolution=${res}`);
+    modelResolution = res;
     clearInterval(tick); progress(0.96);
     await load();
     progress(1);
@@ -538,6 +559,7 @@ async function load(){
   nMult=t.w; lut=new Uint8Array(t.w*t.h);
   for(let p=0;p<t.w*t.h;p++) lut[p]=t.d[p*4];
   $("model").hidden=false;
+  $("exposure").hidden = false;
   if(bundle.gauge){
     const g=bundle.gauge;
     const el=document.createElement("div"); el.className="gauge-dot";
@@ -822,6 +844,111 @@ function bestFit(){
   return {loose, strict, current: scoreAt(+$("qs").value, marks)};
 }
 
+/* ---------------- exposure and damage ---------------- */
+
+/* The damage layer is a two-channel PNG on the same grid as the flood overlay: red is
+   log10 currency per cell, green is how many buildings that cell holds. Both are
+   needed - one costly building and forty flooded houses can carry the same total, and
+   a reader looking for where people were hit wants the count. */
+function paintDamage(){
+  if(!expo || !expo.damage_png) return;
+  whenReady(() => {
+    ensureLayers();
+    const [w,s,e,n] = expo.bounds;
+    const [wl,sl] = mercToLngLat(w,s), [el,nl] = mercToLngLat(e,n);
+    const corners = [[wl,nl],[el,nl],[el,sl],[wl,sl]];
+    if(map.getSource("damage")) map.getSource("damage").updateImage({url:expo.damage_png, coordinates:corners});
+    else map.addSource("damage", {type:"image", url:expo.damage_png, coordinates:corners});
+    if(!map.getLayer("damage")){
+      map.addLayer({id:"damage", type:"raster", source:"damage", paint:{
+        "raster-opacity":0.92, "raster-fade-duration":0, "raster-resampling":"nearest",
+      }}, "hwm");
+    }
+    syncDamage();
+  });
+}
+
+/* One owner for the damage layer's visibility and its legend. Having paintDamage and
+   the chip handler each set them independently meant whichever ran last won, and the
+   key ended up hidden with the chip switched on. */
+function syncDamage(){
+  const on = $("c-dmg").classList.contains("on") && !!expo;
+  if(map.getLayer("damage")) map.setLayoutProperty("damage","visibility", on ? "visible" : "none");
+  $("dmgkey").hidden = !on;
+}
+
+function money(v, unit){
+  if(v == null) return "—";
+  if(v >= 1e9) return `${unit} ${(v/1e9).toFixed(2)}bn`;
+  if(v >= 1e6) return `${unit} ${(v/1e6).toFixed(0)}M`;
+  return `${unit} ${Math.round(v).toLocaleString()}`;
+}
+
+function showExposure(){
+  const st = expo.stats || {};
+  const u = expo.currency || "USD";
+  const q = st.quantiles ? `${Math.round(st.quantiles[0]*100)}–${Math.round(st.quantiles[1]*100)}%` : "";
+  $("expo-stats").hidden = false;
+  $("expo-stats").innerHTML = [
+    ["Structures", (st.structures||0).toLocaleString(), ""],
+    ["Inundated", `${(st.inundated||0).toLocaleString()}`, ""],
+    ["Interval", `${(st.inundated_low||0).toLocaleString()}–${(st.inundated_high||0).toLocaleString()}`, ""],
+    ["Residents", st.night_population != null ? Math.round(st.night_population).toLocaleString() : "—", ""],
+    ["Damage", money(st.damage, u), ""],
+    ["Loss ratio", st.loss_ratio != null ? (st.loss_ratio*100).toFixed(1)+"%" : "—", ""],
+  ].map(([k,v,c])=>`<div><dt>${k}</dt><dd class="${c}">${v}</dd></div>`).join("");
+
+  let note = `${q} interval ${money(st.damage_low,u)} to ${money(st.damage_high,u)}`
+    + ` on <b>${st.curve_family || "?"}</b> curves`
+    + `, over ${money(st.exposed_value,u)} exposed.`;
+  if(st.damage_contents){
+    note += ` Structure ${money(st.damage_structure,u)} plus contents ${money(st.damage_contents,u)}.`;
+  }
+  if(st.day_population != null){
+    note += `<br>${Math.round(st.night_population).toLocaleString()} residents overnight,`
+      + ` ${Math.round(st.day_population).toLocaleString()} present by day, in the structures flooded.`;
+  }
+  if(!st.curves_verified){
+    note += `<br><span style="color:var(--warn)">Curve constants are unverified here — `
+      + `counts and ratios stand, the currency figures do not.</span>`;
+  }
+  if(st.inventory === "nsi"){
+    note += `<br><span style="color:var(--ink-3)">Values are NSI's modelled replacement `
+      + `costs, not appraisals: sound across tens of thousands of buildings, not for any one.</span>`;
+  }
+  for(const g of (expo.gaps||[])){
+    note += `<br><span style="color:var(--warn)">${g}</span>`;
+  }
+  $("expo-note").innerHTML = note;
+  paintDamage();
+}
+
+let expoBusy = false;
+async function runExposure(){
+  if(!unit || expoBusy) return;
+  expoBusy = true;
+  const btn = $("expo-run"); btn.disabled = true;
+  const t0 = performance.now();
+  const tick = setInterval(()=>{
+    $("expo-note").innerHTML = `<span class="spin"></span>Reading the structure inventory `
+      + `and pricing damage… ${((performance.now()-t0)/1000).toFixed(0)}s`;
+  }, 300);
+  try{
+    // Same resolution as the model on screen. Pricing damage off a 30 m depth raster
+    // while the map draws a 10 m one would put the two layers on different ground.
+    expo = await api(`/api/exposure/${unit.huc}?resolution=${modelResolution}`);
+    clearInterval(tick);
+    // Switch the layer on directly rather than synthesising a click on the chip:
+    // routing through the click handler made the order of two whenReady callbacks
+    // decide whether the legend appeared.
+    setChip("c-dmg", true);
+    showExposure();
+  }catch(e){
+    clearInterval(tick);
+    $("expo-note").innerHTML = `<span style="color:var(--bad)">Exposure failed: ${e.message}</span>`;
+  }finally{ expoBusy = false; btn.disabled = false; }
+}
+
 /* ---------------- wiring ---------------- */
 // A click on a mark opens its readout; only empty map picks a watershed.
 map.on("click", e => {
@@ -864,10 +991,20 @@ function chip(id, on){
   el.addEventListener("click", (ev)=>{ ev.preventDefault();
     box.checked=!box.checked; el.classList.toggle("on",box.checked); on(box.checked); });
 }
+
+/* Set a chip's state without firing its handler, for when the caller is about to do
+   the work itself and only needs the control to agree with what it is showing. */
+function setChip(id, on){
+  const el=$(id);
+  el.querySelector("input").checked = on;
+  el.classList.toggle("on", on);
+}
 chip("c-bnd", v => whenReady(() => map.setLayoutProperty("wbd","visibility", v?"visible":"none")));
 chip("c-hwm", () => { if(bundle&&hand) repaint(); });
 chip("c-q", () => { if(bundle&&hand) repaint(); });
 chip("c-hi", () => {});
+chip("c-dmg", () => whenReady(syncDamage));
+$("expo-run").addEventListener("click", runExposure);
 $("seg").addEventListener("click", (ev) => {
   const b = ev.target.closest("button[data-v]"); if(!b) return;
   for(const x of $("seg").children) x.setAttribute("aria-pressed", String(x === b));

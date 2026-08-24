@@ -75,12 +75,14 @@ def block_reduce(
     """Reduce `array` by an integer factor, ignoring NaN.
 
     `how="max"` preserves one-cell features such as a stream network, which a mean
-    would average away to nothing. `how="mean"` is right for a continuous surface.
+    would average away to nothing. `how="mean"` is right for a continuous surface, and
+    `how="sum"` for a per-cell total such as damage or a building count, where a mean
+    would quietly divide the watershed's total by the block area.
     """
     if factor < 1:
         raise ValueError(f"factor must be at least 1, got {factor}")
-    if how not in {"mean", "max"}:
-        raise ValueError(f"how must be 'mean' or 'max', got {how!r}")
+    if how not in {"mean", "max", "sum"}:
+        raise ValueError(f"how must be 'mean', 'max' or 'sum', got {how!r}")
     data = np.asarray(array, dtype=np.float64)
     if factor == 1:
         return data
@@ -95,6 +97,8 @@ def block_reduce(
         warnings.simplefilter("ignore", RuntimeWarning)
         if how == "max":
             return np.asarray(np.nanmax(trimmed, axis=(1, 3)), dtype=np.float64)
+        if how == "sum":
+            return np.asarray(np.nansum(trimmed, axis=(1, 3)), dtype=np.float64)
         return np.asarray(np.nanmean(trimmed, axis=(1, 3)), dtype=np.float64)
 
 

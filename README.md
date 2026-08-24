@@ -249,6 +249,14 @@ uv run floodline exposure depth.tif buildings.parquet exposed.parquet \
 uv run floodline damage exposed.parquet damage.parquet --samples 1000
 ```
 
+On the map, **Compute this watershed** draws depth; **Value the buildings this reaches**
+then runs exposure and damage and adds a warm damage layer over it. They are separate
+buttons because they cost very different amounts of time: depth is 12–25 s, exposure is
+a couple of minutes cold (the structure inventory dominates) and cached after. The
+damage layer ships as a two-channel PNG on the flood layer's own grid — red is log₁₀
+currency per cell, green is the building count — which is 247 kB for Whiteoak Bayou
+against 189 MB for the same information as GeoJSON.
+
 `--unclamped-depth` is `stage - HAND` before the floor at zero, so dry ground carries
 a negative value. It matters more than it looks: the depth raster records every dry
 building as exactly 0, which loses the difference between a building the water missed
@@ -313,6 +321,20 @@ stream cell, which is what stops the map showing flooded paddocks a kilometre fr
 the channel.
 
 pysheds is an oracle for the tests only. Nothing under `src/` imports it.
+
+## Endpoints
+
+| route | does | cold |
+|---|---|---|
+| `/api/watershed?lon=&lat=` | identify the unit under a point | < 1 s |
+| `/api/watershed/{huc}` | look one up by code | < 1 s |
+| `/api/compute/{huc}` | terrain, hydraulics, depth, marks, gauge history | 12–25 s |
+| `/api/exposure/{huc}` | structures, values, damage, Monte Carlo, damage raster | 80–200 s |
+| `/api/geocode?q=` | ZIP or address to a point | < 1 s |
+| `/api/health` | cache state | — |
+
+Both compute routes cache to disk and answer instantly afterwards. `?refresh=true`
+recomputes.
 
 ## Performance
 

@@ -1332,3 +1332,40 @@ different, smaller thing.
 Worth its own line: WorldPop says 98,412 people in flooded *cells*, NSI says 132,389
 residents in flooded *structures* — 35% apart on the same flood, from two open sources.
 That gap is the population-disagreement experiment in miniature, and it arrived free.
+
+## 2026-09-05 — damage on the map, and why it is a PNG and a separate button
+
+The building table is not a map layer: 258,527 structures is 189 MB as GeoJSON and
+still 22 MB as damaged centroids alone. So exposure follows the depth overlay's
+pattern — rasterise onto the bundle's own display grid, ship a PNG. 247 kB for
+Whiteoak Bayou, and it registers with the flood layer pixel for pixel because it is
+built on the same transform.
+
+Two channels, because damage and count answer different questions and neither recovers
+the other: one costly commercial building and forty flooded houses can carry the same
+dollar total. Red is log10 currency per cell (linear would put nearly every cell in the
+bottom two values — flood damage spans five orders of magnitude across a watershed),
+green is the building count.
+
+`/api/exposure/{huc}` is deliberately separate from `/api/compute/{huc}` rather than
+folded into it. Depth is 12-25 s; exposure is 80-200 s cold because the structure
+inventory dominates. Putting them together would have made every map click pay for
+buildings nobody asked to see.
+
+Two defects found while wiring it, both worth recording as classes rather than fixes:
+
+- **Two owners of one piece of state.** `paintDamage` and the damage chip's handler
+  each set the layer's visibility and its legend, so whichever ran last won and the
+  legend ended up hidden with the chip switched on. Now one `syncDamage` owns both and
+  everything else calls it. The follow-on fix was to stop synthesising a click on the
+  chip to turn the layer on — routing through the handler made the order of two
+  queued callbacks decide what the reader saw.
+- **Two resolutions for one picture.** The UI computed depth at the user's chosen
+  resolution but asked for exposure at a hard-coded 30 m, so with the 10 m chip on the
+  damage would have been priced off a coarser depth raster than the map was drawing.
+  The exposure request now carries the resolution the model on screen was built at.
+
+Not verified: the damage raster actually painting. The Browser pane in this environment
+reports `document.hidden`, so requestAnimationFrame never runs and MapLibre never
+initialises its style. The endpoint's output, the panel's rendered text and the encoder
+are all checked; the raster landing on the map is not.
