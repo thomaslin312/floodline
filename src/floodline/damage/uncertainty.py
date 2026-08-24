@@ -41,7 +41,7 @@ import numpy as np
 import numpy.typing as npt
 
 from floodline.config import Config, CurveFamily, DamageConfig, MonteCarloConfig
-from floodline.damage.curves import CurveSet, bundled_curves
+from floodline.damage.curves import CurveLookup, CurveSet, bundled_curves
 from floodline.damage.estimate import estimate_damage
 
 __all__ = ["DamageInterval", "monte_carlo_damage"]
@@ -177,6 +177,17 @@ def monte_carlo_damage(
             supplied = curve_sets.get(family) if curve_sets else None
             sets[family] = supplied or bundled_curves(family, config=damage_config)
 
+    # Curves and classes are fixed across draws, so the per-class grouping and the
+    # interpolation grid are built once rather than 500 times.
+    lookups: dict[CurveFamily, CurveLookup] = {
+        family: curve_set.lookup(config=damage_config) for family, curve_set in sets.items()
+    }
+    contents_lookup = contents_curves.lookup(config=damage_config) if contents_curves else None
+    # One index array per curve set: rows are numbered by sorted class name, and the
+    # sets do not always hold the same classes.
+    indices = {family: table.indices_for(classes) for family, table in lookups.items()}
+    contents_index = contents_lookup.indices_for(classes) if contents_lookup else None
+
     rng = np.random.default_rng(mc.seed)
     picks = rng.choice(len(families), size=mc.n_samples, p=weights)
     # One stage shift per draw (systematic), one DEM error per building per draw.
@@ -208,6 +219,10 @@ def monte_carlo_damage(
             contents_curves=contents_curves,
             cost_scale=float(cost_scale[i]),
             cap_storeys=cap_storeys,
+            lookup=lookups[family],
+            contents_lookup=contents_lookup,
+            class_index=indices[family],
+            contents_index=contents_index,
         )
         totals[i] = result.total
         inundated[i] = int((drawn > 0).sum())

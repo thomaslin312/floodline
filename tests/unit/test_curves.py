@@ -7,7 +7,13 @@ import numpy as np
 import pytest
 
 from floodline.config import CurveFamily, DamageConfig
-from floodline.damage.curves import BUNDLED_FAMILIES, DamageCurve, bundled_curves, load_curves
+from floodline.damage.curves import (
+    BUNDLED_FAMILIES,
+    CurveSet,
+    DamageCurve,
+    bundled_curves,
+    load_curves,
+)
 
 
 def test_every_bundled_family_covers_every_priced_class() -> None:
@@ -135,3 +141,75 @@ def test_loaded_curves_must_price_the_default_class(tmp_path: Path) -> None:
     )
     with pytest.raises(ValueError, match="default class"):
         load_curves(path)
+
+
+# --- the precomputed lookup: an optimisation that must not change the answer ---
+
+
+def test_lookup_matches_direct_interpolation() -> None:
+    curves = bundled_curves(CurveFamily.JRC_OCEANIA)
+    table = curves.lookup()
+    depths = np.linspace(-1.0, 9.0, 400)
+    classes = np.array(["residential", "commercial", "industrial", "other"] * 100, dtype=object)
+    direct = curves.damage_fraction(depths, classes)
+    fast = table.fraction(depths, table.indices_for(classes))
+    # The lookup interpolates between grid columns, so this is equality, not closeness.
+    np.testing.assert_allclose(direct, fast, atol=1e-12)
+
+
+def test_lookup_sends_unknown_classes_to_the_default_row() -> None:
+    curves = bundled_curves(CurveFamily.HAZUS)
+    table = curves.lookup()
+    rows = table.indices_for(np.array(["lighthouse", "residential"], dtype=object))
+    assert rows[0] == table.default_index
+    assert rows[1] == table.index_of["residential"]
+
+
+def test_lookup_holds_the_curve_beyond_both_ends() -> None:
+    curves = bundled_curves(CurveFamily.HAZUS)
+    table = curves.lookup()
+    rows = table.indices_for(np.array(["residential"] * 3, dtype=object))
+    got = table.fraction([-99.0, 0.0, 99.0], rows)
+    assert got[0] == 0.0
+    assert got[2] == pytest.approx(
+        curves.for_class("residential").damage_fraction([DamageConfig().max_curve_depth_m])[0]
+    )
+
+
+def test_lookup_covers_curves_that_start_below_zero() -> None:
+    # USACE curves start at -0.61 m, so a grid anchored at zero would clip them.
+    curve = DamageCurve(
+        family=CurveFamily.USACE,
+        building_class="RES1-1SNB",
+        depths_m=(-0.61, 0.0, 1.0),
+        fractions=(0.0, 0.134, 0.30),
+        provenance="test",
+        verified=True,
+    )
+    curves = CurveSet(
+        family=CurveFamily.USACE,
+        curves={"RES1-1SNB": curve},
+        default_class="RES1-1SNB",
+    )
+    table = curves.lookup()
+    assert table.depths_m[0] == pytest.approx(-0.61)
+    rows = table.indices_for(np.array(["RES1-1SNB"], dtype=object))
+    assert table.fraction([0.0], rows)[0] == pytest.approx(0.134)
+
+
+def test_an_impossible_grid_is_refused() -> None:
+    curve = DamageCurve(
+        family=CurveFamily.HAZUS,
+        building_class="residential",
+        depths_m=(10.0, 20.0),
+        fractions=(0.0, 1.0),
+        provenance="test",
+        verified=True,
+    )
+    curves = CurveSet(
+        family=CurveFamily.HAZUS,
+        curves={"residential": curve},
+        default_class="residential",
+    )
+    with pytest.raises(ValueError, match="lookup grid would be empty"):
+        curves.lookup(config=DamageConfig(max_curve_depth_m=5.0))

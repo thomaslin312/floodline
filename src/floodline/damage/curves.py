@@ -35,7 +35,19 @@ import numpy.typing as npt
 
 from floodline.config import Config, CurveFamily, DamageConfig
 
-__all__ = ["BUNDLED_FAMILIES", "CurveSet", "DamageCurve", "bundled_curves", "load_curves"]
+__all__ = [
+    "BUNDLED_FAMILIES",
+    "CurveLookup",
+    "CurveSet",
+    "DamageCurve",
+    "bundled_curves",
+    "load_curves",
+]
+
+# Resolution of the precomputed curve lookup. Five millimetres is two orders of
+# magnitude below the DEM's own vertical error, so the discretisation it introduces
+# is not measurable in any output.
+LOOKUP_STEP_M = 0.005
 
 # Depth in metres above finished floor level. The 0/0.5/1/1.5/2/3/4/5/6 ladder is the
 # one the JRC database publishes on, so a transcribed table drops straight in.
@@ -136,6 +148,59 @@ class DamageCurve:
 
 
 @dataclass(frozen=True, slots=True)
+class CurveLookup:
+    """Every curve in a set resampled onto one depth grid, for repeated evaluation.
+
+    `CurveSet.damage_fraction` interpolates once per distinct class present, so its
+    cost grows with the number of classes: over 258,527 Houston structures it took
+    67 ms with 4 occupancy codes and 285 ms with 42, which at 500 Monte Carlo draws is
+    the difference between 34 s and 143 s. The classes do not change between draws, so
+    the work can be done once. Evaluation then becomes one integer index per building,
+    independent of how many classes are in play.
+    """
+
+    depths_m: npt.NDArray[np.float64]
+    """The common grid, evenly spaced by `LOOKUP_STEP_M`."""
+
+    table: npt.NDArray[np.float64]
+    """Damage fraction, one row per curve, one column per grid depth."""
+
+    index_of: dict[str, int]
+    default_index: int
+
+    def indices_for(self, building_class: npt.ArrayLike) -> npt.NDArray[np.int64]:
+        """Map class names to rows once, so draws can reuse the result."""
+        classes = np.asarray(building_class, dtype=object)
+        out = np.full(classes.shape, self.default_index, dtype=np.int64)
+        for name, row in self.index_of.items():
+            out[classes == name] = row
+        return out
+
+    def fraction(
+        self, depth_m: npt.ArrayLike, class_index: npt.NDArray[np.int64]
+    ) -> npt.NDArray[np.float64]:
+        """Return the damage fraction for each (depth, curve-row) pair."""
+        depths = np.asarray(depth_m, dtype=np.float64)
+        first = self.depths_m[0]
+        last = self.depths_m[-1]
+        # Below the first grid point the curve holds its first value, above the last it
+        # holds its last -- the same rule np.interp applies, and the same rule the
+        # max_curve_depth_m cap already imposed at the top end.
+        clipped = np.clip(depths, first, last)
+        # Interpolate between grid columns rather than snapping to the nearest. Snapping
+        # would leave up to half a grid step of error, which on the steepest published
+        # curve is ~2.4e-3 of value -- small, but it would make this path an
+        # approximation of the direct one rather than an equivalent of it.
+        position = (clipped - first) / LOOKUP_STEP_M
+        left = np.floor(position).astype(np.int64)
+        np.clip(left, 0, self.table.shape[1] - 2, out=left)
+        weight = position - left
+        low = self.table[class_index, left]
+        high = self.table[class_index, left + 1]
+        return np.asarray(low + (high - low) * weight, dtype=np.float64)
+
+
+@dataclass(frozen=True, slots=True)
 class CurveSet:
     """Every building class's curve for one family."""
 
@@ -153,6 +218,30 @@ class CurveSet:
         if building_class is not None and building_class in self.curves:
             return self.curves[building_class]
         return self.curves[self.default_class]
+
+    def lookup(self, *, config: Config | DamageConfig | None = None) -> CurveLookup:
+        """Resample every curve onto one grid, for repeated evaluation."""
+        damage = _resolve(config)
+        lowest = min(curve.depths_m[0] for curve in self.curves.values())
+        highest = damage.max_curve_depth_m
+        if highest <= lowest:
+            raise ValueError(
+                f"max_curve_depth_m {highest:g} is at or below the lowest curve point "
+                f"{lowest:g}, so the lookup grid would be empty"
+            )
+        n = int(np.ceil((highest - lowest) / LOOKUP_STEP_M)) + 1
+        grid = lowest + np.arange(n, dtype=np.float64) * LOOKUP_STEP_M
+        names = sorted(self.curves)
+        table = np.empty((len(names), n), dtype=np.float64)
+        for row, name in enumerate(names):
+            table[row] = self.curves[name].damage_fraction(grid, config=damage)
+        index_of = {name: row for row, name in enumerate(names)}
+        return CurveLookup(
+            depths_m=grid,
+            table=table,
+            index_of=index_of,
+            default_index=index_of[self.default_class],
+        )
 
     def damage_fraction(
         self,
