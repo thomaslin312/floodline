@@ -836,3 +836,50 @@ under that: 13-29 s cold for a HUC-12, cached afterwards.
   subclass that builds an `export` URL per tile puts the whole national grid on the map
   without shipping any geometry. A level selector (8 / 10 / 12) controls what a click
   resolves to, since the right granularity depends on the question rather than the zoom.
+
+## 2026-09-05 (evening) — real gauges, national marks, and a rebuilt map
+
+### the discharge is now observed wherever a gauge exists
+
+- **Each watershed finds its own gauge.** Every NWIS station publishing discharge
+  inside it is snapped to our own stream network, and the one draining the largest
+  area wins - the station nearest the outlet. Contributing area comes from our own
+  flow accumulation, not the published figure, so discharge and area are measured on
+  the same grid. Whiteoak Bayou discovers 08074500 and its 1,433 m3/s Harvey peak
+  unprompted: the number the model was validated against, found rather than supplied.
+- **The discharge used is the peak of record**, not a design figure - the worst flow
+  that gauge has actually measured. Record length is surfaced, because the Lower North
+  Branch Chicago River's "peak" rests on four years and Whiteoak's on ninety.
+- **When the marks come from one flood, the model is driven by *that* flood.** This
+  mattered more than expected. City of Houston-Buffalo Bayou has a 1935 peak of record
+  of 1,133 m3/s and 57 marks surveyed after Harvey. Driving the model with 1935 and
+  scoring it against 2017 marks gave RMSE 6.75 m; matching the event - 923 m3/s on
+  2017-08-28, taken from the same annual peak series, no extra request - gave
+  **4.81 m**. Nearly two metres of the residual was measuring the difference between
+  two floods. Where they cannot be matched, the panel says so in as many words.
+
+### marks are national now
+
+- **38,230 located marks across 258 named events** - Harvey, Irene, Sandy, Matthew, the
+  2019 Central US floods - not one event. About 34 MB and fourteen seconds, so fetched
+  once and filtered per watershed. The bulk endpoint carries `event_id` but not the
+  name, so `Events.json` is joined in; "2017 Harvey" is worth more to a reader than
+  "180". Every watershed now carries whatever ground truth exists for it, and the page
+  computes agreement live rather than being handed a number.
+
+### the map
+
+- **Esri grey canvas, not Carto.** Carto now watermarks its basemaps "API KEY REQUIRED"
+  without one. Esri publishes a deliberately quiet grey canvas keyless, and - the
+  reason it is the right choice rather than merely an available one - it publishes the
+  *labels as a separate layer*, so place names sit in a pane above the flood instead of
+  vanishing under it.
+- **HUC labels suppressed via `dynamicLayers`.** The WBD export prints a full HUC code
+  across every polygon; at city scale that was most of the ink on the screen. Passing
+  `drawingInfo:{showLabels:false}` per layer cuts drawn pixels by 65% and leaves the
+  boundary lines that are actually wanted.
+- **Floating panels over a full-bleed map**, rather than a sidebar. Layers are chips,
+  not checkboxes; a thin progress bar replaces a spinner blocking the panel.
+- **10 m is now the default** wherever the grid fits in one pass. 30 m does not resolve
+  a channel and the residuals show it, so defaulting to the coarse option was quietly
+  costing accuracy.

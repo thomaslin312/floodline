@@ -423,6 +423,37 @@ def compute_watershed(
     height, width = hand_r.shape
 
     marks = marks_within(unit, resolved, marks_path) if marks_path else []
+
+    # If the marks all come from one flood, drive the model with *that* flood's
+    # discharge rather than the largest on record. Otherwise a watershed whose peak
+    # of record is 1935 gets compared against marks surveyed after a 2017 storm,
+    # and the residual measures the difference between two events.
+    if marks and gauge and gauge.get("series"):
+        counts: dict[str, int] = {}
+        for mark in marks:
+            year = (mark.get("event_date") or "")[:4]
+            if year:
+                counts[year] = counts.get(year, 0) + 1
+        if counts:
+            dominant = max(counts, key=lambda y: counts[y])
+            matched = [p for p in gauge["series"] if p["date"][:4] == dominant]
+            if matched:
+                best = max(matched, key=lambda p: p["cms"])
+                gauge = {
+                    **gauge,
+                    "event_year": dominant,
+                    "event_discharge_cms": best["cms"],
+                    "event_date": best["date"],
+                    "matched_marks": counts[dominant],
+                }
+                reference_discharge = best["cms"]
+                flows = discharge_by_area_ratio(
+                    reference_discharge,
+                    reference_area,
+                    links,
+                    chain.accumulation.accumulation,
+                    config=resolved,
+                )
     if marks:
         # Place each mark on the display grid so the page can draw it, and record the
         # model's own ground elevation there, which is what a residual is measured from.
