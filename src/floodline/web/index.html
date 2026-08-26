@@ -134,6 +134,7 @@
     </select>
     <label class="chip on" id="c-bnd"><input type="checkbox" checked><i></i>Boundaries</label>
     <label class="chip on" id="c-hwm"><input type="checkbox" checked><i></i>Marks</label>
+    <label class="chip on" id="c-q"><input type="checkbox" checked><i></i>Best surveys only</label>
     <label class="chip" id="c-hi"><input type="checkbox"><i></i>10 m</label>
   </div>
 </section>
@@ -272,15 +273,13 @@ function showUnit(label){
     + ` · ${unit.analysis_crs}` + (label?` · ${label}`:"");
   $("run").disabled = false;
   const c = unit.cells_at["10"];
-  // 30 m does not resolve a channel, and the residuals show it, so 10 m is the
-  // default wherever the grid fits in one pass.
-  const fine = !unit.too_big_at_10m;
-  $("c-hi").classList.toggle("on", fine);
-  $("c-hi").querySelector("input").checked = fine;
-  status(fine
-    ? `Ready. ${(c/1e6).toFixed(1)}M cells at 10 m.`
-    : `${(c/1e6).toFixed(0)}M cells at 10 m — too large for one pass, so this runs at 30 m.`,
-    fine ? null : "warn");
+  // 30 m stays the default. 10 m was tried as the default and measured worse against
+  // surveyed marks as well as four times slower, so the finer grid is offered rather
+  // than assumed.
+  status(unit.too_big_at_10m
+    ? `${(c/1e6).toFixed(0)}M cells at 10 m — too large for one pass, so this runs at 30 m.`
+    : `Ready. 30 m by default; 10 m is ${(c/1e6).toFixed(1)}M cells and slower.`,
+    unit.too_big_at_10m ? "warn" : null);
 }
 
 /* ---------------- compute ---------------- */
@@ -383,13 +382,25 @@ function repaint(){
   updatePanel(wet, maxd, mult);
 }
 
+const GOOD = new Set([1,2]);
+function scored(){
+  // USGS grades every mark. Quality 1-2 are surveys to a few centimetres; 3 and
+  // below are progressively rougher, and on the one watershed measured they carried
+  // an RMSE of 4.9 m against 1.0 m for the good ones. Scoring on everything lets the
+  // roughest surveys set the headline number, so the default is the graded subset.
+  const all = bundle.marks||[];
+  return $("c-q").classList.contains("on") ? all.filter(m=>GOOD.has(m.quality)) : all;
+}
+
 function drawMarks(stage){
   markers.forEach(m=>map.removeLayer(m)); markers=[];
   const show = $("c-hwm").classList.contains("on");
   const marks = bundle.marks||[];
   $("hwmkey").hidden = !(show && marks.length);
   if(!show || !marks.length) return;
+  const counted = new Set(scored());
   for(const m of marks){
+    const graded = counted.has(m);
     const p = markPixel(m);
     let depth=null;
     if(p>=0){
@@ -402,11 +413,14 @@ function drawMarks(stage){
     const a = res===null?null:Math.abs(res);
     const colour = res===null ? "transparent" : a<=1?css("--good") : a<=3?css("--warn") : css("--bad");
     const marker = L.circleMarker([m.lat,m.lon], {
-      radius:4.5, weight:1.5, color: res===null?css("--ink-3"):"#fff",
-      dashArray: res===null?"2 2":null, fillColor:colour, fillOpacity: res===null?0:1,
+      radius: graded?5:3, weight: graded?1.5:1,
+      color: res===null?css("--ink-3"):"#fff",
+      dashArray: res===null?"2 2":null, fillColor:colour,
+      fillOpacity: res===null?0:(graded?1:0.45),
       className:"hwm", pane:"markerPane"
     }).bindTooltip(
-      `<div class="tt"><b>${m.event}</b>${m.event_date?` <code>${m.event_date}</code>`:""}<br>` +
+      `<div class="tt"><b>${m.event}</b>${m.event_date?` <code>${m.event_date}</code>`:""}` +
+      `<br><code>survey quality ${m.quality}${graded?"":" — not scored"}</code><br>` +
       `<code>surveyed ${m.elev_m.toFixed(2)} m · ground ${m.ground_m.toFixed(2)} m</code><br>` +
       (res===null ? `<code>model: dry here</code>`
                   : `<code>modelled ${(m.ground_m+depth).toFixed(2)} m · ${res>=0?"+":""}${res.toFixed(2)} m</code>`) +
@@ -449,7 +463,7 @@ function updatePanel(wet, maxd, mult){
   }
 
   // Live agreement against whatever surveyed marks exist here.
-  const marks = bundle.marks||[];
+  const marks = scored();
   let rmse=null, hit=0;
   if(marks.length){
     const {stage} = stagesNow(); const res=[];
@@ -467,7 +481,7 @@ function updatePanel(wet, maxd, mult){
     ["Of basin", bundle.stats.valid_km2?Math.round(wet*cell/bundle.stats.valid_km2*100)+"%":"—",""],
     ["Max depth", (maxd/10).toFixed(1)+" m", ""],
     ["Resolution", (bundle.stats.resolution_m||10)+" m", ""],
-    ["Marks", marks.length?`${hit} / ${marks.length} wet`:"none here", marks.length?"":"na"],
+    ["Marks", marks.length?`${hit} / ${marks.length} wet`:"none scored", marks.length?"":"na"],
     ["RMSE", rmse===null?"—":rmse.toFixed(2)+" m", cls],
   ].map(([k,v,c])=>`<div><dt>${k}</dt><dd class="${c}">${v}</dd></div>`).join("");
 }
@@ -484,6 +498,7 @@ function chip(id, on){
 }
 chip("c-bnd", v => v ? boundaries.addTo(map) : map.removeLayer(boundaries));
 chip("c-hwm", () => { if(bundle&&hand) repaint(); });
+chip("c-q", () => { if(bundle&&hand) repaint(); });
 chip("c-hi", () => {});
 $("lvl").addEventListener("change", ()=>status("Level changed — click the map to pick at this level."));
 
