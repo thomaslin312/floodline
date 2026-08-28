@@ -959,12 +959,67 @@ def assess(
 
 @app.command()
 def validate(
-    modelled: Annotated[Path, typer.Argument(exists=True, dir_okay=False, help="Modelled extent.")],
-    reference: Annotated[Path, typer.Argument(exists=True, dir_okay=False, help="SAR extent.")],
+    modelled: Annotated[
+        Path, typer.Argument(exists=True, dir_okay=False, help="Modelled depth raster.")
+    ],
+    reference: Annotated[
+        Path, typer.Argument(exists=True, dir_okay=False, help="Observed wet mask, same grid.")
+    ],
+    min_depth: Annotated[
+        float, typer.Option(help="Depth above which a modelled cell counts as wet.")
+    ] = 0.0,
     config: ConfigOption = None,
 ) -> None:
-    """Compare modelled extent against Sentinel-1 and published figures."""
-    _not_implemented("validate", 4)
+    """Score a modelled extent against an observed wet mask.
+
+    Reports CSI, hit rate, false alarm ratio and bias together, never one alone: a
+    model that floods the whole watershed scores a perfect hit rate. Cells where the
+    reference has no data are excluded rather than counted dry, since a swath edge
+    would otherwise contribute correct negatives that flatter every ratio.
+
+    floodline has no observed extent of its own — the Sentinel-1 route was dropped for
+    want of credentials — so this takes one you supply. Validation against surveyed
+    high-water marks, which is what the project actually reports, runs inside
+    `floodline assess` and on the map.
+    """
+    import numpy as np
+
+    from floodline.io.raster import read_raster
+    from floodline.validate.metrics import extent_metrics
+
+    resolved = load_config(config)
+    depth = read_raster(modelled, config=resolved)
+    observed = read_raster(reference, config=resolved)
+
+    if depth.data.shape != observed.data.shape:
+        typer.secho(
+            f"error: modelled raster is {depth.data.shape} but the reference is "
+            f"{observed.data.shape}; they must be on the same grid.",
+            fg=typer.colors.RED,
+            err=True,
+        )
+        raise typer.Exit(code=1)
+
+    wet_model = np.isfinite(depth.data) & (depth.data > min_depth)
+    # A reference cell is wet where it is positive, and invalid where it is nodata:
+    # "no observation here" is not "no water here".
+    reference_data = np.asarray(observed.data, dtype=np.float64)
+    valid = np.isfinite(reference_data)
+    if observed.nodata is not None:
+        valid &= reference_data != observed.nodata
+    wet_reference = valid & (reference_data > 0)
+
+    result = extent_metrics(wet_model, wet_reference, valid=valid)
+    typer.echo(result.summary())
+    typer.echo(
+        f"  hits {result.hits:,} · misses {result.misses:,} · "
+        f"false alarms {result.false_alarms:,} · scored cells "
+        f"{result.hits + result.misses + result.false_alarms + result.correct_negatives:,}"
+    )
+    if result.bias > 1.0:
+        typer.echo(f"  the model floods {result.bias:.2f}x the observed area")
+    elif result.bias < 1.0:
+        typer.echo(f"  the model floods {result.bias:.2f}x the observed area (under)")
 
 
 @app.command()

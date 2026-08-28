@@ -54,14 +54,11 @@ def test_synth_writes_a_cog(tmp_path: Path) -> None:
         assert src.nodata is not None
 
 
-@pytest.mark.parametrize("stage", ["validate", "report"])
+@pytest.mark.parametrize("stage", ["report"])
 def test_unimplemented_stages_exit_2(stage: str, tmp_path: Path) -> None:
     dummy = tmp_path / "in.tif"
     dummy.write_bytes(b"")
-    args = {
-        "validate": [stage, str(dummy), str(dummy)],
-        "report": [stage, str(tmp_path / "o.html")],
-    }[stage]
+    args = {"report": [stage, str(tmp_path / "o.html")]}[stage]
     result = runner.invoke(app, args)
     assert result.exit_code == 2
     assert "not implemented" in result.stderr
