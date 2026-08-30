@@ -316,3 +316,26 @@ def test_unclipped_extent_covers_every_tile(tmp_path: Path, write_geographic_til
     one = ingest_dem([left], resolution_m=60.0, config=Config(), clip_to_aoi=False)
     both = ingest_dem([left, right], resolution_m=60.0, config=Config(), clip_to_aoi=False)
     assert both.data.shape[1] > one.data.shape[1], "the union must be wider than one tile"
+
+
+def test_a_dead_tile_url_costs_its_footprint_not_the_watershed(
+    tmp_path: Path, write_geographic_tile: Any
+) -> None:
+    """The 3DEP catalogue sometimes lists a tile it no longer serves.
+
+    One stale entry took down a whole watershed with a 500 before this: New Orleans
+    and Philadelphia both failed on it. A tile that cannot be opened is now skipped.
+    """
+    good = write_geographic_tile(tmp_path / "good.tif", west=-95.6, south=29.7, size=0.3, res=0.01)
+    dead = "/vsicurl/https://example.invalid/nope.tif"
+    dem = ingest_dem([dead, good], resolution_m=100.0, config=Config())
+    assert np.isfinite(dem.data).any(), "the readable tile must still be used"
+
+
+def test_all_tiles_dead_is_a_clear_error(tmp_path: Path) -> None:
+    with pytest.raises(CrsError, match="none of the elevation tiles could be opened"):
+        ingest_dem(
+            ["/vsicurl/https://example.invalid/a.tif", "/vsicurl/https://example.invalid/b.tif"],
+            resolution_m=100.0,
+            config=Config(),
+        )
