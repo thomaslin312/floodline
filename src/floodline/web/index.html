@@ -156,6 +156,8 @@
     </div>
     <input type="range" id="qs" min="0" max="300" step="2" value="100">
     <div class="qnote" id="qnote"></div>
+    <button class="wide quiet" id="fit" hidden>Find the discharge the marks imply</button>
+    <div class="qnote" id="fitnote" hidden></div>
     <dl class="grid" id="stats"></dl>
   </div>
 </section>
@@ -260,6 +262,7 @@ function clearModel(){
   if(gaugeMarker){ map.removeLayer(gaugeMarker); gaugeMarker=null; }
   bundle=null; hand=null;
   $("model").hidden = true; $("hwmkey").hidden = true;
+  $("fitnote").hidden = true; $("fit").hidden = true;
 }
 
 function showUnit(label){
@@ -475,6 +478,7 @@ function updatePanel(wet, maxd, mult){
     }
     rmse = Math.sqrt(res.reduce((s,v)=>s+v*v,0)/res.length);
   }
+  $("fit").hidden = !marks.length;
   const cls = rmse===null?"na":rmse<=1.5?"good":rmse<=3?"warn":"bad";
   $("stats").innerHTML = [
     ["Extent", (wet*cell).toFixed(1)+" km²", ""],
@@ -486,9 +490,81 @@ function updatePanel(wet, maxd, mult){
   ].map(([k,v,c])=>`<div><dt>${k}</dt><dd class="${c}">${v}</dd></div>`).join("");
 }
 
+/* Invert the model against the marks: sweep the discharge range and report the
+   multiplier with the lowest RMSE. If the best fit sits far from 1.0, the error is
+   mostly in the discharge; if RMSE stays high everywhere, it is structural, and no
+   amount of discharge fixes it. That distinction is the useful one. */
+function scoreAt(v, marks){
+  const slider = $("qs"), keep = slider.value;
+  slider.value = v;
+  const {stage} = stagesNow();
+  slider.value = keep;
+  const res = []; let wet = 0;
+  for(const m of marks){
+    const p = markPixel(m); let d = null;
+    if(p >= 0){
+      const hh = hand[p], rr = reach[p];
+      if(hh !== 255 && rr !== 65535 && rr < bundle.n_reaches){
+        const dd = stage[rr] - hh; if(dd > 0.5) d = dd/10;
+      }
+    }
+    if(d === null) res.push(m.ground_m - m.elev_m);
+    else { wet++; res.push(m.ground_m + d - m.elev_m); }
+  }
+  return {
+    mult: v/100, wet, n: marks.length,
+    rmse: Math.sqrt(res.reduce((a,x)=>a+x*x,0)/res.length),
+  };
+}
+
+/* Sweeping for the lowest RMSE alone is a trap: a mark the model leaves dry scores
+   only the depth of water that was actually there, often well under a metre, while
+   an over-prediction scores several. So the minimum sits wherever the model floods
+   almost nothing. Both the unconstrained minimum and the best fit that still wets
+   most of the marks are reported, because the gap between them is the finding. */
+const RECALL_FLOOR = 0.7;
+function bestFit(){
+  const marks = scored();
+  if(!marks.length) return null;
+  const sweep = [];
+  for(let v = 0; v <= 300; v += 4) sweep.push(scoreAt(v, marks));
+  const loose = sweep.reduce((a,b) => b.rmse < a.rmse ? b : a);
+  const kept = sweep.filter(x => x.wet >= RECALL_FLOOR * x.n);
+  const strict = kept.length ? kept.reduce((a,b) => b.rmse < a.rmse ? b : a) : null;
+  return {loose, strict, current: scoreAt(+$("qs").value, marks)};
+}
+
 /* ---------------- wiring ---------------- */
 map.on("click", e => pick(e.latlng.lng, e.latlng.lat, null));
 $("run").addEventListener("click", run);
+$("fit").addEventListener("click", () => {
+  const b = bestFit();
+  if(!b) return;
+  const q = (m) => Math.round(bundle.base_discharge_cms * m).toLocaleString();
+  const {loose, strict, current} = b;
+  let html = `At the observed discharge: RMSE <b>${current.rmse.toFixed(2)} m</b>, `
+    + `${current.wet}/${current.n} marks wet.`;
+
+  if(strict){
+    html += `<br>Best fit that still wets ${Math.round(RECALL_FLOOR*100)}% of them: `
+      + `<b>${strict.mult.toFixed(2)}×</b> (${q(strict.mult)} m³/s), RMSE <b>${strict.rmse.toFixed(2)} m</b>, `
+      + `${strict.wet}/${strict.n} wet.`;
+    $("qs").value = Math.round(strict.mult*100);
+  } else {
+    html += `<br><span style="color:var(--warn)">No discharge in range wets `
+      + `${Math.round(RECALL_FLOOR*100)}% of the marks, so the model cannot reach them at any flow.</span>`;
+  }
+
+  if(loose.rmse < (strict ? strict.rmse : Infinity) - 0.05){
+    html += `<br><span style="color:var(--ink-3)">The lowest RMSE overall is `
+      + `${loose.rmse.toFixed(2)} m at ${loose.mult.toFixed(2)}×, but it wets only `
+      + `${loose.wet}/${loose.n} — drying marks out is cheaper than over-predicting them, `
+      + `so that minimum is an artefact of the metric rather than a better model.</span>`;
+  }
+  $("fitnote").hidden = false;
+  $("fitnote").innerHTML = html;
+  repaint();
+});
 $("qs").addEventListener("input", ()=>{ if(!raf) raf=requestAnimationFrame(()=>{raf=0;repaint();}); });
 
 function chip(id, on){

@@ -122,9 +122,24 @@ Cached afterwards, so the second request is a file read. The analysis CRS follow
 the watershed — a NAD83 UTM zone chosen from its centroid — because a fixed
 projection is only correct for a fixed study area.
 
-Where a watershed has no gauge, which is most of them, the discharge is a
-**scenario** of 5 m³/s per km² (roughly what Harvey delivered at Whiteoak Bayou),
-not an observation. The interface says so wherever it shows a number.
+Each watershed finds **its own gauge**: every NWIS station publishing discharge
+inside it is snapped to the derived stream network, and the one draining the largest
+area wins. The discharge used is that gauge's peak of record — the worst flow it has
+actually measured. Where the surveyed marks all come from one flood, the model is
+driven by *that* flood's peak instead, so the comparison is between one event and
+itself rather than between two. Watersheds with no gauge fall back to a labelled
+scenario of 5 m³/s per km², and the interface says so wherever it shows a number.
+
+**38,230 surveyed high-water marks** across 258 named events — Harvey, Irene, Sandy,
+Matthew, the 2019 Central US floods — are overlaid wherever they exist, and agreement
+is recomputed live as you move the slider. USGS grades each mark; only the graded
+surveys (quality 1–2) set the reported RMSE, with the rougher ones drawn faded, since
+on one measured watershed the graded marks gave 1.03 m and the quality-3 marks 4.93 m.
+
+"Find the discharge the marks imply" sweeps the range and reports both the best fit
+that keeps most marks wet and the unconstrained minimum — because a mark left dry
+scores only the depth of water that was there, so minimising RMSE alone drives toward
+flooding nothing.
 
 It has to be served rather than published as a static page: an Artifact's content
 security policy forbids `fetch` to external hosts, so a page delivered that way can

@@ -906,3 +906,20 @@ under that: 13-29 s cold for a HUC-12, cached afterwards.
   The caveat on that caveat: only two marks here are quality 1-2, which is a thin
   basis. Whiteoak Bayou has sixteen and gave 1.54 m, so the two agree, but neither is
   a large sample.
+
+### inverting the model against the marks
+
+- **"Find the discharge the marks imply" reports a trade-off, not a single best.**
+  The first version swept for the lowest RMSE and, on Whiteoak Bayou, returned 0.16x
+  the observed Harvey discharge. That is a trap in the metric rather than a finding: a
+  mark the model leaves dry scores only the depth of water that was actually there,
+  often well under a metre, while an over-prediction scores several, so the minimum
+  sits wherever the model floods almost nothing. It now reports the score at the
+  observed discharge, the best fit that still wets 70% of the marks, and the
+  unconstrained minimum with an explanation of why it is an artefact.
+- **What that reveals on Whiteoak Bayou**: observed 1,433 m3/s gives RMSE 1.60 m with
+  14 of 16 graded marks wet; the best constrained fit is 0.56x (802 m3/s) at 1.44 m
+  with 12 of 16. Halving the discharge buys 0.16 m. The model is close to insensitive
+  to discharge here, which says the residual is structural - the HAND assumption and
+  the 30 m cross-sections - rather than an error in the flow. That is a more useful
+  conclusion than a calibrated multiplier would have been.
