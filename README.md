@@ -88,10 +88,23 @@ this machine.
 | 1 | `fill`, `flowdir`, `flowacc`, `streams`, `hand` — numba, property-tested | done, plus flat resolution |
 | 2 | Stage handling, inundation, buildings, population | done |
 | 3 | Depth–damage curves, costs, Monte Carlo | code done; curve constants unverified |
-| 4 | SAR validation, resolution and population experiments | not started |
-| 5 | Rendered report and write-up | not started |
+| 4 | Extent metrics (CSI, hit rate, FAR, bias) | done — but see below |
+| 5 | Rendered report | done |
 | — | Live compute service and national map UI (unplanned, built anyway) | done |
 | — | Overture and population fetchers, flood-frequency context, `assess` | done |
+| — | NSI structure values, USACE curves, damage on the map | done |
+
+Every pipeline stage now runs; the one remaining refusal is `condition --streams`,
+since stream burning is not implemented and is declined rather than faked.
+
+**What phase 4 still lacks is a reference, not code.** `floodline validate` computes
+CSI, hit rate, false alarm ratio and bias against an observed wet mask you supply, and
+is verified against a hand-computed CSI. floodline has no observed extent of its own:
+the Sentinel-1 route needs credentials, so no CSI is reported for Harvey. Validation
+that *is* reported runs against 2,298 surveyed high-water marks. The resolution and
+population experiments have not been written up, though the population disagreement has
+already shown itself — WorldPop counts 98,412 people in flooded cells where NSI counts
+132,389 residents in flooded structures, 35% apart on the same flood.
 
 ## Where the data actually comes from
 
@@ -231,6 +244,13 @@ uv run floodline fetch-curves
 
 ```bash
 uv run floodline assess 1204010403 --resolution 30 --samples 800 --out damage.parquet
+```
+
+A standing report — limits first, then figures, then the depth map, images inlined so
+the file travels on its own:
+
+```bash
+uv run floodline report 1204010403 report.html --resolution 30
 ```
 
 Every stage that cannot reach its data is reported as a gap rather than filled with a

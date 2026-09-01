@@ -1369,3 +1369,38 @@ Not verified: the damage raster actually painting. The Browser pane in this envi
 reports `document.hidden`, so requestAnimationFrame never runs and MapLibre never
 initialises its style. The endpoint's output, the panel's rendered text and the encoder
 are all checked; the raster landing on the map is not.
+
+## 2026-09-06 — the last stubs closed, and a commit hook that finishes
+
+`floodline validate` and `floodline report` were the two remaining commands that exited
+2. Both now run, and `_not_implemented` is reachable from exactly one place:
+`condition --streams`, which declines stream burning rather than faking it. A test
+asserts that, so a future stub cannot creep back in unnoticed.
+
+- **`validate/metrics.py`** computes CSI, hit rate, false alarm ratio and bias, and
+  returns all four together rather than letting a caller quote one. Hit rate alone is
+  worthless - a model that floods the whole watershed scores 1.0, which is the first
+  test in the file. Cells outside the reference's coverage are excluded rather than
+  counted dry, since a SAR swath edge would otherwise contribute correct negatives that
+  flatter every ratio with them in the denominator. Verified end to end against a
+  hand-computed CSI of 0.563 on two overlapping rectangles.
+  Mark scoring lives here too, with the rule the project already follows written down:
+  a mark the model leaves dry is scored from ground level, not dropped, because the
+  marks a model misses are the ones it gets most wrong. A test asserts that dropping
+  them would have produced a better-looking number.
+- **`report/render.py`** writes a self-contained HTML page - limits before figures, per
+  the README's own rule, with a test that asserts the section order. Images inline as
+  data URIs, no stylesheet link, no network: the file can be moved or sent and still
+  work. The Whiteoak Bayou report is 182 kB including a 623x443 depth map.
+
+**The pre-commit hook was taking seven minutes**, of which 170 s was one 4096x4096
+terrain benchmark. Benchmarks measure runtime, not correctness, so paying for them on
+every commit buys nothing a developer acts on. The hook now runs `-m "not slow"` and
+finishes in about 25 s; CI still runs the whole suite, benchmarks included.
+
+One process note worth recording rather than hiding: the commit that wired the CLI to
+`validate.metrics` used `git commit -am`, which skips untracked files, so it landed
+referencing a module that was not in the repository. A clean clone of that commit would
+not have imported. Caught by cloning the repo into a temp directory and walking every
+intra-package import against the checked-out tree - worth doing after any commit that
+adds a module.

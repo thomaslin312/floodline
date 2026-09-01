@@ -54,14 +54,35 @@ def test_synth_writes_a_cog(tmp_path: Path) -> None:
         assert src.nodata is not None
 
 
-@pytest.mark.parametrize("stage", ["report"])
-def test_unimplemented_stages_exit_2(stage: str, tmp_path: Path) -> None:
-    dummy = tmp_path / "in.tif"
-    dummy.write_bytes(b"")
-    args = {"report": [stage, str(tmp_path / "o.html")]}[stage]
-    result = runner.invoke(app, args)
-    assert result.exit_code == 2
-    assert "not implemented" in result.stderr
+def test_every_pipeline_stage_is_advertised() -> None:
+    listed = runner.invoke(app, ["--help"]).stdout
+    for stage in (
+        "condition",
+        "streams",
+        "hand",
+        "inundate",
+        "exposure",
+        "damage",
+        "validate",
+        "report",
+        "assess",
+    ):
+        assert stage in listed, stage
+
+
+def test_no_stage_is_a_stub_any_more() -> None:
+    """`_not_implemented` survives for one documented refusal, and nothing else.
+
+    Every pipeline stage now runs. Stream burning is still refused, but that is an
+    option `condition` declines rather than a stage that does nothing.
+    """
+    source = Path("src/floodline/cli.py").read_text()
+    calls = [
+        line.strip()
+        for line in source.splitlines()
+        if "_not_implemented(" in line and "def _not_implemented" not in line
+    ]
+    assert calls == ['_not_implemented("condition --streams", 1)']
 
 
 def test_damage_refuses_a_table_that_is_not_an_exposure_table(tmp_path: Path) -> None:

@@ -1024,11 +1024,45 @@ def validate(
 
 @app.command()
 def report(
+    huc: Annotated[str, typer.Argument(help="Hydrologic unit code.")],
     out: Annotated[Path, typer.Argument(help="Output HTML report.")],
+    resolution: Annotated[int, typer.Option(help="Cell size in metres.")] = 30,
+    samples: Annotated[int | None, typer.Option(help="Monte Carlo draws.")] = None,
+    buildings: Annotated[bool, typer.Option(help="Include exposure and damage.")] = True,
     config: ConfigOption = None,
 ) -> None:
-    """Render the static report."""
-    _not_implemented("report", 5)
+    """Render a self-contained HTML report for one watershed.
+
+    Runs the same chain as `assess` and writes the result as a standing page: limits
+    first, then figures, then the depth map, with the images inlined so the file can be
+    moved or sent without breaking. Read it as the thing you hand someone; the map is
+    better for exploring.
+    """
+    from floodline.assess import NoDischargeError, assess_watershed
+    from floodline.compute import watershed_by_huc
+    from floodline.report.render import ReportInputs, render_report
+
+    resolved = load_config(config)
+    unit, resolved = watershed_by_huc(huc, config=resolved)
+    typer.echo(f"{unit.name} — HUC-{len(unit.huc)} {unit.huc} — assessing…")
+
+    try:
+        result = assess_watershed(
+            unit,
+            config=resolved,
+            resolution_m=float(resolution),
+            samples=samples,
+            with_buildings=buildings,
+        )
+    except NoDischargeError as exc:
+        typer.secho(f"error: {exc}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=1) from exc
+
+    path = render_report(ReportInputs(assessment=result), out)
+    size_kb = path.stat().st_size / 1024
+    typer.echo(f"wrote {path} ({size_kb:,.0f} kB)")
+    for gap in result.gaps:
+        typer.secho(f"gap: {gap}", fg=typer.colors.YELLOW, err=True)
 
 
 if __name__ == "__main__":  # pragma: no cover
