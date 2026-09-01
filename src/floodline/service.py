@@ -31,6 +31,7 @@ from rasterio.errors import RasterioIOError
 
 from floodline.assess import NoDischargeError, assess_watershed, buildings_geoparquet
 from floodline.compute import (
+    WatershedNotFoundError,
     compute_watershed,
     geometry_wgs84,
     watershed_by_huc,
@@ -197,8 +198,10 @@ def create_app(
         try:
             with client() as http:
                 unit, local = watershed_by_huc(huc, config=base, client=http)
-        except SourceError as exc:
+        except WatershedNotFoundError as exc:
             raise HTTPException(404, str(exc)) from exc
+        except SourceError as exc:
+            raise HTTPException(502, f"upstream data source failed: {exc}") from exc
         return _describe(unit, local)
 
     def _describe(unit: Any, local: Config) -> dict[str, Any]:
@@ -250,6 +253,8 @@ def create_app(
                     max_cells=max_cells,
                     marks_path=marks if marks.exists() else None,
                 )
+        except WatershedNotFoundError as exc:
+            raise HTTPException(404, str(exc)) from exc
         except SourceError as exc:
             raise HTTPException(502, f"upstream data source failed: {exc}") from exc
         except RasterioIOError as exc:
@@ -313,6 +318,8 @@ def create_app(
                 )
         except NoDischargeError as exc:
             raise HTTPException(422, str(exc)) from exc
+        except WatershedNotFoundError as exc:
+            raise HTTPException(404, str(exc)) from exc
         except SourceError as exc:
             raise HTTPException(502, f"upstream data source failed: {exc}") from exc
         except RasterioIOError as exc:

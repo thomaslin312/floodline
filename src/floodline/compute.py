@@ -70,6 +70,7 @@ from floodline.terrain.streams import link_raster
 
 __all__ = [
     "ComputeResult",
+    "WatershedNotFoundError",
     "compute_watershed",
     "gauge_for_watershed",
     "geometry_wgs84",
@@ -102,6 +103,16 @@ VSICURL_ENV: dict[str, object] = {
     "GDAL_NUM_THREADS": "ALL_CPUS",
     "CPL_VSIL_CURL_CHUNK_SIZE": 1024 * 1024,
 }
+
+
+class WatershedNotFoundError(SourceError):
+    """No hydrologic unit matches the code or point asked for.
+
+    A subclass of SourceError so anything catching that still catches this, but
+    distinguishable where it matters: "that watershed does not exist" is the caller's
+    mistake and a 404, while "the WBD service is down" is not and is a 502. Reporting
+    either as the other sends whoever is debugging in the wrong direction.
+    """
 
 
 def utm_crs_for(lon: float, lat: float) -> CRS:
@@ -220,7 +231,7 @@ def watershed_by_huc(
         if owned:
             active.close()
     if not features:
-        raise SourceError(
+        raise WatershedNotFoundError(
             f"no HUC-{level} watershed with code {huc!r}. Codes have an even number of "
             "digits from 2 to 16, and the digit count selects the level."
         )
@@ -259,7 +270,7 @@ def watershed_for_point(
         if owned:
             active.close()
     if not features:
-        raise SourceError(f"no HUC-{level} watershed contains ({lon}, {lat})")
+        raise WatershedNotFoundError(f"no HUC-{level} watershed contains ({lon}, {lat})")
 
     for feature in features:
         unit, local = _watershed_from_feature(feature, level, resolved)

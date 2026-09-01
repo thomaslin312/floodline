@@ -156,3 +156,34 @@ def test_a_cached_bundle_is_served_without_recomputing(client: TestClient, tmp_p
 def test_resolution_is_bounded(client: TestClient) -> None:
     assert client.get("/api/compute/120401040305", params={"resolution": 0.1}).status_code == 422
     assert client.get("/api/compute/120401040305", params={"resolution": 500}).status_code == 422
+
+
+def test_a_missing_watershed_is_404_on_every_route(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Not-found and upstream-broken are different failures and different codes.
+
+    Reporting "that HUC does not exist" as a 502 sends whoever is debugging looking
+    for an outage; reporting a real outage as a 404 sends them looking for a typo.
+    """
+    from floodline.compute import WatershedNotFoundError
+
+    def missing(*args: object, **kwargs: object) -> None:
+        raise WatershedNotFoundError("no HUC-12 watershed with code '9'")
+
+    monkeypatch.setattr("floodline.service.watershed_by_huc", missing)
+    client = TestClient(create_app())
+    for route in ("/api/watershed/99", "/api/compute/99", "/api/exposure/99"):
+        assert client.get(route).status_code == 404, route
+
+
+def test_a_real_upstream_failure_is_502_not_404(monkeypatch: pytest.MonkeyPatch) -> None:
+    from floodline.io.sources import SourceError
+
+    def broken(*args: object, **kwargs: object) -> None:
+        raise SourceError("GET https://hydro.nationalmap.gov/... failed after 4 attempts")
+
+    monkeypatch.setattr("floodline.service.watershed_by_huc", broken)
+    client = TestClient(create_app())
+    for route in ("/api/watershed/99", "/api/compute/99", "/api/exposure/99"):
+        response = client.get(route)
+        assert response.status_code == 502, route
+        assert "upstream" in response.json()["detail"]

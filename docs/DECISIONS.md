@@ -1404,3 +1404,20 @@ referencing a module that was not in the repository. A clean clone of that commi
 not have imported. Caught by cloning the repo into a temp directory and walking every
 intra-package import against the checked-out tree - worth doing after any commit that
 adds a module.
+
+## 2026-09-06 — a missing watershed is a 404, not an outage
+
+Probing the service's error paths found `/api/compute` and `/api/exposure` both
+answering a nonexistent HUC with `502 upstream data source failed`, and
+`/api/watershed/{huc}` answering *any* upstream failure with `404`. Both directions
+send whoever is debugging the wrong way: a 502 for a typo sends them hunting an outage,
+a 404 for a real outage sends them hunting a typo.
+
+`WatershedNotFoundError` now subclasses `SourceError`, so anything already catching the
+parent still works, and the routes catch it first. Every route returns 404 for a
+watershed that does not exist and 502 for a source that failed, with tests asserting
+both across all three.
+
+The rest of the error surface checked out: a malformed HUC is 400, an out-of-range
+resolution 422, an unmatched geocode 404 with the text explaining what does work, a
+point in the Atlantic 404.
