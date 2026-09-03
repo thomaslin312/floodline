@@ -1421,3 +1421,34 @@ both across all three.
 The rest of the error surface checked out: a malformed HUC is 400, an out-of-range
 resolution 422, an unmatched geocode 404 with the text explaining what does work, a
 point in the Atlantic 404.
+
+## 2026-09-06 — the headline claim, actually tested against NFIP claims
+
+The README has always said the observed building count should land inside the model's
+90% interval. Nothing tested it. `validate/claims.py` does.
+
+OpenFEMA publishes every NFIP claim: 48,689 in Harris County for Harvey, USD 4.16 bn
+paid. Claim *coordinates* are rounded to 0.1 degrees - about 11 km, useless against a
+491 km2 watershed - but `censusBlockGroupFips` is published in full, and block groups
+run about a square kilometre in urban Houston. Groups straddling the watershed boundary
+are weighted by area share, computed in Albers rather than in degrees.
+
+Result for Whiteoak Bayou: 6,769 claims inside the watershed, USD 705 M paid, against
+32,833 modelled inundated structures and USD 17.1 bn modelled damage.
+
+**The interval does not contain the claim count, and the honest reading is that it
+should not.** A claim needs a property insured, flooded, and its owner to file; NFIP
+take-up outside mapped floodplains was a small share of Houston's stock and Harvey
+flooded far beyond them. 6,769 is a floor. The model at 4.9x above it is the expected
+direction, and 24x on dollars is expected harder still, since NFIP caps a building
+claim at USD 250,000.
+
+So this is a one-sided bound, and the API says so rather than returning a pass:
+`model_below_claims` is the only unambiguous failure - an interval whose top sits under
+the paid claims cannot be right - and `summary()` refuses to call anything else a
+validation. Framing this as "observed count inside the interval, tick" would have been
+the easy version and the dishonest one.
+
+Fixed on the way: areas were being measured in degrees, which the project's own CRS
+rules forbid. Over one city the distortion largely cancels in a ratio, which is exactly
+why the rule exists - nobody should have to check that by hand.

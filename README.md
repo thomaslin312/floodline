@@ -97,7 +97,35 @@ this machine.
 Every pipeline stage now runs; the one remaining refusal is `condition --streams`,
 since stream burning is not implemented and is declined rather than faked.
 
-**What phase 4 still lacks is a reference, not code.** `floodline validate` computes
+### The headline claim, tested
+
+The README says a screening model should put the observed building count inside its
+90% interval. Here is that test, run:
+
+| | Whiteoak Bayou, Harvey |
+|---|---|
+| modelled inundated | 32,833 (interval 16,474 – 61,738) |
+| NFIP claims filed inside the watershed | 6,769, area-weighted from block groups |
+| paid on those claims | USD 705 M |
+| modelled damage | USD 17.1 bn |
+
+**The interval does not contain the claim count, and it should not.** An NFIP claim
+requires a property to be insured, flooded, and its owner to file. Take-up outside
+mapped floodplains was a small fraction of Houston's stock, and Harvey flooded a great
+deal of ground outside them. So 6,769 is a *floor*, not a count of flooded buildings,
+and the model sitting 4.9× above it is the expected direction. What would falsify the
+model is the other direction: an interval whose top sat below the claims. It does not,
+and `ClaimComparison.model_below_claims` is the check.
+
+The dollar comparison carries the same asymmetry harder — modelled damage is 24× what
+NFIP paid, because NFIP caps a building claim at USD 250,000 and covers only insured
+filers. Neither ratio validates the model. Both bound it, and the bound is one-sided.
+
+Claim coordinates are published rounded to 0.1° (~11 km), useless at watershed scale;
+`censusBlockGroupFips` is what makes this possible, with block groups straddling the
+boundary weighted by area share.
+
+**What phase 4 still lacks is a reference for extent, not code.** `floodline validate` computes
 CSI, hit rate, false alarm ratio and bias against an observed wet mask you supply, and
 is verified against a hand-computed CSI. floodline has no observed extent of its own:
 the Sentinel-1 route needs credentials, so no CSI is reported for Harvey. Validation
