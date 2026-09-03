@@ -1004,3 +1004,49 @@ Substantive changes, not just paint:
 `.qunit` carried `text-transform:uppercase`, which rendered `m3/s` as `M3/S`. SI symbols
 are case-sensitive and the capitals are a different quantity. Removed. The uppercase
 treatment stays on the eyebrow and column labels, which are words rather than units.
+
+## 2026-09-05 — the map is a globe: Leaflet replaced by MapLibre GL
+
+Leaflet has no globe projection at any version, so showing the interface on a sphere
+meant changing map engines. MapLibre GL 5.24.0, pinned, `projection: {type:"globe"}` in
+the style. Chosen over CesiumJS (a 3D-globe engine that would have meant rewriting the
+data path around its own imagery and entity model) and over deck.gl's GlobeView (a
+rendering layer, not a map, so the basemap and the WBD service would both have needed
+building from scratch). MapLibre keeps raster tile sources, corner-pinned image overlays
+and GeoJSON, which is the entire data path this page uses.
+
+v5 rather than the current v6: v6 ships ESM only, and the page loads libraries as plain
+script tags with globals. v5.24.0 is the last line with a UMD build.
+
+What the port had to translate:
+
+- Leaflet panes became layer order. Everything dynamic is inserted `beforeId:"labels"`
+  so place names still sit above the water, which was the point of the panes.
+- `L.CRS.EPSG3857.project/unproject` became two local functions. The depth grid and the
+  WBD export are both EPSG:3857, so the maths stays; only the provider changed. Verified
+  numerically: Whiteoak Bayou returns 106.7 km2 / 10.1 m / 14 of 16 wet / RMSE 1.60 m and
+  Philadelphia 30.4 km2 / 18.5 m / 9 of 11 / RMSE 4.73 m — identical to the Leaflet build
+  to the last digit, which is the real test of the projection port.
+- The hand-rolled `L.TileLayer` subclass that computed a bbox per tile for the WBD export
+  became MapLibre's `{bbox-epsg-3857}` token in the URL template.
+- One marker per high-water mark became a single data-driven circle layer. The globe
+  renderer then handles occlusion behind the sphere for free, and 176 DOM nodes are no
+  longer created and destroyed on every slider frame. Cost: the "dry" marks were dashed
+  circles in Leaflet and are now hollow ones, because a circle layer has no dash.
+- `bindTooltip` became one shared popup moved between features, cleared on `movestart`
+  since a pan leaves the pointer somewhere else and `mouseleave` never fires.
+
+Two defects the port surfaced, both fixed:
+
+- Style readiness must come from `styledata` + `isStyleLoaded()`, not `load`. `load`
+  waits on a first render and a backgrounded tab never renders, so a compute that
+  finished while the tab was hidden threw "Style is not done loading" from `addSource`.
+  Everything touching sources or layers now goes through a `whenReady` queue.
+- `fitBounds` centres in the full viewport, but the panels float over roughly 45% of it,
+  so a small unit could land entirely behind one — Philadelphia did, every time. Padding
+  is now measured from the panels' own rects and clamped below what fitBounds accepts.
+  This was wrong in the Leaflet build too; the globe just made it obvious.
+
+Accepted cost: the globe is WebGL2-only, where the raster-tile map was not. A browser
+without it now gets an explicit message naming the API endpoint instead of a blank
+rectangle.

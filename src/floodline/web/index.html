@@ -4,9 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>floodline</title>
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<link rel="stylesheet" href="https://unpkg.com/maplibre-gl@5.24.0/dist/maplibre-gl.css">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=Public+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/maplibre-gl@5.24.0/dist/maplibre-gl.js"></script>
 <style>
   :root{
     color-scheme:light;
@@ -24,6 +24,7 @@
     --mono:"IBM Plex Mono",ui-monospace,Menlo,monospace;
     --r:13px; --r-sm:9px; --pill:999px;
     --ease:cubic-bezier(.2,.8,.25,1);
+    --ctrl-icon:opacity(.55); --ctrl-icon-hi:none;
   }
   @media (prefers-color-scheme:dark){:root{
     color-scheme:dark;
@@ -35,6 +36,7 @@
     --good:#5cba7e; --warn:#ddaa5c; --bad:#e3866a;
     --shadow:0 0 0 1px #ffffff0f, 0 1px 1px #00000066, 0 14px 34px -14px #000000aa;
     --sheen:inset 0 1px 0 #ffffff12;
+    --ctrl-icon:invert(1) opacity(.7); --ctrl-icon-hi:invert(1);
   }}
   *{box-sizing:border-box}
   [hidden]{display:none!important}
@@ -42,23 +44,28 @@
   body{background:var(--bg);color:var(--ink);font-family:var(--body);font-size:14px;
     -webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
   #map{position:absolute;inset:0;background:var(--bg)}
-  .leaflet-container{background:var(--bg);font-family:var(--body)}
+  .maplibregl-map{font-family:var(--body)}
+  .maplibregl-canvas{outline:none}
 
-  /* ---------- leaflet chrome, restyled to match the panels ---------- */
-  .leaflet-control-attribution{background:var(--glass-2)!important;color:var(--ink-3)!important;
+  /* ---------- maplibre chrome, restyled to match the panels ---------- */
+  .maplibregl-ctrl-attrib{background:var(--glass-2)!important;color:var(--ink-3)!important;
     font-size:9.5px!important;padding:2px 8px!important;border-radius:var(--r-sm) 0 0 0;
     -webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px);box-shadow:var(--sheen)}
-  .leaflet-control-attribution a{color:var(--ink-3)!important;text-decoration:none}
-  .leaflet-control-attribution a:hover{color:var(--accent)!important}
-  .leaflet-bar{border:0!important;border-radius:var(--r-sm)!important;overflow:hidden;
-    background:var(--glass);-webkit-backdrop-filter:blur(20px) saturate(180%);
+  .maplibregl-ctrl-attrib a{color:var(--ink-3)!important;text-decoration:none}
+  .maplibregl-ctrl-attrib a:hover{color:var(--accent)!important}
+  .maplibregl-ctrl-attrib-button{display:none!important}
+  .maplibregl-ctrl-group{border:0!important;border-radius:var(--r-sm)!important;overflow:hidden;
+    background:var(--glass)!important;-webkit-backdrop-filter:blur(20px) saturate(180%);
     backdrop-filter:blur(20px) saturate(180%);box-shadow:var(--shadow),var(--sheen)!important}
-  .leaflet-bar a{background:transparent!important;color:var(--ink-2)!important;
-    border-bottom:1px solid var(--hair)!important;width:34px!important;height:34px!important;
-    line-height:34px!important;font-size:17px!important;font-weight:400;
-    transition:background .15s var(--ease),color .15s var(--ease)}
-  .leaflet-bar a:last-child{border-bottom:0!important}
-  .leaflet-bar a:hover{background:var(--accent-2)!important;color:var(--accent)!important}
+  .maplibregl-ctrl-group button{width:34px!important;height:34px!important;background:transparent!important;
+    border-bottom:1px solid var(--hair)!important;
+    transition:background .15s var(--ease)}
+  .maplibregl-ctrl-group button+button{border-top:0!important}
+  .maplibregl-ctrl-group button:last-child{border-bottom:0!important}
+  .maplibregl-ctrl-group button:hover{background:var(--accent-2)!important}
+  /* The control glyphs ship as black SVG data URIs, invisible on the dark panel. */
+  .maplibregl-ctrl-group button .maplibregl-ctrl-icon{filter:var(--ctrl-icon)}
+  .maplibregl-ctrl-group button:hover .maplibregl-ctrl-icon{filter:var(--ctrl-icon-hi)}
 
   /* ---------- floating panels ---------- */
   .panel{position:absolute;z-index:1000;background:var(--glass);
@@ -211,11 +218,13 @@
   .bar{position:absolute;top:0;left:0;height:2px;width:0;z-index:1200;
     background:linear-gradient(90deg,var(--accent),var(--accent));
     box-shadow:0 0 10px var(--accent-3);transition:width .35s var(--ease)}
-  .hwm{border-radius:50%;border:1.5px solid #fff;box-shadow:0 1px 3px #0006}
-  .leaflet-tooltip{background:var(--glass);border:0;box-shadow:var(--shadow),var(--sheen);
+  .gauge-dot{width:13px;height:13px;border-radius:50%;background:var(--accent);
+    border:2px solid #fff;box-shadow:0 1px 4px #00000059;cursor:pointer}
+  .maplibregl-popup-content{background:var(--glass);box-shadow:var(--shadow),var(--sheen);
     color:var(--ink);font-family:var(--body);font-size:12px;border-radius:var(--r-sm);padding:7px 10px;
     -webkit-backdrop-filter:blur(20px) saturate(180%);backdrop-filter:blur(20px) saturate(180%)}
-  .leaflet-tooltip:before{display:none}
+  .maplibregl-popup-tip{display:none}
+  .maplibregl-popup{will-change:transform}
   .tt b{font-family:var(--display);font-size:12.5px;letter-spacing:-.01em}
   .tt code{font-family:var(--mono);font-size:10.5px;color:var(--ink-2)}
 </style>
@@ -296,61 +305,117 @@ const $ = (id) => document.getElementById(id);
 const dark = () => window.matchMedia("(prefers-color-scheme: dark)").matches;
 const css = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
 
-const map = L.map("map", {zoomControl:false, minZoom:3, maxZoom:16, attributionControl:true})
-  .setView([39.5,-98.5], 4);
-L.control.zoom({position:"bottomright"}).addTo(map);
+/* The globe is rendered on the GPU, so unlike the raster-tile map it replaced there
+   is no software fallback. Say so plainly rather than leaving a blank rectangle. */
+if(!document.createElement("canvas").getContext("webgl2")){
+  $("status").className = "status bad";
+  $("status").textContent = "This browser has no WebGL2, which the globe needs to draw. "
+    + "Everything is computed server-side, so the API at /api/compute/{huc} still works.";
+  $("search").hidden = true; $("legend").hidden = true;
+  return;
+}
 
-/* Panes so the flood sits above the terrain but below place names — labels on top
-   is what keeps a busy city readable once the water is drawn over it. */
-map.createPane("base").style.zIndex = 200;
-map.createPane("bnd").style.zIndex = 350;
-map.createPane("flood").style.zIndex = 400;
-map.createPane("labels").style.zIndex = 450;
-map.getPane("labels").style.pointerEvents = "none";
-map.getPane("flood").style.pointerEvents = "none";
+/* Web Mercator metres <-> lng/lat. Leaflet supplied these as L.CRS.EPSG3857; the
+   depth grid and the WBD export both speak EPSG:3857, so the conversions stay. */
+const R = 6378137, D = 180/Math.PI;
+const mercToLngLat = (x,y) => [x/R*D, (2*Math.atan(Math.exp(y/R)) - Math.PI/2)*D];
+const lngLatToMerc = (lng,lat) => [lng/D*R, Math.log(Math.tan(Math.PI/4 + lat/D/2))*R];
 
 // Esri's grey canvas: a deliberately quiet basemap with the labels published as a
 // separate layer, which is what lets place names sit *above* the flood instead of
 // disappearing under it. Keyless, unlike Carto, which now watermarks without one.
 const ESRI = "https://services.arcgisonline.com/ArcGIS/rest/services/Canvas/";
-let baseLayer = null, labelLayer = null;
-function basemap(){
-  if(baseLayer) map.removeLayer(baseLayer);
-  if(labelLayer) map.removeLayer(labelLayer);
-  const tone = dark() ? "Dark" : "Light";
-  baseLayer = L.tileLayer(ESRI+`World_${tone}_Gray_Base/MapServer/tile/{z}/{y}/{x}`,
-    {pane:"base", maxZoom:16, attribution:'Esri, HERE, Garmin, &copy; OpenStreetMap contributors'}).addTo(map);
-  labelLayer = L.tileLayer(ESRI+`World_${tone}_Gray_Reference/MapServer/tile/{z}/{y}/{x}`,
-    {pane:"labels", maxZoom:16}).addTo(map);
-}
-basemap();
-window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => { basemap(); repaint(); });
+const esri = (kind) => ESRI + `World_${dark()?"Dark":"Light"}_Gray_${kind}/MapServer/tile/{z}/{y}/{x}`;
 
 /* The WBD renders boundary images and swaps HUC level by scale on its own, so the
-   whole national grid is browsable without shipping geometry. */
-const ArcGIS = L.TileLayer.extend({
-  getTileUrl(coords){
-    const b = this._tileCoordsToBounds(coords);
-    const sw = L.CRS.EPSG3857.project(b.getSouthWest());
-    const ne = L.CRS.EPSG3857.project(b.getNorthEast());
-    // dynamicLayers with showLabels:false strips the HUC code printed across every
-    // polygon. On a city-scale view those labels are most of the ink on the screen.
-    const spec = this.options.ids.map(id => ({
-      id, source:{type:"mapLayer", mapLayerId:id}, drawingInfo:{showLabels:false}
-    }));
-    return this.options.base+"/export?bbox="+[sw.x,sw.y,ne.x,ne.y].join(",")
-      +"&bboxSR=3857&imageSR=3857&size=256,256"
-      +"&dynamicLayers="+encodeURIComponent(JSON.stringify(spec))
-      +"&format=png32&transparent=true&dpi=96&f=image";
-  }
-});
-const boundaries = new ArcGIS("", {
-  base:"https://hydro.nationalmap.gov/arcgis/rest/services/wbd/MapServer",
-  ids:[1,2,3,4,5,6], pane:"bnd", opacity:0.5,
-  attribution:"USGS Watershed Boundary Dataset"
-}).addTo(map);
+   whole national grid is browsable without shipping geometry. MapLibre substitutes
+   {bbox-epsg-3857} per tile, which is what the Leaflet build computed by hand.
+   dynamicLayers with showLabels:false strips the HUC code printed across every
+   polygon; on a city-scale view those labels are most of the ink on the screen. */
+const WBD_SPEC = [1,2,3,4,5,6].map(id =>
+  ({id, source:{type:"mapLayer", mapLayerId:id}, drawingInfo:{showLabels:false}}));
+const WBD = "https://hydro.nationalmap.gov/arcgis/rest/services/wbd/MapServer/export"
+  + "?bbox={bbox-epsg-3857}&bboxSR=3857&imageSR=3857&size=256,256"
+  + "&dynamicLayers=" + encodeURIComponent(JSON.stringify(WBD_SPEC))
+  + "&format=png32&transparent=true&dpi=96&f=image";
 
-let unit=null, bundle=null, outline=null, overlay=null, markers=[], gaugeMarker=null;
+const raster = (tiles, attribution) =>
+  ({type:"raster", tiles:[tiles], tileSize:256, maxzoom:16, attribution});
+
+/* Layer order replaces Leaflet's panes: basemap, boundaries, flood, outline, marks,
+   place names. Everything added later goes in beforeId:"labels" so the names stay
+   on top of the water. */
+const map = new maplibregl.Map({
+  container:"map", center:[-98.5,39.5], zoom:2.1, minZoom:1.4, maxZoom:16,
+  attributionControl:{compact:false},
+  style:{
+    version:8,
+    projection:{type:"globe"},
+    sources:{
+      base:raster(esri("Base"), "Esri, HERE, Garmin, &copy; OpenStreetMap contributors"),
+      wbd:raster(WBD, "USGS Watershed Boundary Dataset"),
+      labels:raster(esri("Reference")),
+    },
+    layers:[
+      {id:"bg", type:"background", paint:{"background-color":css("--bg")}},
+      {id:"base", type:"raster", source:"base"},
+      {id:"wbd", type:"raster", source:"wbd", paint:{"raster-opacity":0.5}},
+      {id:"labels", type:"raster", source:"labels"},
+    ],
+  },
+});
+map.addControl(new maplibregl.NavigationControl({visualizePitch:false}), "bottom-right");
+map.dragRotate.disable();
+map.touchZoomRotate.disableRotation();
+
+/* The atmosphere is what makes the sphere read as a globe rather than a circle. It
+   fades out on the way in, so at watershed scale nothing is tinted. */
+function sky(){
+  map.setSky({
+    "sky-color":dark()?"#04141c":"#a9c9dd",
+    "horizon-color":dark()?"#0d3242":"#dbe8ef",
+    "fog-color":dark()?"#061216":"#e9edee",
+    "sky-horizon-blend":0.6, "horizon-fog-blend":0.5, "fog-ground-blend":0.4,
+    "atmosphere-blend":["interpolate",["linear"],["zoom"],0,0.9,5,0.4,7,0],
+  });
+}
+
+function basemap(){
+  map.getSource("base").setTiles([esri("Base")]);
+  map.getSource("labels").setTiles([esri("Reference")]);
+  map.setPaintProperty("bg","background-color",css("--bg"));
+  if(map.getLayer("outline-line")){
+    map.setPaintProperty("outline-line","line-color",css("--accent"));
+    map.setPaintProperty("outline-fill","fill-color",css("--accent"));
+  }
+  sky();
+}
+/* Readiness is taken from "styledata", not "load": "load" waits on a first render,
+   and a backgrounded tab never renders, so a compute that finished while the tab was
+   hidden used to throw "Style is not done loading" from addSource. Anything that
+   touches sources or layers goes through whenReady and is replayed on arrival. */
+let styleReady = false;
+const queued = [];
+function whenReady(fn){ styleReady ? fn() : queued.push(fn); }
+function markReady(){
+  if(styleReady || !map.isStyleLoaded()) return;
+  styleReady = true; sky();
+  for(const fn of queued.splice(0)) fn();
+}
+map.on("styledata", markReady);
+map.on("load", markReady);
+// A pan leaves the pointer somewhere else entirely, and mouseleave never fires.
+map.on("movestart", () => tip.remove());
+window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {
+  if(styleReady) basemap();
+  repaint();
+});
+
+/* One popup instance, moved between features — MapLibre has no bindTooltip. */
+const tip = new maplibregl.Popup({closeButton:false, closeOnClick:false, offset:12,
+  maxWidth:"280px", focusAfterOpen:false});
+
+let unit=null, bundle=null, gaugeMarker=null;
 let hand=null, reach=null, lut=null, nMult=0, busy=false, raf=0;
 
 function status(html, kind){ const el=$("status"); el.className="status"+(kind?" "+kind:""); el.innerHTML=html; }
@@ -372,10 +437,18 @@ async function pick(lon, lat, label){
   }catch(e){ status("No watershed there: "+e.message, "bad"); progress(1); }
 }
 
+/* MapLibre keeps sources and layers by id rather than as objects to remove, so
+   clearing means emptying them, not deleting them. */
+function setGeo(id, data){ if(map.getSource(id)) map.getSource(id).setData(data); }
+const EMPTY = {type:"FeatureCollection", features:[]};
+
 function clearModel(){
-  if(overlay){ map.removeLayer(overlay); overlay=null; }
-  markers.forEach(m=>map.removeLayer(m)); markers=[];
-  if(gaugeMarker){ map.removeLayer(gaugeMarker); gaugeMarker=null; }
+  whenReady(() => {
+    if(map.getLayer("flood")) map.setLayoutProperty("flood","visibility","none");
+    setGeo("hwm", EMPTY);
+  });
+  if(gaugeMarker){ gaugeMarker.remove(); gaugeMarker=null; }
+  tip.remove();
   bundle=null; hand=null;
   $("model").hidden = true; $("hwmkey").hidden = true;
   $("fitnote").hidden = true; $("fit").hidden = true;
@@ -386,12 +459,33 @@ function clearModel(){
   syncSlider();
 }
 
+function bboxOf(geom){
+  let w=180, s=90, e=-180, n=-90;
+  (function walk(a){ if(typeof a[0]==="number"){ if(a[0]<w)w=a[0]; if(a[0]>e)e=a[0];
+    if(a[1]<s)s=a[1]; if(a[1]>n)n=a[1]; } else for(const c of a) walk(c); })(geom.coordinates);
+  return [[w,s],[e,n]];
+}
+
+/* The panels float over the map, so fitting to the full viewport can leave the whole
+   watershed behind one of them -- which is what a small unit in the stacked layout did
+   every time. Padding is measured from the panels themselves and clamped so it can
+   never exceed the space available, which fitBounds rejects. */
+function fitPadding(){
+  const m = $("map").getBoundingClientRect();
+  const sr = $("search").getBoundingClientRect(), ir = $("info").getBoundingClientRect();
+  const cap = (v, span) => Math.max(24, Math.min(v, span * 0.42));
+  return window.innerWidth <= 900
+    ? {top:cap(sr.height + 32, m.height), bottom:cap(ir.height + 24, m.height), left:24, right:24}
+    : {top:32, bottom:32, left:cap(sr.width + 40, m.width), right:cap(ir.width + 40, m.width)};
+}
+
 function showUnit(label){
   clearModel();
-  if(outline) map.removeLayer(outline);
-  outline = L.geoJSON(unit.geometry, {style:{color:css("--accent"), weight:2.2, opacity:.95,
-    fillColor:css("--accent"), fillOpacity:.05}}).addTo(map);
-  map.fitBounds(outline.getBounds(), {padding:[70,70], maxZoom:13});
+  whenReady(() => {
+    ensureLayers();
+    setGeo("outline", {type:"Feature", geometry:unit.geometry, properties:{}});
+    map.fitBounds(bboxOf(unit.geometry), {padding:fitPadding(), maxZoom:13, duration:900});
+  });
   $("uname").textContent = unit.name || "Unnamed watershed";
   $("umeta").innerHTML = `HUC-${unit.huc.length} <code>${unit.huc}</code> · ${unit.area_km2.toLocaleString()} km²`
     + ` · ${unit.analysis_crs}` + (label?` · ${label}`:"");
@@ -446,11 +540,12 @@ async function load(){
   $("model").hidden=false;
   if(bundle.gauge){
     const g=bundle.gauge;
-    gaugeMarker = L.circleMarker([g.lat,g.lon], {radius:6, color:"#fff", weight:2,
-      fillColor:css("--accent"), fillOpacity:1, pane:"markerPane"})
-      .bindTooltip(`<div class="tt"><b>${g.site}</b><br><code>${g.name}</code><br>` +
-        `peak ${Math.round(g.discharge_cms).toLocaleString()} m³/s · ${g.date} · ${g.n_years} yr record</code></div>`,
-        {direction:"top"}).addTo(map);
+    const el=document.createElement("div"); el.className="gauge-dot";
+    gaugeMarker = new maplibregl.Marker({element:el}).setLngLat([g.lon,g.lat])
+      .setPopup(new maplibregl.Popup({closeButton:false, offset:12}).setHTML(
+        `<div class="tt"><b>${g.site}</b><br><code>${g.name}</code><br>` +
+        `<code>peak ${Math.round(g.discharge_cms).toLocaleString()} m³/s · ${g.date} · ${g.n_years} yr record</code></div>`))
+      .addTo(map);
   }
   repaint();
 }
@@ -474,10 +569,10 @@ function stagesNow(){
 /* Marks arrive as coordinates; the depth grid is Web Mercator with known bounds, so
    a mark's pixel is a straight interpolation into that box. */
 function markPixel(m){
-  const p = L.CRS.EPSG3857.project(L.latLng(m.lat, m.lon));
+  const [px,py] = lngLatToMerc(m.lon, m.lat);
   const [w,s,e,n] = bundle.bounds;
-  const col = Math.round((p.x-w)/(e-w)*bundle.width);
-  const row = Math.round((n-p.y)/(n-s)*bundle.height);
+  const col = Math.round((px-w)/(e-w)*bundle.width);
+  const row = Math.round((n-py)/(n-s)*bundle.height);
   if(col<0||row<0||col>=bundle.width||row>=bundle.height) return -1;
   return row*bundle.width+col;
 }
@@ -513,11 +608,22 @@ function repaint(){
   }
   ctx.putImageData(img,0,0);
   const [w,s,e,n]=bundle.bounds;
-  const b=L.latLngBounds(L.CRS.EPSG3857.unproject(L.point(w,s)), L.CRS.EPSG3857.unproject(L.point(e,n)));
-  if(overlay) map.removeLayer(overlay);
-  overlay=L.imageOverlay(cv.toDataURL(), b, {pane:"flood", opacity:0.88}).addTo(map);
-
-  drawMarks(stage);
+  const [wl,sl]=mercToLngLat(w,s), [el,nl]=mercToLngLat(e,n);
+  // An image source is corner-pinned: top-left, top-right, bottom-right, bottom-left.
+  const corners=[[wl,nl],[el,nl],[el,sl],[wl,sl]];
+  const url=cv.toDataURL();
+  whenReady(() => {
+    ensureLayers();
+    if(map.getSource("flood")) map.getSource("flood").updateImage({url, coordinates:corners});
+    else map.addSource("flood", {type:"image", url, coordinates:corners});
+    if(!map.getLayer("flood")){
+      map.addLayer({id:"flood", type:"raster", source:"flood",
+        paint:{"raster-opacity":0.88, "raster-fade-duration":0, "raster-resampling":"nearest"}},
+        "outline-line");
+    }
+    map.setLayoutProperty("flood","visibility","visible");
+    drawMarks(stage);
+  });
   updatePanel(wet, maxd, mult);
 }
 
@@ -531,13 +637,16 @@ function scored(){
   return $("c-q").classList.contains("on") ? all.filter(m=>GOOD.has(m.quality)) : all;
 }
 
+/* Marks became one data-driven circle layer rather than a marker per point. On a
+   globe the renderer then handles occlusion behind the sphere for free, and 176 DOM
+   nodes do not have to be created and destroyed on every slider frame. */
 function drawMarks(stage){
-  markers.forEach(m=>map.removeLayer(m)); markers=[];
   const show = $("c-hwm").classList.contains("on");
   const marks = bundle.marks||[];
   $("hwmkey").hidden = !(show && marks.length);
-  if(!show || !marks.length) return;
+  if(!show || !marks.length){ setGeo("hwm", EMPTY); return; }
   const counted = new Set(scored());
+  const features = [];
   for(const m of marks){
     const graded = counted.has(m);
     const p = markPixel(m);
@@ -550,22 +659,47 @@ function drawMarks(stage){
     }
     const res = depth===null ? null : (m.ground_m+depth-m.elev_m);
     const a = res===null?null:Math.abs(res);
-    const colour = res===null ? "transparent" : a<=1?css("--good") : a<=3?css("--warn") : css("--bad");
-    const marker = L.circleMarker([m.lat,m.lon], {
-      radius: graded?5:3, weight: graded?1.5:1,
-      color: res===null?css("--ink-3"):"#fff",
-      dashArray: res===null?"2 2":null, fillColor:colour,
-      fillOpacity: res===null?0:(graded?1:0.45),
-      className:"hwm", pane:"markerPane"
-    }).bindTooltip(
-      `<div class="tt"><b>${m.event}</b>${m.event_date?` <code>${m.event_date}</code>`:""}` +
-      `<br><code>survey quality ${m.quality}${graded?"":" — not scored"}</code><br>` +
-      `<code>surveyed ${m.elev_m.toFixed(2)} m · ground ${m.ground_m.toFixed(2)} m</code><br>` +
-      (res===null ? `<code>model: dry here</code>`
-                  : `<code>modelled ${(m.ground_m+depth).toFixed(2)} m · ${res>=0?"+":""}${res.toFixed(2)} m</code>`) +
-      `</div>`, {direction:"top"}).addTo(map);
-    markers.push(marker);
+    features.push({type:"Feature", geometry:{type:"Point", coordinates:[m.lon,m.lat]}, properties:{
+      r: graded?5:3.2,
+      sw: graded?1.5:1,
+      fill: res===null ? "rgba(0,0,0,0)" : a<=1?css("--good") : a<=3?css("--warn") : css("--bad"),
+      stroke: res===null ? css("--ink-3") : "#ffffff",
+      alpha: res===null ? 0 : (graded?1:0.45),
+      html:
+        `<div class="tt"><b>${m.event}</b>${m.event_date?` <code>${m.event_date}</code>`:""}` +
+        `<br><code>survey quality ${m.quality}${graded?"":" — not scored"}</code><br>` +
+        `<code>surveyed ${m.elev_m.toFixed(2)} m · ground ${m.ground_m.toFixed(2)} m</code><br>` +
+        (res===null ? `<code>model: dry here</code>`
+                    : `<code>modelled ${(m.ground_m+depth).toFixed(2)} m · ${res>=0?"+":""}${res.toFixed(2)} m</code>`) +
+        `</div>`,
+    }});
   }
+  setGeo("hwm", {type:"FeatureCollection", features});
+}
+
+/* Sources and layers are created once, then fed. Creating them lazily keeps the
+   ordering explicit: everything sits under "labels" so place names stay legible. */
+function ensureLayers(){
+  if(!styleReady || map.getSource("outline")) return;
+  map.addSource("outline", {type:"geojson", data:EMPTY});
+  map.addSource("hwm", {type:"geojson", data:EMPTY});
+  map.addLayer({id:"outline-fill", type:"fill", source:"outline",
+    paint:{"fill-color":css("--accent"), "fill-opacity":0.06}}, "labels");
+  map.addLayer({id:"outline-line", type:"line", source:"outline",
+    layout:{"line-join":"round"},
+    paint:{"line-color":css("--accent"), "line-width":2.2, "line-opacity":0.95}}, "labels");
+  map.addLayer({id:"hwm", type:"circle", source:"hwm", paint:{
+    "circle-radius":["get","r"],
+    "circle-color":["get","fill"],
+    "circle-opacity":["get","alpha"],
+    "circle-stroke-width":["get","sw"],
+    "circle-stroke-color":["get","stroke"],
+  }}, "labels");
+  map.on("mousemove", "hwm", (e) => {
+    map.getCanvas().style.cursor = "pointer";
+    tip.setLngLat(e.features[0].geometry.coordinates).setHTML(e.features[0].properties.html).addTo(map);
+  });
+  map.on("mouseleave", "hwm", () => { map.getCanvas().style.cursor = ""; tip.remove(); });
 }
 
 function updatePanel(wet, maxd, mult){
@@ -671,7 +805,11 @@ function bestFit(){
 }
 
 /* ---------------- wiring ---------------- */
-map.on("click", e => pick(e.latlng.lng, e.latlng.lat, null));
+// A click on a mark opens its readout; only empty map picks a watershed.
+map.on("click", e => {
+  if(map.getLayer("hwm") && map.queryRenderedFeatures(e.point, {layers:["hwm"]}).length) return;
+  pick(e.lngLat.lng, e.lngLat.lat, null);
+});
 $("run").addEventListener("click", run);
 $("fit").addEventListener("click", () => {
   const b = bestFit();
@@ -708,7 +846,7 @@ function chip(id, on){
   el.addEventListener("click", (ev)=>{ ev.preventDefault();
     box.checked=!box.checked; el.classList.toggle("on",box.checked); on(box.checked); });
 }
-chip("c-bnd", v => v ? boundaries.addTo(map) : map.removeLayer(boundaries));
+chip("c-bnd", v => whenReady(() => map.setLayoutProperty("wbd","visibility", v?"visible":"none")));
 chip("c-hwm", () => { if(bundle&&hand) repaint(); });
 chip("c-q", () => { if(bundle&&hand) repaint(); });
 chip("c-hi", () => {});
@@ -730,14 +868,14 @@ async function search(){
   status('<span class="spin"></span>Geocoding…');
   try{
     const g=await api(`/api/geocode?q=${encodeURIComponent(text)}`);
-    map.setView([g.lat,g.lon], 11);
+    // No pre-positioning: showUnit's fitBounds already flies there, and MapLibre's
+    // fitBounds defaults to a flyTo curve, which handles globe-to-street in one move.
     await pick(g.lon,g.lat,g.label);
   }catch(e){ status("Could not find that: "+e.message,"bad"); }
 }
 $("go").addEventListener("click", search);
 $("q").addEventListener("keydown", e => { if(e.key==="Enter"){ e.preventDefault(); search(); } });
-new ResizeObserver(()=>map.invalidateSize()).observe($("map"));
-requestAnimationFrame(()=>map.invalidateSize());
+new ResizeObserver(()=>map.resize()).observe($("map"));
 })();
 </script>
 </body>
