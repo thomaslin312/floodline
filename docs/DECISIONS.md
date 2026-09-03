@@ -973,3 +973,34 @@ the ramp's sixth stop, which it had been missing.
 Rejected: a per-watershed percentile stretch. It would make every basin look equally
 flooded and destroy comparability between them, which is most of the point of a national
 interface. The scale stays absolute — a given depth is the same colour everywhere.
+
+## 2026-09-05 — map UI rebuilt as floating glass instruments
+
+The chrome was functional but generic: a native `<select>`, a browser-default range
+input, stat figures in a card inside a card, and Leaflet's stock zoom bar. Reworked
+around one token set — teal-biased neutrals, a single accent (#0a7d8c light / #3ecad8
+dark) held clear of the blue depth ramp, semantic good/warn/bad kept separate from the
+accent — and one radius, hairline and shadow scale applied to panels, tooltips, zoom
+control and attribution alike.
+
+Substantive changes, not just paint:
+
+- The `<select>` became a segmented control. Three fixed choices are all worth showing
+  at once, and it renders identically across platforms, which a native select does not.
+  A hidden `input#lvl` keeps `$("lvl").value` working, so no call site changed.
+- The range input got a real track and thumb. WebKit has no `::-moz-range-progress`
+  equivalent, so the filled proportion is handed to CSS as `--pct` from `syncSlider()`,
+  called by `repaint()` (which already runs on both input and load) and `clearModel()`.
+- Stat figures moved from a boxed grid to ruled rows. Border, fill, radius and shadow
+  each say "separate object"; spending all four on six numbers flattened the hierarchy
+  the numbers should carry themselves.
+- `--on-accent` added. The dark accent is a bright cyan, and the white button text
+  carried over from the light theme failed contrast against it.
+- The high-water-mark key gained its middle class (1-3 m out). The legend named only
+  the best and worst bands while the map drew three.
+
+## 2026-09-05 — the discharge unit is no longer uppercased
+
+`.qunit` carried `text-transform:uppercase`, which rendered `m3/s` as `M3/S`. SI symbols
+are case-sensitive and the capitals are a different quantity. Removed. The uppercase
+treatment stays on the eyebrow and column labels, which are words rather than units.
