@@ -44,10 +44,12 @@ __all__ = [
     "load_curves",
 ]
 
-# Resolution of the precomputed curve lookup. Five millimetres is two orders of
-# magnitude below the DEM's own vertical error, so the discretisation it introduces
-# is not measurable in any output.
-LOOKUP_STEP_M = 0.005
+# The lookup grid is the union of every curve's own breakpoints, not a uniform ladder.
+# A uniform grid cuts the corner at any kink that does not land on it: the bundled
+# curves break at 0.5 m and land on a 5 mm grid exactly, but the USACE curves break at
+# whole feet and did not, which made the "fast" path disagree with the direct one by
+# 6.5e-8 of the total. Interpolating between the breakpoints themselves is exact for
+# every piecewise-linear curve, and the grid is ~25 points rather than ~1,700.
 
 # Depth in metres above finished floor level. The 0/0.5/1/1.5/2/3/4/5/6 ladder is the
 # one the JRC database publishes on, so a transcribed table drops straight in.
@@ -160,7 +162,7 @@ class CurveLookup:
     """
 
     depths_m: npt.NDArray[np.float64]
-    """The common grid, evenly spaced by `LOOKUP_STEP_M`."""
+    """The common grid: every breakpoint of every curve in the set, ascending."""
 
     table: npt.NDArray[np.float64]
     """Damage fraction, one row per curve, one column per grid depth."""
@@ -203,14 +205,13 @@ class CurveLookup:
         # holds its last -- the same rule np.interp applies, and the same rule the
         # max_curve_depth_m cap already imposed at the top end.
         clipped = np.clip(depths, first, last)
-        # Interpolate between grid columns rather than snapping to the nearest. Snapping
-        # would leave up to half a grid step of error, which on the steepest published
-        # curve is ~2.4e-3 of value -- small, but it would make this path an
-        # approximation of the direct one rather than an equivalent of it.
-        position = (clipped - first) / LOOKUP_STEP_M
-        left = np.floor(position).astype(np.int64)
+        # The grid is not evenly spaced, so find the bracketing pair by search rather
+        # than by arithmetic. Every curve is piecewise linear with breakpoints in this
+        # grid, so interpolating between them reproduces the direct path exactly.
+        left = np.searchsorted(self.depths_m, clipped, side="right") - 1
         np.clip(left, 0, self.table.shape[1] - 2, out=left)
-        weight = position - left
+        span = self.depths_m[left + 1] - self.depths_m[left]
+        weight = np.where(span > 0, (clipped - self.depths_m[left]) / span, 0.0)
         low = self.table[class_index, left]
         high = self.table[class_index, left + 1]
         out = low + (high - low) * weight
@@ -261,8 +262,16 @@ class CurveSet:
                 f"max_curve_depth_m {highest:g} is at or below the lowest curve point "
                 f"{lowest:g}, so the lookup grid would be empty"
             )
-        n = int(np.ceil((highest - lowest) / LOOKUP_STEP_M)) + 1
-        grid = lowest + np.arange(n, dtype=np.float64) * LOOKUP_STEP_M
+        breakpoints = {float(highest)}
+        for curve in self.curves.values():
+            breakpoints.update(float(d) for d in curve.depths_m if lowest <= d <= highest)
+        grid = np.array(sorted(breakpoints), dtype=np.float64)
+        n = grid.size
+        if n < 2:
+            raise ValueError(
+                f"the curves share only {n} breakpoint(s) at or below max_curve_depth_m "
+                f"{highest:g}, which is not enough to interpolate between"
+            )
         names = sorted(self.curves)
         table = np.empty((len(names), n), dtype=np.float64)
         for row, name in enumerate(names):

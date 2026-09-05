@@ -1752,3 +1752,32 @@ keeps its value; only "no water at all" is unknown. The interval became 18 to 21
 Rejected: sampling dry buildings from a distribution of plausible margins. There is no
 information in the raster to fit one to, and inventing a spread would put the same
 fiction behind a wider number.
+
+## 2026-09-06 — the curve lookup grid is the curves' own breakpoints
+
+The precomputed lookup resampled every curve onto a uniform 5 mm grid, and the
+docstring and its test both said the result matched direct interpolation exactly. It
+did not. A piecewise-linear curve is only reproduced by a grid that contains its
+kinks: between the two grid columns straddling a breakpoint, the lookup interpolates
+straight across the corner. The bundled curves break at half metres and land on a 5 mm
+grid exactly, so the test could never see it. The published USACE curves break at
+whole feet, and 0.3048 is not a multiple of 0.005 — over Whiteoak Bayou that cost
+6.5e-8 of the total, 1,681 buildings of 5,000 differing, worst case USD 140.
+
+Immaterial next to curves published to two significant figures. But the claim of
+exactness was load-bearing: the Monte Carlo takes the fast path and the point estimate
+does not, so any difference between them shows up as the two disagreeing about the
+same watershed, and the first place to look would have been the physics.
+
+The grid is now the sorted union of every curve's breakpoints, clipped to
+`max_curve_depth_m`. Interpolating between them is exact for every curve in the set by
+construction. Uniform spacing was the only thing arithmetic indexing bought, so
+`fraction` uses `searchsorted`; the grid also fell from ~1,700 columns to 29, and a
+draw over 250,000 buildings still costs 107 ms. Exact, smaller, and no slower.
+
+Rejected: keeping the uniform grid and documenting a bound. The bound would have had
+to be restated for every curve library anyone loaded, and a stated tolerance invites
+the reader to assume it was measured on their curves. It was not.
+
+The regression test now builds a curve breaking at whole feet and asserts equality to
+1e-12. Against the old implementation it fails by 5.9e-4.

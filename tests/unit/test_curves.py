@@ -153,8 +153,44 @@ def test_lookup_matches_direct_interpolation() -> None:
     classes = np.array(["residential", "commercial", "industrial", "other"] * 100, dtype=object)
     direct = curves.damage_fraction(depths, classes)
     fast = table.fraction(depths, table.indices_for(classes))
-    # The lookup interpolates between grid columns, so this is equality, not closeness.
+    # The grid is the curves' own breakpoints, so this is equality, not closeness.
     np.testing.assert_allclose(direct, fast, atol=1e-12)
+
+
+def test_lookup_is_exact_for_breakpoints_off_a_round_grid() -> None:
+    """Curves whose kinks fall between round depths are the case a uniform grid got wrong.
+
+    The bundled curves break at half metres, which any sane uniform grid lands on
+    exactly, so they cannot detect a grid that cuts corners. The published USACE
+    curves break at whole feet, and against a 5 mm grid that silently cost 6.5e-8 of
+    a study-area total. Breakpoints here are deliberately irrational-ish.
+    """
+    step = 0.3048  # one foot, the spacing the real USACE tables use
+    depths = np.arange(-1, 6, dtype=np.float64) * step
+    curves = CurveSet(
+        family=CurveFamily.USACE,
+        curves={
+            "residential": DamageCurve(
+                family=CurveFamily.USACE,
+                building_class="residential",
+                depths_m=tuple(float(d) for d in depths),
+                # Sharp kinks: a corner-cutting grid shows up as a shortfall at each.
+                fractions=(0.0, 0.0, 0.6, 0.65, 0.67, 0.9, 0.95),
+                provenance="test",
+                verified=False,
+            )
+        },
+        default_class="residential",
+    )
+    table = curves.lookup()
+    # Sample densely and off-grid, so any straddled kink is hit from both sides.
+    probes = np.linspace(depths[0] - 0.5, depths[-1] + 0.5, 5_000)
+    classes = np.full(probes.size, "residential", dtype=object)
+    direct = curves.damage_fraction(probes, classes)
+    fast = table.fraction(probes, table.indices_for(classes))
+    np.testing.assert_allclose(direct, fast, atol=1e-12)
+    # And the breakpoints themselves are columns, not values the grid had to land near.
+    assert np.isin(depths, table.depths_m).all()
 
 
 def test_lookup_sends_unknown_classes_to_the_default_row() -> None:

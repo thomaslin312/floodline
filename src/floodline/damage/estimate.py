@@ -143,8 +143,9 @@ def estimate_damage(
 
         Purely an optimisation: the Monte Carlo builds these once rather than
         re-grouping by class on every draw, which took draw cost over a quarter of a
-        million buildings from 285 ms to about 20 ms. The lookup interpolates between
-        grid columns, so results match the direct path exactly.
+        million buildings from 285 ms to about 20 ms. Its grid is the union of the
+        curves' own breakpoints, so interpolating between columns reproduces the
+        direct path exactly rather than approximately.
 
     Returns
     -------
