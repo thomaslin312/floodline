@@ -168,6 +168,10 @@ class CurveLookup:
     index_of: dict[str, int]
     default_index: int
 
+    sigma: npt.NDArray[np.float64] | None = None
+    """Standard deviation of the curve at each grid depth, same shape as `table`.
+    Present only where the source publishes it, which currently means USACE."""
+
     def indices_for(self, building_class: npt.ArrayLike) -> npt.NDArray[np.int64]:
         """Map class names to rows once, so draws can reuse the result."""
         classes = np.asarray(building_class, dtype=object)
@@ -177,9 +181,21 @@ class CurveLookup:
         return out
 
     def fraction(
-        self, depth_m: npt.ArrayLike, class_index: npt.NDArray[np.int64]
+        self,
+        depth_m: npt.ArrayLike,
+        class_index: npt.NDArray[np.int64],
+        *,
+        sigma_z: float = 0.0,
     ) -> npt.NDArray[np.float64]:
-        """Return the damage fraction for each (depth, curve-row) pair."""
+        """Return the damage fraction for each (depth, curve-row) pair.
+
+        `sigma_z` shifts every curve by that many standard deviations, for sampling
+        the published uncertainty of the curves themselves. One value for the whole
+        call, not one per building: the spread is uncertainty about where the curve
+        sits, and drawing it independently per building would average to nothing
+        across a quarter of a million of them, which would understate the term rather
+        than model it.
+        """
         depths = np.asarray(depth_m, dtype=np.float64)
         first = self.depths_m[0]
         last = self.depths_m[-1]
@@ -197,7 +213,13 @@ class CurveLookup:
         weight = position - left
         low = self.table[class_index, left]
         high = self.table[class_index, left + 1]
-        return np.asarray(low + (high - low) * weight, dtype=np.float64)
+        out = low + (high - low) * weight
+        if sigma_z and self.sigma is not None:
+            spread_low = self.sigma[class_index, left]
+            spread_high = self.sigma[class_index, left + 1]
+            out = out + sigma_z * (spread_low + (spread_high - spread_low) * weight)
+            np.clip(out, 0.0, 1.0, out=out)
+        return np.asarray(out, dtype=np.float64)
 
 
 @dataclass(frozen=True, slots=True)
@@ -219,8 +241,18 @@ class CurveSet:
             return self.curves[building_class]
         return self.curves[self.default_class]
 
-    def lookup(self, *, config: Config | DamageConfig | None = None) -> CurveLookup:
-        """Resample every curve onto one grid, for repeated evaluation."""
+    def lookup(
+        self,
+        *,
+        config: Config | DamageConfig | None = None,
+        sigma_by_class: dict[str, tuple[float, ...]] | None = None,
+    ) -> CurveLookup:
+        """Resample every curve onto one grid, for repeated evaluation.
+
+        `sigma_by_class` carries the published standard deviation at each of the
+        curve's own points; it is resampled onto the same grid so a draw can shift
+        the curve without rebuilding the table.
+        """
         damage = _resolve(config)
         lowest = min(curve.depths_m[0] for curve in self.curves.values())
         highest = damage.max_curve_depth_m
@@ -236,11 +268,26 @@ class CurveSet:
         for row, name in enumerate(names):
             table[row] = self.curves[name].damage_fraction(grid, config=damage)
         index_of = {name: row for row, name in enumerate(names)}
+
+        spread: npt.NDArray[np.float64] | None = None
+        if sigma_by_class:
+            spread = np.zeros_like(table)
+            for row, name in enumerate(names):
+                values = sigma_by_class.get(name)
+                curve = self.curves[name]
+                if values and len(values) == len(curve.depths_m):
+                    spread[row] = np.interp(
+                        grid,
+                        np.asarray(curve.depths_m, dtype=np.float64),
+                        np.asarray(values, dtype=np.float64),
+                    )
+
         return CurveLookup(
             depths_m=grid,
             table=table,
             index_of=index_of,
             default_index=index_of[self.default_class],
+            sigma=spread,
         )
 
     def damage_fraction(

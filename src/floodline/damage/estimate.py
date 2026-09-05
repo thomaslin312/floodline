@@ -78,6 +78,7 @@ def estimate_damage(
     contents_lookup: CurveLookup | None = None,
     class_index: npt.NDArray[np.int64] | None = None,
     contents_index: npt.NDArray[np.int64] | None = None,
+    curve_sigma_z: float = 0.0,
 ) -> DamageEstimate:
     """Estimate direct damage for a set of buildings.
 
@@ -139,7 +140,7 @@ def estimate_damage(
         )
 
     if lookup is not None and class_index is not None:
-        fraction = lookup.fraction(depths, class_index)
+        fraction = lookup.fraction(depths, class_index, sigma_z=curve_sigma_z)
     else:
         fraction = curve_set.damage_fraction(depths, classes, config=damage_config)
     if structure_value is None:
@@ -170,7 +171,9 @@ def estimate_damage(
                 f"contents_value shape {contents.shape} does not match depth {depths.shape}"
             )
         if contents_lookup is not None and contents_index is not None:
-            contents_fraction = contents_lookup.fraction(depths, contents_index) * reach
+            contents_fraction = (
+                contents_lookup.fraction(depths, contents_index, sigma_z=curve_sigma_z) * reach
+            )
         else:
             contents_fraction = (
                 contents_curves.damage_fraction(depths, classes, config=damage_config) * reach

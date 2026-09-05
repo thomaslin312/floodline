@@ -262,3 +262,52 @@ def test_without_a_margin_dry_buildings_are_held_dry_and_flagged() -> None:
 def test_margin_shape_must_match() -> None:
     with pytest.raises(ValueError, match="floor_margin_m shape"):
         monte_carlo_damage(DRY_AND_WET, AREAS, CLASSES, storeys=STOREYS, floor_margin_m=np.zeros(2))
+
+
+# --- the published curve spread, which the interval used to omit entirely ---
+
+SIGMA = {
+    "residential": (0.0, 0.05, 0.05, 0.05, 0.05, 0.05, 0.05, 0.05, 0.05),
+    "commercial": (0.0, 0.05, 0.05, 0.05, 0.05, 0.05, 0.05, 0.05, 0.05),
+}
+
+
+def test_a_sigma_draw_shifts_the_curve() -> None:
+    curves = bundled_curves(CurveFamily.HAZUS)
+    table = curves.lookup(sigma_by_class=SIGMA)
+    rows = table.indices_for(np.array(["residential"], dtype=object))
+    base = table.fraction([1.0], rows)[0]
+    up = table.fraction([1.0], rows, sigma_z=1.0)[0]
+    down = table.fraction([1.0], rows, sigma_z=-1.0)[0]
+    assert up > base > down
+    assert up - base == pytest.approx(0.05, abs=1e-6)
+
+
+def test_a_sigma_draw_cannot_push_damage_outside_the_unit_interval() -> None:
+    curves = bundled_curves(CurveFamily.JRC_OCEANIA)
+    table = curves.lookup(sigma_by_class={"residential": (0.9,) * 9})
+    rows = table.indices_for(np.array(["residential"], dtype=object))
+    assert table.fraction([6.0], rows, sigma_z=5.0)[0] <= 1.0
+    assert table.fraction([0.6], rows, sigma_z=-5.0)[0] >= 0.0
+
+
+def test_without_sigma_the_draw_does_nothing() -> None:
+    table = bundled_curves(CurveFamily.HAZUS).lookup()
+    rows = table.indices_for(np.array(["residential"], dtype=object))
+    assert table.sigma is None
+    assert table.fraction([1.0], rows, sigma_z=3.0)[0] == table.fraction([1.0], rows)[0]
+
+
+def test_curve_spread_widens_the_interval() -> None:
+    """With one library there is no family term, so this is the only curve
+    uncertainty there is. Omitting it made the band narrower than it should be."""
+    args = (np.full(3, 1.0), AREAS, CLASSES)
+    single = {"curves": bundled_curves(CurveFamily.HAZUS)}
+    quiet = MonteCarloConfig(
+        n_samples=400, seed=5, stage_sigma_m=0.01, dem_sigma_m=0.01, cost_sigma_frac=1e-9
+    )
+    without = monte_carlo_damage(*args, storeys=STOREYS, monte_carlo=quiet, **single)
+    with_spread = monte_carlo_damage(
+        *args, storeys=STOREYS, monte_carlo=quiet, curve_sigma=SIGMA, **single
+    )
+    assert (with_spread.upper - with_spread.lower) > (without.upper - without.lower)

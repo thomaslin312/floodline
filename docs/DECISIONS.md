@@ -1518,3 +1518,32 @@ cannot tell you those pixels are the wrong colour in the wrong place. The new te
 narrower and better for it - one asserts the bounds land in Houston's Web Mercator
 range rather than merely being four floats, one asserts undamaged ground is
 transparent.
+
+## 2026-09-06 — the curve's own uncertainty was loaded and never sampled
+
+`load_usace_curves` reads a standard deviation at every point of every curve, and
+`UsaceCurves.sigma` has carried it since the loader was written. Nothing used it. The
+module docstring meanwhile claimed it let "the Monte Carlo sample the published
+uncertainty of the curve itself rather than approximating it by switching families".
+
+That was worse than an unused field. With the USACE library, family sampling is
+deliberately off - there is one published library, not an ensemble of competing
+approximations - so with the sigma unwired, **curve uncertainty was absent from the
+interval altogether**. The band covered gauge stage, DEM error and cost, and nothing
+about the function turning depth into damage.
+
+Now sampled: `CurveLookup` carries the spread resampled onto its own grid, and each
+draw shifts every curve by one standard normal. One draw per sample, not one per
+building: the published spread is uncertainty about where the curve sits, and drawing
+it independently per structure would average to nothing across 256,436 of them, which
+would model the term away rather than model it. Clipped into [0, 1] so a draw cannot
+invent damage above total loss.
+
+Measured on Whiteoak Bayou, 300 draws over 256,436 structures: the interval widens from
+USD 30.82 bn to USD 32.60 bn, **+6%**. Small, and it was the difference between an
+interval that accounted for the curve and one that silently did not.
+
+Also made explicit rather than silent: NSI publishes a vehicle value for every
+structure and the USACE library has no vehicle function, so that exposure is collected
+and left unpriced. It is now named in the report's limits and in the module docstring
+instead of just being a column nothing reads.

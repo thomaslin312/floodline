@@ -9,7 +9,9 @@ buildings, ranging from 0.66x to 2.08x per structure.
 NSI is the fix. Roughly 120 million US structures, free and keyless, each carrying:
 
 * `val_struct`, `val_cont`, `val_vehic` - replacement value, separately for the
-  building, its contents and vehicles. Contents are worth about as much again as the
+  building, its contents and vehicles. Vehicles are carried and not priced: the USACE
+  curve library has structure and contents functions and no vehicle function, so
+  pricing them would mean inventing a curve. Contents are worth about as much again as the
   structure, so a model without them is not conservative, it is half a model.
 * `occtype` - a HAZUS occupancy code, the same vocabulary that keys the USACE curve
   library. Inventory and curve join natively; that pairing is the reason to prefer

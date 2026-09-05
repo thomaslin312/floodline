@@ -404,6 +404,9 @@ def assess_watershed(
                 floor_margin_m=frame["floor_margin_m"].to_numpy(),
                 monte_carlo=mc,
                 damage=config.damage,
+                # The published per-depth spread on each curve. With one library there
+                # is no family term, so this is the only curve uncertainty in the band.
+                curve_sigma=damage_curves.sigma if damage_curves is not None else None,
                 **extra,
             )
             timings["damage"] = time.perf_counter() - started

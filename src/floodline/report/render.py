@@ -98,6 +98,11 @@ def _limits(result: Assessment, currency: str) -> list[str]:
         )
     if result.inventory == "nsi":
         out.append(
+            "Vehicles are not priced. NSI carries a vehicle value for every structure "
+            "and the USACE curve library has no vehicle function, so that exposure is "
+            "collected and left out rather than guessed at."
+        )
+        out.append(
             "Structure values are NSI's modelled replacement costs, derived from "
             "occupancy type, area and regional construction costs. They are sound "
             "summed over tens of thousands of buildings and not sound for any one."

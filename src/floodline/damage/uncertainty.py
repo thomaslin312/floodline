@@ -8,9 +8,14 @@ Each draw perturbs the inputs and re-runs the deterministic estimate:
 * **DEM** (`dem_sigma_m`) - vertical error in the terrain, and so in HAND. Applied
   per building and independently, because lidar error decorrelates over tens of
   metres, so it largely averages out across a basin and mostly widens the tails.
-* **Curve family** (`curve_family_weights`) - which published family is right. This
-  is the largest single contributor at depth, because the families disagree about
-  where a curve saturates far more than a gauge disagrees with itself.
+* **The curve** - two ways, depending on what is loaded. With the bundled
+  approximations it is `curve_family_weights`: which published family is right, the
+  largest single term at depth because families disagree about where a curve saturates
+  far more than a gauge disagrees with itself. With the USACE library there is one
+  library rather than an ensemble, so family sampling is off and the curve's own
+  published standard deviation is sampled instead - one draw for the whole curve, since
+  the spread is uncertainty about where the curve sits and drawing it per building
+  would average away across a quarter of a million of them.
 * **Cost** (`cost_sigma_frac`) - the replacement rate. Log-normal, so a draw cannot
   make rebuilding free, and applied as one scalar per draw because construction
   costs move together across a region.
@@ -104,6 +109,7 @@ def monte_carlo_damage(
     contents_value: npt.ArrayLike | None = None,
     contents_curves: CurveSet | None = None,
     curves: CurveSet | None = None,
+    curve_sigma: dict[str, tuple[float, ...]] | None = None,
     config: Config | None = None,
     monte_carlo: MonteCarloConfig | None = None,
     damage: DamageConfig | None = None,
@@ -126,6 +132,10 @@ def monte_carlo_damage(
     curve_sets
         Curve sets by family, for when transcribed tables have been loaded. Missing
         families fall back to the bundled constants.
+    curve_sigma
+        Published per-depth standard deviation of each curve, keyed by class. Supplying
+        it is what puts curve uncertainty into the interval when a single library has
+        turned family sampling off; without it that term is simply absent.
     curves
         A single curve set used for every draw, which turns family sampling off. That
         is the right mode for the published USACE library: there is one library, not
@@ -180,9 +190,14 @@ def monte_carlo_damage(
     # Curves and classes are fixed across draws, so the per-class grouping and the
     # interpolation grid are built once rather than 500 times.
     lookups: dict[CurveFamily, CurveLookup] = {
-        family: curve_set.lookup(config=damage_config) for family, curve_set in sets.items()
+        family: curve_set.lookup(config=damage_config, sigma_by_class=curve_sigma)
+        for family, curve_set in sets.items()
     }
-    contents_lookup = contents_curves.lookup(config=damage_config) if contents_curves else None
+    contents_lookup = (
+        contents_curves.lookup(config=damage_config, sigma_by_class=curve_sigma)
+        if contents_curves
+        else None
+    )
     # One index array per curve set: rows are numbered by sorted class name, and the
     # sets do not always hold the same classes.
     indices = {family: table.indices_for(classes) for family, table in lookups.items()}
@@ -196,6 +211,9 @@ def monte_carlo_damage(
     # Log-normal keeps cost positive; sigma is set so the multiplier's spread matches
     # cost_sigma_frac for the small fractions this is used with.
     cost_scale = rng.lognormal(0.0, mc.cost_sigma_frac, size=mc.n_samples)
+    # One curve draw per sample, applied to every building in it. Zero where the
+    # source publishes no spread, which is every bundled family.
+    curve_z = rng.normal(0.0, 1.0, size=mc.n_samples)
 
     totals = np.empty(mc.n_samples, dtype=np.float64)
     inundated = np.empty(mc.n_samples, dtype=np.int64)
@@ -218,6 +236,7 @@ def monte_carlo_damage(
             contents_value=contents_value,
             contents_curves=contents_curves,
             cost_scale=float(cost_scale[i]),
+            curve_sigma_z=float(curve_z[i]),
             cap_storeys=cap_storeys,
             lookup=lookups[family],
             contents_lookup=contents_lookup,
