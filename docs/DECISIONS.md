@@ -1819,3 +1819,40 @@ labelling one point on it.
 Supersedes the two-channel note in *rasterise onto the display grid* above: the damage
 image carries four channels, one per reference discharge, not damage and count. The
 count is served with the per-building detail instead.
+
+## 2026-09-06 — an ungauged basin says so before the work, not after it
+
+Selecting a watershed with no USGS gauge used to look exactly like selecting one with
+a gauge. The depth map ran — `compute_watershed` stands in a severe-flood scenario so
+there is something to draw — and the discharge was labelled *estimated*, but nothing
+said what that cost. "Value the buildings this reaches" stayed live, and clicking it
+routed terrain for a couple of minutes before the server refused, which it does on
+purpose: a building count and a currency total read as measurements however they are
+captioned, and running an assumed discharge through a structure inventory produces a
+precise-looking number with nothing behind it.
+
+Two warnings now, at the two moments the reader can act on one.
+
+After compute the button is disabled with the reason beside it, derived from
+`bundle.gauged`, which is certain. `runExposure`'s `finally` re-derives the state
+instead of unconditionally re-enabling, or a completed run on one watershed would
+un-gate the next.
+
+Before compute is the harder one, because gauge selection needs the routed stream
+network — a site has to snap to a reach within 40 cells and carry a peak record — and
+that is the expensive thing we are trying to avoid. But `find_gauges` is a plain bbox
+query against the NWIS site service, and the bounding box contains the polygon, so
+**zero sites in the box proves there is no gauge in the watershed**. One cheap call,
+no DEM, no routing. `/api/watershed` now carries `gauges_in_bbox` and the page warns
+at click time when it is 0.
+
+One-sided, like the NFIP comparison and for the same reason: a non-zero count is not
+a promise, since those sites still have to survive snapping. The reassuring direction
+is left unsaid rather than said and later withdrawn. A failed lookup returns `None`,
+not `0` — a network error is not evidence of absence, and withholding exposure on the
+strength of one would be the same mistake in the other direction.
+
+Rejected: exposing a `discharge` parameter on `/api/exposure` so an ungauged basin
+could be priced as an explicit scenario. The CLI already allows exactly that, and the
+error message points at it. On a map it would be a number typed into a box and then
+screenshotted without the box.

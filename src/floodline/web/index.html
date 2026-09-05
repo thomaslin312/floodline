@@ -580,10 +580,25 @@ function showUnit(label){
   // 30 m stays the default. 10 m was tried as the default and measured worse against
   // surveyed marks as well as four times slower, so the finer grid is offered rather
   // than assumed.
-  status(unit.too_big_at_10m
-    ? `${(c/1e6).toFixed(0)}M cells at 10 m — too large for one pass, so this runs at 30 m.`
-    : `Ready. 30 m by default; 10 m is ${(c/1e6).toFixed(1)}M cells and slower.`,
-    unit.too_big_at_10m ? "warn" : null);
+  /* Warn before the work, not after it. `gauges_in_bbox` is a bbox query against the
+     NWIS site service, so zero of them proves there is no gauge in this watershed -
+     the box contains the polygon. That is worth saying now, because the alternative
+     is routing terrain for a couple of minutes to reach the same conclusion.
+
+     One-sided on purpose: a non-zero count is not a promise. A site still has to snap
+     to our stream network and carry a peak record before it can drive the model, so
+     the reassuring direction is left unsaid rather than said and later withdrawn.
+     `null` means the lookup failed, which is not evidence of absence either. */
+  if(unit.gauges_in_bbox === 0){
+    status(`No USGS discharge gauge in this basin. The depth map will run from an `
+      + `assumed severe-flood scenario, and exposure and damage will not — pricing `
+      + `buildings needs a measured discharge.`, "warn");
+  } else {
+    status(unit.too_big_at_10m
+      ? `${(c/1e6).toFixed(0)}M cells at 10 m — too large for one pass, so this runs at 30 m.`
+      : `Ready. 30 m by default; 10 m is ${(c/1e6).toFixed(1)}M cells and slower.`,
+      unit.too_big_at_10m ? "warn" : null);
+  }
 }
 
 /* ---------------- compute ---------------- */
@@ -626,6 +641,7 @@ async function load(){
   for(let p=0;p<t.w*t.h;p++) lut[p]=t.d[p*4];
   $("model").hidden=false;
   $("exposure").hidden = false;
+  gateExposure();
   if(bundle.gauge){
     const g=bundle.gauge;
     const el=document.createElement("div"); el.className="gauge-dot";
@@ -1091,6 +1107,35 @@ function showExposure(){
   paintDamage();
 }
 
+/* Exposure and damage need a measured discharge; the depth map does not. With no
+   gauge in the basin the model stands in a severe-flood scenario so there is still
+   something to draw, and that is defensible for a picture of where water goes. It is
+   not defensible for "33,279 buildings, USD 7.95 bn": a building count and a currency
+   total read as measurements however they are labelled, and multiplying an assumed
+   discharge through a structure inventory produces a precise-looking number with
+   nothing behind it. The server refuses for that reason.
+
+   It refuses *after* routing the terrain, though, which is the expensive part - so
+   leaving the button live would spend a couple of minutes to arrive at a certainty.
+   Disable it up front and say why. `title` carries the reason to a pointer, the note
+   carries it to everyone else, and `aria-disabled` keeps it announced rather than
+   skipped, because a control that vanished would leave the reader wondering whether
+   the feature exists at all. */
+function gateExposure(){
+  const btn = $("expo-run"), note = $("expo-note");
+  const ok = !!bundle.gauged;
+  btn.disabled = !ok;
+  btn.setAttribute("aria-disabled", String(!ok));
+  btn.title = ok ? "" : "Needs an observed discharge; this basin has no USGS gauge.";
+  if(ok){ note.innerHTML = ""; return; }
+  note.innerHTML = `<b style="color:var(--warn)">No gauge in this basin.</b> The depth `
+    + `above comes from an assumed severe-flood scenario, not a measurement, so there `
+    + `is no observed discharge to price. Exposure and damage are withheld rather than `
+    + `computed from an assumption — a building count and a dollar total read as `
+    + `measurements whatever the caption says. The depth map, the marks and the `
+    + `discharge slider all still work.`;
+}
+
 let expoBusy = false;
 async function runExposure(){
   if(!unit || expoBusy) return;
@@ -1115,7 +1160,12 @@ async function runExposure(){
   }catch(e){
     clearInterval(tick);
     $("expo-note").innerHTML = `<span style="color:var(--bad)">Exposure failed: ${e.message}</span>`;
-  }finally{ expoBusy = false; btn.disabled = false; }
+  }finally{
+    expoBusy = false;
+    // Not `btn.disabled = false`: on a basin with no gauge the button was disabled
+    // before the run and must stay that way. Re-derive it from the bundle instead.
+    if(bundle && bundle.gauged) btn.disabled = false;
+  }
 }
 
 /* ---------------- first-run tour ---------------- */

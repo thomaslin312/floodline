@@ -36,9 +36,10 @@ from floodline.compute import (
     geometry_wgs84,
     watershed_by_huc,
     watershed_for_point,
+    wgs84_bounds,
 )
 from floodline.config import Config
-from floodline.io.sources import SourceError, make_client
+from floodline.io.sources import FetchContext, SourceError, find_gauges, make_client
 from floodline.report.exposure_bundle import build_exposure_bundle
 
 __all__ = ["create_app"]
@@ -227,9 +228,11 @@ def create_app(
         try:
             with client() as http:
                 unit, local = watershed_for_point(lon, lat, level=level, config=base, client=http)
+                # Inside the `with`: the gauge lookup reuses this client, and describing
+                # the unit after it closed would mean opening a second one.
+                return _describe(unit, local, http)
         except SourceError as exc:
             raise HTTPException(404, str(exc)) from exc
-        return _describe(unit, local)
 
     @app.get("/api/watershed/{huc}")
     def watershed_by_code(huc: str) -> dict[str, Any]:
@@ -239,15 +242,41 @@ def create_app(
         try:
             with client() as http:
                 unit, local = watershed_by_huc(huc, config=base, client=http)
+                return _describe(unit, local, http)
         except WatershedNotFoundError as exc:
             raise HTTPException(404, str(exc)) from exc
         except SourceError as exc:
             raise HTTPException(502, f"upstream data source failed: {exc}") from exc
-        return _describe(unit, local)
 
-    def _describe(unit: Any, local: Config) -> dict[str, Any]:
+    def _gauges_in_bbox(unit: Any, local: Config, http: httpx.Client) -> int | None:
+        """Count NWIS discharge gauges in the unit's bounding box, or None if unknown.
+
+        A one-sided test, and cheap: a bbox query against the NWIS site service, no
+        terrain and no DEM. Zero sites in the box proves there is no gauge in the
+        watershed, because the box contains the polygon - which is worth knowing
+        before someone spends two minutes routing terrain to be told the same thing.
+
+        A non-zero count proves nothing. `gauge_for_watershed` additionally requires a
+        site to snap to our own stream network within 40 cells and to carry a peak
+        record, so some of these will not survive. Only the zero case is reported as
+        certain; the rest is left for the model to settle.
+
+        None means the lookup itself failed. That is not evidence of absence and must
+        not be shown as one, so the caller stays quiet.
+        """
+        try:
+            context = FetchContext(config=local, dest=cache, client=http)
+            return len(find_gauges(context, wgs84_bounds(unit, local)))
+        except (SourceError, httpx.HTTPError, OSError):
+            return None
+
+    def _describe(unit: Any, local: Config, http: httpx.Client | None = None) -> dict[str, Any]:
         cols, rows = _grid(unit)
+        gauges = _gauges_in_bbox(unit, local, http) if http is not None else None
         return {
+            # None where the lookup failed, so the page can tell "no gauge" from
+            # "could not ask" and only warn about the first.
+            "gauges_in_bbox": gauges,
             "huc": unit.huc,
             "name": unit.name,
             "area_km2": round(unit.area_km2, 1),

@@ -234,3 +234,66 @@ def test_the_exposure_cache_is_keyed_on_the_sample_count(tmp_path: Path) -> None
     assert same == _exposure_cache_path(tmp_path, "1204010403", 30.0, 400)
     assert same != _exposure_cache_path(tmp_path, "1204010403", 10.0, 400)
     assert same != _exposure_cache_path(tmp_path, "1204010404", 30.0, 400)
+
+
+def test_a_watershed_reports_gauges_in_its_bounding_box(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Zero gauges in the box is the one answer knowable before the model runs.
+
+    The box contains the polygon, so an empty bbox query proves there is no gauge in
+    the watershed and the page can say so at click time rather than after two minutes
+    of routing terrain. A non-zero count proves nothing - a site still has to snap to
+    our stream network and carry a peak record - so only the zero is acted on.
+    """
+    monkeypatch.setattr("floodline.service.find_gauges", lambda *a, **k: [])
+    body = client.get("/api/watershed/120401040305").json()
+    assert body["gauges_in_bbox"] == 0
+
+    monkeypatch.setattr("floodline.service.find_gauges", lambda *a, **k: [{"site": "08074500"}])
+    body = client.get("/api/watershed/120401040305").json()
+    assert body["gauges_in_bbox"] == 1
+
+
+def test_a_failed_gauge_lookup_is_not_reported_as_no_gauge(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A broken NWIS call is not evidence that the basin is ungauged.
+
+    Reporting 0 here would tell the reader their watershed has no gauge and withhold
+    exposure on the strength of a network error. None says "could not ask", and the
+    page warns on 0 only.
+    """
+    from floodline.io.sources import SourceError
+
+    def broken(*args: object, **kwargs: object) -> list[dict[str, object]]:
+        raise SourceError("NWIS site service failed after 4 attempts")
+
+    monkeypatch.setattr("floodline.service.find_gauges", broken)
+    body = client.get("/api/watershed/120401040305").json()
+    assert body["gauges_in_bbox"] is None
+    # The rest of the description still arrives; the gauge count is a hint, not a gate.
+    assert body["huc"] == "120401040305"
+    assert body["geometry"]["type"] in {"Polygon", "MultiPolygon"}
+
+
+def test_exposure_on_an_ungauged_basin_is_refused_not_estimated(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The map disables its exposure button on this contract, so pin the contract.
+
+    compute_watershed stands in a severe-flood scenario when there is no gauge, which
+    is right for a picture of where water goes. Multiplying that assumption through a
+    structure inventory is not: "33,279 buildings, USD 7.95 bn" reads as a measurement
+    whatever the caption says. The server refuses, and the page must be able to tell
+    that refusal from a real outage - 422, not 502.
+    """
+    from floodline.assess import NoDischargeError
+
+    def ungauged(*args: object, **kwargs: object) -> None:
+        raise NoDischargeError("no USGS gauge inside Ox Spring Wash (160600121003)")
+
+    monkeypatch.setattr("floodline.service.assess_watershed", ungauged)
+    response = client.get("/api/exposure/160600121003")
+    assert response.status_code == 422
+    assert "no USGS gauge" in response.json()["detail"]
