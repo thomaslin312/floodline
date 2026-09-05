@@ -416,12 +416,14 @@ pysheds is an oracle for the tests only. Nothing under `src/` imports it.
 | `/api/watershed?lon=&lat=` | identify the unit under a point | < 1 s |
 | `/api/watershed/{huc}` | look one up by code | < 1 s |
 | `/api/compute/{huc}` | terrain, hydraulics, depth, marks, gauge history | 12–25 s |
-| `/api/exposure/{huc}` | structures, values, damage, Monte Carlo, damage raster | 80–200 s |
+| `/api/exposure/{huc}` | structures, values, damage curve, Monte Carlo, damage raster | 60–200 s |
 | `/api/geocode?q=` | ZIP or address to a point | < 1 s |
 | `/api/health` | cache state | — |
 
-Both compute routes cache to disk and answer instantly afterwards. `?refresh=true`
-recomputes.
+Both compute routes cache to disk and answer in about 10 ms afterwards.
+`?refresh=true` recomputes. Cold exposure is dominated by the structure inventory
+fetch; the terrain, hydraulics, damage curve and Monte Carlo together are under 30 s
+for a quarter of a million structures.
 
 ## Performance
 
