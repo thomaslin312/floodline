@@ -29,9 +29,6 @@ outputs/
 # notebooks
 .ipynb_checkpoints/
 
-# local agent/editor settings (personal, not shared)
-.claude/settings.local.json
-
 # os / editors
 .DS_Store
 .idea/
