@@ -351,6 +351,7 @@
     <button class="wide quiet" id="fit" hidden>Find the discharge the marks imply</button>
     <div class="qnote" id="fitnote" hidden></div>
     <dl class="grid" id="stats"></dl>
+    <div class="qnote" id="gridnote" hidden></div>
 
     <div id="exposure" hidden>
       <div class="eyebrow" style="margin-top:14px">Exposure and damage</div>
@@ -816,7 +817,11 @@ function updatePanel(wet, maxd, mult){
   // a reader asks "how unusual" first, and the annual peak series is already fetched.
   if (g && g.history && Math.abs(mult - 1) < 0.005) {
     const h = g.history;
-    let line = h.summary;
+    /* The summary is written once and read in two places: a terminal, where m3/s is
+       the safe spelling, and this panel, where the line beside it already says m3/s
+       with a superscript. Fixing the symbol here keeps the model's string portable
+       and the page's typography consistent. */
+    let line = h.summary.replace(/\bm3\/s\b/g, "m\u00b3/s");
     if (h.fit_saturated) {
       line += " The fitted distribution cannot place it — a century of urbanisation "
         + "upstream breaks the stationarity that fit assumes.";
@@ -863,6 +868,22 @@ function updatePanel(wet, maxd, mult){
     ["Marks", marks.length?`${hit} / ${marks.length} wet`:"none scored", marks.length?"":"na"],
     ["RMSE", rmse===null?"—":rmse.toFixed(2)+" m", cls],
   ].map(([k,v,c])=>`<div><dt>${k}</dt><dd class="${c}">${v}</dd></div>`).join("");
+
+  /* Extent, max depth and RMSE above are counted on the display grid, which is
+     block-reduced from the analysis grid so the browser can hold it. HAND reduces by
+     mean, and a block straddling the water's edge averages to a single value that is
+     either wet or dry, so partly-wet blocks are lost: on Whiteoak Bayou the map reads
+     105 km2 where the full grid gives 112. Same model, coarser ruler. The report
+     command counts on the analysis grid and is the number to quote. */
+  const note = $("gridnote"), r = bundle.reduction || 1;
+  note.hidden = r <= 1;
+  if (r > 1) {
+    const eff = r * (bundle.stats.resolution_m || 10);
+    note.innerHTML = `Counted on the ${eff} m display grid, reduced ${r}\u00d7 from the `
+      + `${bundle.stats.resolution_m || 10} m analysis grid so the page can hold it. `
+      + `Extent and RMSE are a few per cent off the full-resolution figures; `
+      + `<code>floodline report</code> counts on the analysis grid.`;
+  }
 }
 
 /* Invert the model against the marks: sweep the discharge range and report the
@@ -912,8 +933,8 @@ function bestFit(){
 /* ---------------- exposure and damage ---------------- */
 
 /* The damage image holds four channels, one per reference discharge, each log-scaled
-   damage per cell. Shipping a raster for every rung of the 33-step ladder would be ten
-   megabytes; four brackets the slider closely enough that interpolating between them
+   damage per cell. Shipping a raster for every rung of the multiplier ladder would be
+   ten megabytes; four brackets the slider closely enough that interpolating between them
    is smaller than the model's own error. So the picture is recoloured in the browser
    whenever the slider moves, exactly as the depth overlay is. */
 const DAMAGE_RAMP = [[253,227,199],[247,178,103],[239,123,69],[214,73,51],[140,28,19]];
@@ -1164,7 +1185,9 @@ const TOUR = [
       after the flood, coloured by how far the model missed them — green within a metre,
       red over three.</p>
       <p class="aside">The <b>RMSE</b> figure is the model marking its own homework
-      against those marks. On the best-validated watershed it is 1.6 m.</p>`,
+      against those marks — about 1.6 m on the best-validated watershed, counted on the
+      map's own coarsened grid. <code>floodline report</code> counts on the full grid
+      and gives a slightly different number.</p>`,
   },
   {
     title: "Price it, then change the flood",

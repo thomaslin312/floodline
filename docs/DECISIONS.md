@@ -1794,3 +1794,28 @@ answer, not the same answer computed twice.
 Keyed on samples now. Rejected: recording the count in the payload and serving it
 anyway with a warning — a caller who asks for 5,000 draws wants 5,000 draws, and the
 reason to ask is usually that the interval is about to be quoted somewhere.
+
+## 2026-09-06 — the map's extent and RMSE are display-grid numbers, and now say so
+
+The report gives Whiteoak Bayou 112.2 km² flooded and RMSE 1.26 m over 16 marks. The
+map, same watershed and same discharge, showed 105.2 km² and 1.61 m. Same model: the
+browser cannot hold ten million cells, so the overlay is block-reduced, HAND reduces
+by mean, and a block straddling the water's edge averages to one value that is either
+wet or dry. Partly-wet blocks are lost, systematically, and the marks are scored
+against the coarsened surface too.
+
+That is the right way to ship a raster to a browser. It is the wrong thing to leave
+unlabelled, because both surfaces belong to the same project and a reader who saw both
+would reasonably conclude one was broken. The panel now names the display grid, its
+reduction factor, and `floodline report` as the number to quote; the tour's RMSE line
+is qualified the same way.
+
+Rejected: computing extent and mark scores server-side at full resolution and shipping
+them alongside. It would fix the 1.00× case and break every other one — the slider
+recomputes both live from the stage table, so the honest figures would be replaced by
+approximations again the moment anyone dragged it. Labelling the ruler is better than
+labelling one point on it.
+
+Supersedes the two-channel note in *rasterise onto the display grid* above: the damage
+image carries four channels, one per reference discharge, not damage and count. The
+count is served with the per-building detail instead.
