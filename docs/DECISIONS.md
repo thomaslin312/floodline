@@ -1683,3 +1683,27 @@ the stage table and the damage ladder read one `discharge_ladder` helper, so the
 cannot drift apart about what a multiplier means.
 
 The ladder and the point estimate now agree to 0.0005%, which is float rounding.
+
+## 2026-09-06 — the cache had no schema, and served old payloads to new code
+
+Found by running the demo, not by a test. A watershed cached before the damage ladder
+existed was still being served afterwards: no `ladder`, no `reference_multipliers`. The
+browser's new decoder fell through to its single-channel path and read the old image's
+channels as something they were not, drawing a damage layer over most of a watershed
+for a flood that reached 6% of it. The panel numbers came from the stale payload too,
+so they looked plausible and simply did not match the picture.
+
+Nothing was wrong with the model. The bug was that a payload's shape can change while
+its filename does not, and the reader had no way to tell.
+
+`CACHE_SCHEMA` is now written into every cached payload and checked on read; a mismatch
+is a miss and the watershed recomputes, with a log line saying so. Bump it whenever a
+field is added, removed or reinterpreted. An entry from before versioning existed has
+no `schema` key at all and is therefore correctly treated as stale.
+
+With a fresh cache the layer and the model agree: 4.0% of cells opaque against 5,372
+damaged structures of 80,104, on a watershed where the flood reaches 6.7% of them.
+
+This is the fourth defect in this project found by looking at a picture rather than by
+a test, and the third where the tests were all green. Payload shape is easy to assert;
+whether the payload still means what the reader thinks it means is not.

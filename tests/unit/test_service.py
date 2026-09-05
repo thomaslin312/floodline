@@ -145,8 +145,10 @@ def test_out_of_range_coordinates_are_rejected(client: TestClient) -> None:
 
 def test_a_cached_bundle_is_served_without_recomputing(client: TestClient, tmp_path: Path) -> None:
     """The second person to ask about a watershed should wait for a file read."""
+    from floodline.service import CACHE_SCHEMA
+
     (tmp_path / "120401040305_10m.json").write_text(
-        json.dumps({"huc": "120401040305", "hand": "x"})
+        json.dumps({"huc": "120401040305", "hand": "x", "schema": CACHE_SCHEMA})
     )
     body = client.get("/api/compute/120401040305", params={"resolution": 10}).json()
     assert body["cached"] is True
@@ -187,3 +189,28 @@ def test_a_real_upstream_failure_is_502_not_404(monkeypatch: pytest.MonkeyPatch)
         response = client.get(route)
         assert response.status_code == 502, route
         assert "upstream" in response.json()["detail"]
+
+
+def test_a_cache_from_an_older_schema_is_not_served(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A payload that gained fields must not be served to code that expects them.
+
+    The exposure payload gained a damage ladder and four reference multipliers, and
+    caches written before that kept being served: the new decoder read the old image's
+    channels as something they were not and drew a damage layer covering most of a
+    watershed for a flood that reached 6% of it.
+    """
+    from floodline.service import CACHE_SCHEMA, _fresh
+
+    assert _fresh({"schema": CACHE_SCHEMA}) is True
+    assert _fresh({"schema": CACHE_SCHEMA - 1}) is False
+    assert _fresh({}) is False, "a payload from before versioning existed is stale"
+
+
+def test_a_written_cache_carries_the_schema(tmp_path: Path) -> None:
+    from floodline.service import CACHE_SCHEMA, _fresh
+
+    payload = {"huc": "1", "cached": False, "schema": CACHE_SCHEMA}
+    (tmp_path / "c.json").write_text(json.dumps(payload))
+    assert _fresh(json.loads((tmp_path / "c.json").read_text())) is True

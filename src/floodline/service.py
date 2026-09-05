@@ -45,6 +45,22 @@ __all__ = ["create_app"]
 
 logger = logging.getLogger("floodline.service")
 
+CACHE_SCHEMA = 2
+"""Shape of a cached payload. Bump it whenever a field is added, removed or
+reinterpreted, and every older entry becomes a miss instead of being served to code
+that expects something else.
+
+Learned the hard way: the exposure payload gained a damage ladder and four reference
+multipliers, and caches written before that were still served afterwards. The new
+decoder read the old image's channels as something they were not and drew a damage
+layer covering most of the watershed for a flood that reached 6% of it."""
+
+
+def _fresh(payload: dict[str, Any]) -> bool:
+    """Report whether a cached payload was written by this version of the schema."""
+    return int(payload.get("schema", 0)) == CACHE_SCHEMA
+
+
 WEB_ROOT = Path(__file__).parent / "web"
 ZCTA = (
     "https://tigerweb.geo.census.gov/arcgis/rest/services/TIGERweb/"
@@ -252,8 +268,10 @@ def create_app(
         path = _cache_path(cache, huc, resolution)
         if path.exists() and not refresh:
             payload = json.loads(path.read_text())
-            payload["cached"] = True
-            return JSONResponse(payload)
+            if _fresh(payload):
+                payload["cached"] = True
+                return JSONResponse(payload)
+            logger.info("cache for %s is an older schema; recomputing", huc)
 
         try:
             with client() as http:
@@ -286,6 +304,7 @@ def create_app(
             "tiles_read": result.tiles_read,
             "warnings": result.warnings,
             "cached": False,
+            "schema": CACHE_SCHEMA,
         }
         path.write_text(json.dumps(payload, default=float))
         logger.info(
@@ -314,8 +333,10 @@ def create_app(
         path = cache / f"{huc}_{resolution:g}m_exposure.json"
         if path.exists() and not refresh:
             payload = json.loads(path.read_text())
-            payload["cached"] = True
-            return JSONResponse(payload)
+            if _fresh(payload):
+                payload["cached"] = True
+                return JSONResponse(payload)
+            logger.info("exposure cache for %s is an older schema; recomputing", huc)
 
         try:
             with client() as http:
@@ -373,6 +394,7 @@ def create_app(
             "warnings": result.warnings,
             "seconds": {k: round(v, 2) for k, v in result.seconds.items()},
             "cached": False,
+            "schema": CACHE_SCHEMA,
         }
         path.write_text(json.dumps(payload, default=float))
         logger.info("exposure %s at %gm in %.1fs", huc, resolution, sum(result.seconds.values()))
