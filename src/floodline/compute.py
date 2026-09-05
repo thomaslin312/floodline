@@ -75,6 +75,7 @@ __all__ = [
     "gauge_for_watershed",
     "geometry_wgs84",
     "marks_within",
+    "to_web_mercator",
     "utm_crs_for",
     "watershed_by_huc",
     "watershed_for_point",
@@ -425,8 +426,8 @@ def compute_watershed(
     # a few hundred pixels - puts them on the map's own grid. Analysis stays in UTM,
     # where the metres are real.
     display_transform = dem.transform * rasterio.Affine.scale(factor, factor)
-    hand_r, mercator_bounds = _to_web_mercator(hand_r, display_transform, resolved, "bilinear")
-    reach_f, _ = _to_web_mercator(
+    hand_r, mercator_bounds = to_web_mercator(hand_r, display_transform, resolved, "bilinear")
+    reach_f, _ = to_web_mercator(
         np.where(reach_i >= 0, reach_i, np.nan).astype(np.float64),
         display_transform,
         resolved,
@@ -679,7 +680,7 @@ def marks_within(unit: Watershed, config: Config, path: Path) -> list[dict[str, 
     return out
 
 
-def _to_web_mercator(
+def to_web_mercator(
     array: npt.NDArray[np.floating],
     transform: rasterio.Affine,
     config: Config,

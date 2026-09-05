@@ -1485,3 +1485,36 @@ function of resolution.
 and runs - 138 M cells in 389 s on a HUC-12 - but 994 M cells over the HUC-10 does not
 fit in one pass, and the HUC-12 that fits holds 2 marks, which scores nothing. So 1 m is
 demonstrated to run and not demonstrated to help.
+
+## 2026-09-06 — three bugs in the damage layer that only a screenshot could find
+
+The exposure endpoint returned correct JSON, its unit tests passed, and the panel
+rendered the right numbers. The layer was still wrong in three ways, and every one of
+them needed looking at the map.
+
+1. **The layer was placed nowhere.** `ExposureBundle.bounds` carried the analysis CRS's
+   own bounds - UTM 15N, easting 235,853 and northing 3,316,922 - and the page places
+   an image source by Web Mercator corners. Those numbers are a valid Web Mercator
+   point, somewhere off Antarctica. The depth overlay had always warped its display
+   arrays with `_to_web_mercator` before shipping them; the exposure bundle skipped
+   that step. Now it warps too, so the two layers register pixel for pixel, and the
+   helper is public rather than private since it has a second caller.
+2. **It drew a black rectangle.** The image was RGB with damage packed into channels -
+   red log10 currency, green building count - copied from how HAND and reach ids are
+   shipped. But those are packed because the browser recomputes depth on every slider
+   move; damage does not change until the whole assessment is rerun, so there was
+   nothing to decode and the raw channel values were being drawn as colour, with black
+   wherever damage was zero. Replaced with finished RGBA on a warm ramp, alpha zero
+   where nothing was hit. Packing data into an image is right when something will
+   decode it and wrong when nothing will.
+3. **Bilinear smeared a sparse field.** Warping per-cell damage totals with bilinear
+   interpolation spread money into cells holding no buildings: 37% of the grid opaque
+   for 32,833 damaged structures. Nearest brings that to 27.6% and keeps each total
+   where it belongs. Same reasoning as reach ids, which have always resampled nearest.
+
+Worth naming the pattern: all three passed a test of the payload's *shape* and failed
+a look at the *picture*. A test that asserts a PNG is 247 kB and has non-zero pixels
+cannot tell you those pixels are the wrong colour in the wrong place. The new tests are
+narrower and better for it - one asserts the bounds land in Houston's Web Mercator
+range rather than merely being four floats, one asserts undamaged ground is
+transparent.

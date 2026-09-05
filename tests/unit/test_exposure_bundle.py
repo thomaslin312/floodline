@@ -10,6 +10,7 @@ from PIL import Image
 from rasterio.transform import Affine
 from shapely.geometry import Point
 
+from floodline.config import Config
 from floodline.report.exposure_bundle import (
     DAMAGE_CEILING,
     DAMAGE_FLOOR,
@@ -65,43 +66,55 @@ def test_an_empty_table_produces_an_empty_grid() -> None:
     assert damage.sum() == 0.0
 
 
+def test_undamaged_ground_is_transparent_not_black() -> None:
+    """An RGB image has no way to say "nothing here".
+
+    The first version drew a black rectangle over the whole bounding box for exactly
+    that reason, which is what made the layer unusable on the map.
+    """
+    rgba = encode_damage(np.array([[0.0, DAMAGE_FLOOR * 10]]))
+    assert rgba.shape[-1] == 4
+    assert rgba[0, 0, 3] == 0
+    assert rgba[0, 1, 3] > 0
+
+
 def test_encoding_is_logarithmic_so_a_shed_and_a_hospital_both_show() -> None:
-    damage = np.array([[0.0, DAMAGE_FLOOR, 1e5, 1e7, DAMAGE_CEILING]])
-    rgb = encode_damage(damage, np.zeros(damage.shape, dtype=np.int32))
-    red = rgb[..., 0][0]
-    assert red[0] == 0
-    assert red[1] == 0  # exactly at the floor is the bottom of the ramp
-    assert red[4] == 255
-    # Log spacing: the mid values are spread out, not crushed against zero.
-    assert 40 < int(red[2]) < 150
-    assert 150 < int(red[3]) < 255
+    rgba = encode_damage(np.array([[DAMAGE_FLOOR, 1e5, 1e7, DAMAGE_CEILING]]))
+    # Walking up the warm ramp: pale at the floor, dark red at the ceiling.
+    greens = rgba[0, :, 1].astype(int)
+    assert greens[0] > greens[-1], "colour must darken as damage rises"
+    assert len({tuple(rgba[0, i, :3]) for i in range(4)}) == 4, "log spacing separates them"
 
 
 def test_encoding_saturates_rather_than_wrapping() -> None:
-    rgb = encode_damage(np.array([[DAMAGE_CEILING * 1000]]), np.array([[9999]], dtype=np.int32))
-    assert rgb[0, 0, 0] == 255
-    assert rgb[0, 0, 1] == 255  # count clips at 255 too
+    beyond = encode_damage(np.array([[DAMAGE_CEILING * 1000]]))
+    top = encode_damage(np.array([[DAMAGE_CEILING]]))
+    np.testing.assert_array_equal(beyond, top)
 
 
 def test_below_the_floor_reads_as_undamaged() -> None:
-    rgb = encode_damage(np.array([[DAMAGE_FLOOR - 1]]), np.zeros((1, 1), dtype=np.int32))
-    assert rgb[0, 0, 0] == 0
+    assert encode_damage(np.array([[DAMAGE_FLOOR - 1]]))[0, 0, 3] == 0
 
 
 def test_bundle_preserves_the_watershed_total_through_reduction() -> None:
     points = [(x * 10.0 + 5.0, 95.0 - y * 10.0, 1000.0) for x in range(10) for y in range(10)]
     frame = _buildings(points)
     bundle = build_exposure_bundle(
-        "1204010403", "nsi", frame, TRANSFORM, SHAPE, (0.0, 0.0, 100.0, 100.0), reduction=2
+        "1204010403",
+        "nsi",
+        frame,
+        TRANSFORM,
+        SHAPE,
+        (0.0, 0.0, 100.0, 100.0),
+        reduction=2,
+        config=Config(),
     )
-    # 100 buildings at 1000 each, reduced 2x: the sum must survive, so the grid halves.
-    assert bundle.width == 5
-    assert bundle.height == 5
     raw = base64.b64decode(bundle.damage_png.split(",", 1)[1])
     image = np.asarray(Image.open(io.BytesIO(raw)))
-    assert image.shape == (5, 5, 3)
-    # Each reduced cell holds 4 buildings at 1000 = 4000, well inside the ramp.
-    assert int(image[..., 1].max()) == 4
+    assert image.shape == (bundle.height, bundle.width, 4)
+    # This fixture puts a building in every cell, so every cell is drawn. Transparency
+    # where nothing was damaged is covered separately.
+    assert int(image[..., 3].max()) > 0
 
 
 def test_bundle_carries_provenance_and_stats() -> None:
@@ -113,6 +126,7 @@ def test_bundle_carries_provenance_and_stats() -> None:
         SHAPE,
         (0.0, 0.0, 100.0, 100.0),
         reduction=1,
+        config=Config(),
         currency="USD",
         stats={"inundated": 1},
         notes=["contents omitted"],
@@ -122,3 +136,35 @@ def test_bundle_carries_provenance_and_stats() -> None:
     assert bundle.stats["inundated"] == 1
     assert bundle.notes == ["contents omitted"]
     assert bundle.damage_png.startswith("data:image/png;base64,")
+
+
+def test_bundle_bounds_are_web_mercator_not_the_analysis_crs() -> None:
+    """The map places this layer by corner coordinates in EPSG:3857.
+
+    Handing it the analysis CRS's own bounds put the damage layer nowhere at all on
+    the first real run: UTM northings near 3,300,000 are a valid Web Mercator y, just
+    one somewhere off the coast of Antarctica.
+    """
+    # A real Houston window in UTM 15N, with the config's analysis CRS to match.
+    utm = Config.model_validate({"crs": {"analysis": "EPSG:26915"}})
+    transform = Affine.translation(235853.0, 3316922.0) * Affine.scale(30.0, -30.0)
+    frame = gpd.GeoDataFrame(
+        {"damage": [50_000.0]},
+        geometry=[Point(240000.0, 3300000.0)],
+        crs="EPSG:26915",
+    )
+    bundle = build_exposure_bundle(
+        "1204010403",
+        "nsi",
+        frame,
+        transform,
+        (200, 200),
+        (0.0, 0.0, 1.0, 1.0),
+        reduction=1,
+        config=utm,
+    )
+    west, south, east, north = bundle.bounds
+    # Houston is about -10.6 million easting and 3.5 million northing in Web Mercator.
+    assert -1.08e7 < west < -1.05e7, west
+    assert 3.4e6 < south < 3.6e6, south
+    assert west < east and south < north

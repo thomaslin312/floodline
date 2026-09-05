@@ -343,6 +343,7 @@ def create_app(
             shape=result.depth.data.shape,
             bounds=result.depth.bounds,
             reduction=max(1, int(np.ceil(result.depth.data.shape[1] / 800))),
+            config=local,
             currency=local.damage.currency,
             stats=_exposure_stats(result, local),
             notes=list(result.damage.notes),

@@ -7,10 +7,11 @@ applies here: rasterise onto the bundle's own display grid and ship a PNG. A few
 hundred kilobytes, and it lines up with the flood layer pixel for pixel because it is
 built on the same transform.
 
-Two channels, because damage and count answer different questions and one cannot be
-recovered from the other. A single expensive commercial building and forty flooded
-houses can carry the same dollar total; a reader looking for where people were hit
-needs the count, and one looking for where the money went needs the damage.
+The image carries finished colour, not packed data channels. The depth overlay packs
+HAND and reach ids into channels because the browser has to recompute depth every time
+the discharge slider moves; damage does not change until the whole assessment is rerun,
+so there is nothing to recompute and packing would only mean shipping a decoder. It is
+RGBA, and alpha is what keeps undamaged ground transparent rather than black.
 
 Per-building detail is not in here. It is served separately, for the small window a
 reader has actually clicked on, because that is the only scale at which 258,527 rows
@@ -27,6 +28,8 @@ import numpy as np
 import numpy.typing as npt
 from rasterio.transform import Affine, rowcol
 
+from floodline.compute import to_web_mercator
+from floodline.config import Config
 from floodline.report.bundle import encode_png, to_data_uri
 from floodline.report.figures import block_reduce
 
@@ -76,25 +79,42 @@ def rasterise_damage(
     return damage, count
 
 
-def encode_damage(
-    damage: npt.NDArray[np.floating], count: npt.NDArray[np.integer]
-) -> npt.NDArray[np.uint8]:
-    """Pack damage and count into an RGB image.
+# Warm, so the layer never reads as more water. Matches the legend swatch in the page.
+DAMAGE_RAMP = np.array(
+    [[253, 227, 199], [247, 178, 103], [239, 123, 69], [214, 73, 51], [140, 28, 19]],
+    dtype=np.float64,
+)
 
-    Red carries log-scaled currency, green carries the building count clipped at 255,
-    and blue is left at zero. The browser reads both from one request.
+
+def encode_damage(damage: npt.NDArray[np.floating]) -> npt.NDArray[np.uint8]:
+    """Colour a damage grid on a log ramp, transparent where nothing was damaged.
+
+    Logarithmic because flood damage spans five orders of magnitude across one
+    watershed - a shed and a hospital in the same frame - and a linear 8-bit ramp
+    would put almost every cell in the bottom two values and show nothing.
     """
     scaled = np.zeros(damage.shape, dtype=np.float64)
-    wet = damage >= DAMAGE_FLOOR
-    if np.any(wet):
+    hit = damage >= DAMAGE_FLOOR
+    if np.any(hit):
         low = np.log10(DAMAGE_FLOOR)
         high = np.log10(DAMAGE_CEILING)
-        scaled[wet] = (np.log10(np.clip(damage[wet], DAMAGE_FLOOR, DAMAGE_CEILING)) - low) / (
+        scaled[hit] = (np.log10(np.clip(damage[hit], DAMAGE_FLOOR, DAMAGE_CEILING)) - low) / (
             high - low
         )
-    red = np.clip(np.rint(scaled * 255.0), 0, 255).astype(np.uint8)
-    green = np.clip(count, 0, 255).astype(np.uint8)
-    return np.dstack([red, green, np.zeros(damage.shape, dtype=np.uint8)])
+
+    position = scaled * (len(DAMAGE_RAMP) - 1)
+    low_i = np.clip(np.floor(position).astype(int), 0, len(DAMAGE_RAMP) - 1)
+    high_i = np.clip(low_i + 1, 0, len(DAMAGE_RAMP) - 1)
+    frac = (position - low_i)[..., None]
+    rgb = DAMAGE_RAMP[low_i] * (1 - frac) + DAMAGE_RAMP[high_i] * frac
+
+    rgba = np.zeros((*damage.shape, 4), dtype=np.uint8)
+    rgba[..., :3] = np.clip(rgb, 0, 255).astype(np.uint8)
+    # Alpha, not a black background: undamaged ground has to disappear, and an RGB
+    # image has no way to say that. The first version drew a black rectangle over the
+    # whole bounding box.
+    rgba[..., 3] = np.where(hit, 225, 0).astype(np.uint8)
+    return rgba
 
 
 @dataclass(frozen=True, slots=True)
@@ -109,7 +129,7 @@ class ExposureBundle:
     """Web Mercator, matching the depth overlay so the layers register."""
 
     damage_png: str = ""
-    """RGB data URI: red is log10 damage, green is building count."""
+    """RGBA data URI, coloured on a log ramp and transparent where nothing was hit."""
 
     damage_floor: float = DAMAGE_FLOOR
     damage_ceiling: float = DAMAGE_CEILING
@@ -127,6 +147,7 @@ def build_exposure_bundle(
     bounds: tuple[float, float, float, float],
     *,
     reduction: int,
+    config: Config,
     currency: str = "USD",
     stats: dict[str, Any] | None = None,
     notes: list[str] | None = None,
@@ -137,20 +158,32 @@ def build_exposure_bundle(
     land on identical pixels and a reader comparing them is comparing the same ground.
     """
     damage, count = rasterise_damage(buildings, transform, shape)
+    display_transform = transform
     if reduction > 1:
         # Sum, not mean: these are totals per cell, and averaging would quietly
         # divide the watershed's damage by the block area.
         damage = block_reduce(damage, reduction, how="sum")
         count = block_reduce(count.astype(np.float64), reduction, how="sum").astype(np.int32)
+        display_transform = transform * Affine.scale(reduction, reduction)
 
-    rgb = encode_damage(damage, count)
+    # The analysis grid is UTM and north-up there, which is not axis-aligned in Web
+    # Mercator. Handing the map UTM bounds put this layer nowhere at all; corner-pinning
+    # the unwarped grid would instead have placed it visibly skewed. Warp it, exactly as
+    # the depth overlay does, so the two register pixel for pixel.
+    # Nearest, not bilinear. Damage is a per-cell total over a sparse set of
+    # buildings, and interpolating it spreads money into cells that hold none:
+    # bilinear made 37% of the grid opaque for 32,833 damaged structures.
+    damage, mercator_bounds = to_web_mercator(damage, display_transform, config, "nearest")
+    damage = np.nan_to_num(damage, nan=0.0)
+
+    rgba = encode_damage(damage)
     return ExposureBundle(
         huc=huc,
         inventory=inventory,
         width=int(damage.shape[1]),
         height=int(damage.shape[0]),
-        bounds=bounds,
-        damage_png=to_data_uri(encode_png(rgb, "RGB")),
+        bounds=mercator_bounds,
+        damage_png=to_data_uri(encode_png(rgba, "RGBA")),
         currency=currency,
         stats=stats or {},
         notes=notes or [],
