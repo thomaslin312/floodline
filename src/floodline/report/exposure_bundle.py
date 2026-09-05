@@ -8,18 +8,18 @@ hundred kilobytes, and it lines up with the flood layer pixel for pixel because 
 built on the same transform.
 
 Four channels, one per reference discharge. The slider moves the water, so it has to
-move the damage too, and shipping a raster per rung of the 33-step ladder would be ten
-megabytes to draw one picture. Instead each channel holds log-damage per cell at one of
-four multipliers and the browser interpolates between the two that bracket wherever the
-slider is - the same trick the depth overlay plays with its per-reach stage table, and
-for the same reason. Colour and transparency are then decided in the browser, which is
-what lets one image serve every discharge.
+move the damage too, and shipping a raster per rung of the multiplier ladder would be
+ten megabytes to draw one picture. Instead each channel holds log-damage per cell at
+one of four multipliers and the browser interpolates between the two that bracket
+wherever the slider is - the same trick the depth overlay plays with its per-reach
+stage table, and for the same reason.
 
-The image carries finished colour, not packed data channels. The depth overlay packs
-HAND and reach ids into channels because the browser has to recompute depth every time
-the discharge slider moves; damage does not change until the whole assessment is rerun,
-so there is nothing to recompute and packing would only mean shipping a decoder. It is
-RGBA, and alpha is what keeps undamaged ground transparent rather than black.
+So the served image is packed data, not finished colour: the browser reads a value out
+of the bracketing channels and picks the colour itself, which is what lets one image
+serve every slider position. Alpha is decided the same way, and it is what keeps
+undamaged ground transparent rather than a black rectangle over the bounding box. The
+one place finished colour is written is `encode_damage`, for the static report, where
+there is no slider and so nothing to interpolate.
 
 Per-building detail is not in here. It is served separately, for the small window a
 reader has actually clicked on, because that is the only scale at which 258,527 rows

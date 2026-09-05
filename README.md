@@ -104,7 +104,7 @@ The README says a screening model should put the observed building count inside 
 
 | | Whiteoak Bayou, Harvey |
 |---|---|
-| modelled inundated | 33,279 (interval 15,795 – 49,976) |
+| modelled inundated | 33,279 (90% interval 17,185 – 50,004, 1,000 draws) |
 | NFIP claims filed inside the watershed | 6,769, area-weighted from block groups |
 | paid on those claims | USD 705 M |
 | modelled damage | USD 7.95 bn (structure 3.51, contents 4.44) |
@@ -161,7 +161,7 @@ the Sentinel-1 route needs credentials, so no CSI is reported for Harvey. Valida
 that *is* reported runs against 2,298 surveyed high-water marks. The resolution and
 population experiments have not been written up, though the population disagreement has
 already shown itself — WorldPop counts 98,412 people in flooded cells where NSI counts
-132,389 residents in flooded structures, 35% apart on the same flood.
+134,030 residents in flooded structures, 36% apart on the same flood.
 
 ## Where the data actually comes from
 
@@ -337,16 +337,17 @@ the `?` beside the wordmark reopens it.
 
 On the map, **Compute this watershed** draws depth; **Value the buildings this reaches**
 then runs exposure and damage and adds a warm damage layer over it. The discharge
-slider moves both: damage is computed at all 33 rungs of the same multiplier ladder the
+slider moves both: damage is computed at every rung of the same multiplier ladder the
 stage table uses, so dragging it answers *what would a bigger flood cost* rather than
 just redrawing the water. On Whiteoak Bayou that runs from USD 0 at no flow through
-USD 7.9 bn at Harvey's observed peak to USD 21.5 bn at three times it. The uncertainty
+USD 7.95 bn at Harvey's observed peak to USD 21.5 bn at three times it. The uncertainty
 band is computed at the observed discharge only, and the panel says so when you move
 away from it. They are separate
 buttons because they cost very different amounts of time: depth is 12–25 s, exposure is
 a couple of minutes cold (the structure inventory dominates) and cached after. The
-damage layer ships as a two-channel PNG on the flood layer's own grid — red is log₁₀
-currency per cell, green is the building count — which is 247 kB for Whiteoak Bayou
+damage layer ships as a four-channel PNG on the flood layer's own grid — one channel
+of log₁₀ currency per cell at each of four reference discharges, which the browser
+interpolates between and colours as the slider moves — 180 kB for Whiteoak Bayou
 against 189 MB for the same information as GeoJSON.
 
 `--unclamped-depth` is `stage - HAND` before the floor at zero, so dry ground carries
