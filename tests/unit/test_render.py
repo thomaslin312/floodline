@@ -135,3 +135,20 @@ def test_payload_matches_what_the_page_reports() -> None:
     assert payload["flooded_km2"] == pytest.approx(112.2)
     assert payload["damage"] is None
     assert payload["gaps"] == []
+
+
+def test_marks_reach_the_report(tmp_path: Path) -> None:
+    """Validation against surveyed marks is the project's only real extent check,
+    so it has to appear on the page rather than only in the map's JavaScript."""
+    from floodline.validate.metrics import mark_metrics
+
+    scored = mark_metrics(
+        np.array([10.0, 12.0, 11.0]),
+        np.array([10.2, np.nan, 11.1]),
+        np.array([8.0, 8.0, 8.0]),
+    )
+    page = render_report(
+        ReportInputs(assessment=_assessment(marks=scored, n_marks_available=3)),
+        tmp_path / "r.html",
+    ).read_text()
+    assert "RMSE" in page

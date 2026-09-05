@@ -117,6 +117,12 @@ def _limits(result: Assessment, currency: str) -> list[str]:
             "The flood-frequency fit could not place this discharge. A century of "
             "catchment change breaks the stationarity a log-Pearson III assumes."
         )
+    if result.marks is None:
+        out.append(
+            "Nothing here is validated against an observation. No surveyed high-water "
+            "marks fall inside this unit, and CSI needs an observed extent polygon "
+            "that this project does not have."
+        )
     for gap in result.gaps:
         out.append(f"Gap: {gap}")
     return out
@@ -188,6 +194,21 @@ def render_report(inputs: ReportInputs, destination: Path) -> Path:
         _row("Flooded area", f"{result.flooded_km2:,.1f} km2"),
         _row("Deepest cell", f"{result.max_depth_m:,.1f} m"),
     ]
+
+    if result.marks is not None:
+        marks = result.marks
+        figures.append(
+            _row(
+                "Against surveyed marks",
+                f"RMSE {marks.rmse_m:.2f} m over {marks.n} marks",
+                f"{marks.n_wet} wet, bias {marks.mean_bias_m:+.2f} m, "
+                f"median |error| {marks.median_absolute_m:.2f} m",
+            )
+        )
+    elif result.n_marks_available == 0:
+        figures.append(
+            _row("Against surveyed marks", "none available", "no USGS marks in this unit")
+        )
 
     if result.buildings is not None:
         exposed = result.buildings

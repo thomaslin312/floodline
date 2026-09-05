@@ -16,6 +16,7 @@ from __future__ import annotations
 import json
 import time
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 import geopandas as gpd
@@ -24,8 +25,10 @@ import numpy as np
 import numpy.typing as npt
 import rasterio
 import shapely
+from pyproj import CRS, Transformer
+from rasterio.transform import rowcol
 
-from floodline.compute import gauge_for_watershed, geometry_wgs84, wgs84_bounds
+from floodline.compute import gauge_for_watershed, geometry_wgs84, marks_within, wgs84_bounds
 from floodline.config import Config
 from floodline.damage.estimate import DamageEstimate, estimate_damage
 from floodline.damage.uncertainty import DamageInterval, monte_carlo_damage
@@ -48,6 +51,7 @@ from floodline.io.raster import Raster
 from floodline.io.sources import FetchContext, SourceError, find_dem_tiles, make_client
 from floodline.terrain.route import route_terrain
 from floodline.terrain.streams import link_raster
+from floodline.validate.metrics import MarkMetrics, mark_metrics
 
 __all__ = ["Assessment", "NoDischargeError", "assess_watershed"]
 
@@ -90,6 +94,13 @@ class Assessment:
     inventory: str = "none"
     """Which structure inventory the exposure came from."""
 
+    marks: MarkMetrics | None = None
+    """Modelled water surface scored against surveyed high-water marks. This is the
+    project's only real extent validation - CSI needs an observed polygon and there
+    is none - so it belongs in the result object rather than only in the map's
+    JavaScript, where it used to live."""
+
+    n_marks_available: int = 0
     night_population: float | None = None
     """Residents in the structures the model floods, from NSI's own per-structure
     counts. More direct than a gridded product: people in flooded buildings, not
@@ -115,6 +126,8 @@ def assess_watershed(
     max_cells: int = 60_000_000,
     with_buildings: bool = True,
     with_population: bool = True,
+    marks_path: Path | None = None,
+    graded_marks_only: bool = True,
     inventory: str = "nsi",
     download_curves: bool = False,
     download_population: bool = False,
@@ -219,6 +232,40 @@ def assess_watershed(
             history = fit.context_for(discharge_cms)
 
         depth_raster = dem.with_data(flood.depth)
+
+        # ---- validation against surveyed marks -----------------------------
+        scored: MarkMetrics | None = None
+        n_marks = 0
+        # Same file the service uses, so the CLI and the map validate against
+        # identical ground truth rather than two copies that can drift apart.
+        cache = marks_path or (config.paths.raw / "validation" / "high_water_marks_national.json")
+        try:
+            found = marks_within(unit, config, cache)
+        except Exception as exc:
+            found = []
+            gaps.append(f"high-water marks unavailable: {type(exc).__name__}: {exc}")
+        # USGS grades every mark; 1 and 2 are surveys to a few centimetres and 3 and
+        # below are progressively rougher. On this watershed the rough ones carried an
+        # RMSE of 4.9 m against 1.0 m for the good, so scoring everything would let
+        # them set the headline number.
+        usable = [m for m in found if not graded_marks_only or m.get("quality") in (1, 2)]
+        n_marks = len(usable)
+        if usable:
+            forward = Transformer.from_crs(CRS.from_epsg(4326), config.crs.analysis, always_xy=True)
+            surveyed, modelled_surface, ground = [], [], []
+            rows, cols = depth_raster.data.shape
+            for mark in usable:
+                x, y = forward.transform(mark["lon"], mark["lat"])
+                row, col = rowcol(depth_raster.transform, x, y)
+                if not (0 <= int(row) < rows and 0 <= int(col) < cols):
+                    continue
+                cell_depth = float(depth_raster.data[int(row), int(col)])
+                terrain = float(dem.data[int(row), int(col)])
+                surveyed.append(mark["elev_m"])
+                ground.append(terrain)
+                modelled_surface.append(terrain + cell_depth if cell_depth > 0 else float("nan"))
+            if surveyed:
+                scored = mark_metrics(surveyed, modelled_surface, ground)
 
         # ---- exposure ------------------------------------------------------
         exposure: BuildingExposure | None = None
@@ -376,6 +423,8 @@ def assess_watershed(
             people=people,
             damage=damage,
             interval=interval,
+            marks=scored,
+            n_marks_available=n_marks,
             inventory=used_inventory,
             night_population=night_pop,
             day_population=day_pop,

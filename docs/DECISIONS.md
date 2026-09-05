@@ -1452,3 +1452,36 @@ the easy version and the dishonest one.
 Fixed on the way: areas were being measured in degrees, which the project's own CRS
 rules forbid. Over one city the distortion largely cancels in a ratio, which is exactly
 why the rule exists - nobody should have to check that by hand.
+
+## 2026-09-06 — mark scoring moved into the core, and the resolution experiment run
+
+Validation against surveyed high-water marks lived only in the map's JavaScript, which
+meant the CLI reported no RMSE and nothing about the project's only real extent check
+was tested. `assess_watershed` now scores marks through `validate.metrics.mark_metrics`
+and carries a `MarkMetrics` on the result; the CLI prints it and the report renders it.
+Whiteoak Bayou at 30 m: RMSE 1.26 m over 16 graded marks, 12 wet, bias +0.04 m.
+
+Both paths now read the same `high_water_marks_national.json` the service uses, rather
+than two copies that could drift.
+
+**The resolution experiment, finally run.** Same watershed, same discharge, same 16
+marks:
+
+| cell | cells | flooded | max depth | RMSE | median abs | wet | runtime |
+|---|---|---|---|---|---|---|---|
+| 10 m | 9.9 M | 117.4 km2 | 18.3 m | 1.21 m | 1.22 m | 9/16 | 39 s |
+| 30 m | 1.1 M | 112.2 km2 | 10.9 m | 1.26 m | 0.84 m | 12/16 | 15 s |
+
+Finer is not better. RMSE differs by less than noise on 16 marks, while at 10 m the
+median absolute error is worse, three fewer marks are wet, and it costs 2.6x the time.
+The mechanism is HAND's own definition: a finer DEM resolves the channel bed deeper,
+which raises height-above-drainage for everything around it, so the same stage floods
+less. Max depth going 10.9 -> 18.3 m is the same effect seen from the channel side.
+This is the third time in this project that refining the grid made agreement worse, and
+it is not a defect - it is what happens when the datum a method is built on is itself a
+function of resolution.
+
+3 m is unavailable: 1/9 arc-second has no coverage over Houston. 1 m exists (39 tiles)
+and runs - 138 M cells in 389 s on a HUC-12 - but 994 M cells over the HUC-10 does not
+fit in one pass, and the HUC-12 that fits holds 2 marks, which scores nothing. So 1 m is
+demonstrated to run and not demonstrated to help.

@@ -890,6 +890,11 @@ def assess(
         f"max depth {result.max_depth_m:.1f} m"
     )
 
+    if result.marks is not None:
+        typer.echo(f"marks      {result.marks.summary()}")
+    elif result.n_marks_available == 0:
+        typer.echo("marks      none surveyed inside this watershed")
+
     if result.buildings is not None:
         exposed = result.buildings
         typer.echo(

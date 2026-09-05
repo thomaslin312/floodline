@@ -88,7 +88,7 @@ this machine.
 | 1 | `fill`, `flowdir`, `flowacc`, `streams`, `hand` — numba, property-tested | done, plus flat resolution |
 | 2 | Stage handling, inundation, buildings, population | done |
 | 3 | Depth–damage curves, costs, Monte Carlo | code done; curve constants unverified |
-| 4 | Extent metrics (CSI, hit rate, FAR, bias) | done — but see below |
+| 4 | Extent metrics, resolution experiment, claim comparison | done — bar a SAR reference |
 | 5 | Rendered report | done |
 | — | Live compute service and national map UI (unplanned, built anyway) | done |
 | — | Overture and population fetchers, flood-frequency context, `assess` | done |
@@ -124,6 +124,34 @@ filers. Neither ratio validates the model. Both bound it, and the bound is one-s
 Claim coordinates are published rounded to 0.1° (~11 km), useless at watershed scale;
 `censusBlockGroupFips` is what makes this possible, with block groups straddling the
 boundary weighted by area share.
+
+### The resolution experiment
+
+Whiteoak Bayou, Harvey peak, scored against the same 16 graded high-water marks at
+each resolution:
+
+| cell | cells | flooded | max depth | RMSE | bias | median abs | marks wet | runtime |
+|---|---|---|---|---|---|---|---|---|
+| 10 m | 9.9 M | 117.4 km² | 18.3 m | **1.21 m** | +0.26 m | 1.22 m | 9 / 16 | 39 s |
+| 30 m | 1.1 M | 112.2 km² | 10.9 m | **1.26 m** | +0.04 m | 0.84 m | 12 / 16 | 15 s |
+
+**Finer is not better here, and that is the finding.** RMSE is a rounding difference
+apart on 16 marks — well inside noise — while at 10 m the median absolute error is
+*worse* (1.22 m against 0.84 m), the model wets three fewer marks, and it costs 2.6×
+the runtime. 30 m is the default for that reason, not for speed.
+
+The mechanism is HAND itself. Height above nearest drainage is measured relative to
+the channel, and a finer DEM resolves the channel bed deeper, which raises HAND for
+every cell around it, so the same stage floods less ground. Max modelled depth goes
+from 10.9 m to 18.3 m for the same reason: at 10 m the grid finds channel cells the
+30 m grid averages away. Refining the DEM does not refine the answer — it moves the
+datum the whole method is built on.
+
+Two resolutions are missing and neither is an oversight. **3 m** (1/9 arc-second) has
+no 3DEP coverage over Houston at all. **1 m** does — 39 tiles — and runs: 138 M cells
+in 389 s over a HUC-12. But 994 M cells over the HUC-10 is past what fits in one pass,
+and the HUC-12 that does fit contains only 2 surveyed marks, which cannot score
+anything. So 1 m is demonstrated to run and not demonstrated to help.
 
 **What phase 4 still lacks is a reference for extent, not code.** `floodline validate` computes
 CSI, hit rate, false alarm ratio and bias against an observed wet mask you supply, and
@@ -162,6 +190,10 @@ windowed locally afterwards, and that download is opt-in:
 ```bash
 uv run floodline fetch-population
 ```
+
+Cached inputs live under `data/cache` and are never committed. Expect it to reach
+around 600 MB once the population raster and a few watersheds' footprints are in
+there; the whole directory can be deleted and will be refetched on demand.
 
 LandScan would be the better product and is licensed CC BY, but every download path is
 behind a registration form. The rule here is that a source needing a login is recorded
