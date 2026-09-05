@@ -104,10 +104,11 @@ The README says a screening model should put the observed building count inside 
 
 | | Whiteoak Bayou, Harvey |
 |---|---|
-| modelled inundated | 32,833 (interval 16,474 – 61,738) |
+| modelled inundated | 33,239 (interval 15,795 – 49,976) |
 | NFIP claims filed inside the watershed | 6,769, area-weighted from block groups |
 | paid on those claims | USD 705 M |
-| modelled damage | USD 7.37 bn |
+| modelled damage | USD 7.94 bn (structure 3.51, contents 4.43) |
+| loss ratio | 4.2% of USD 191 bn exposed |
 
 **The interval does not contain the claim count, and it should not.** An NFIP claim
 requires a property to be insured, flooded, and its owner to file. Take-up outside
@@ -117,7 +118,7 @@ and the model sitting 4.9× above it is the expected direction. What would falsi
 model is the other direction: an interval whose top sat below the claims. It does not,
 and `ClaimComparison.model_below_claims` is the check.
 
-The dollar comparison carries the same asymmetry harder — modelled damage is 10× what
+The dollar comparison carries the same asymmetry harder — modelled damage is 11× what
 NFIP paid, because NFIP caps a building claim at USD 250,000 and covers only insured
 filers. Neither ratio validates the model. Both bound it, and the bound is one-sided.
 
