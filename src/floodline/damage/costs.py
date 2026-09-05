@@ -24,9 +24,16 @@ from __future__ import annotations
 import numpy as np
 import numpy.typing as npt
 
-from floodline.config import Config, DamageConfig
+from floodline.config import Config, DamageConfig, ExposureConfig
 
 __all__ = ["exposed_value", "storey_exposure"]
+
+
+def _exposure(config: Config | ExposureConfig | None) -> ExposureConfig:
+    """Return the `ExposureConfig` to use, defaulting when nothing is supplied."""
+    if isinstance(config, Config):
+        return config.exposure
+    return config if config is not None else ExposureConfig()
 
 
 def _resolve(config: Config | DamageConfig | None) -> DamageConfig:
@@ -40,7 +47,8 @@ def storey_exposure(
     depth_m: npt.ArrayLike,
     storeys: npt.ArrayLike,
     *,
-    storey_height_m: float = 3.0,
+    storey_height_m: float | None = None,
+    config: Config | ExposureConfig | None = None,
 ) -> npt.NDArray[np.float64]:
     """Return how many storeys the water can plausibly reach, as a fraction.
 
@@ -49,9 +57,10 @@ def storey_exposure(
     at risk, not all of it. The result is in [1/storeys, 1] - the ground floor is
     always fully exposed once water is above the floor.
     """
+    height = storey_height_m if storey_height_m is not None else _exposure(config).storey_height_m
     depths = np.asarray(depth_m, dtype=np.float64)
     counts = np.maximum(np.asarray(storeys, dtype=np.float64), 1.0)
-    reached = np.ceil(np.maximum(depths, 0.0) / storey_height_m)
+    reached = np.ceil(np.maximum(depths, 0.0) / height)
     reached = np.clip(reached, 1.0, counts)
     return np.asarray(reached / counts, dtype=np.float64)
 

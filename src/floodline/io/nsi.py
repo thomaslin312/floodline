@@ -52,6 +52,8 @@ import numpy as np
 import shapely
 from shapely.geometry.base import BaseGeometry
 
+from floodline.config import Config, ExposureConfig
+
 __all__ = ["NSI_URL", "NsiFetch", "fetch_nsi_structures", "structure_footprints"]
 
 NSI_URL = "https://nsi.sec.usace.army.mil/nsiapi/structures"
@@ -208,7 +210,8 @@ def _to_frame(features: list[dict[str, Any]]) -> gpd.GeoDataFrame:
 def structure_footprints(
     structures: gpd.GeoDataFrame,
     *,
-    min_side_m: float = 4.0,
+    min_side_m: float | None = None,
+    config: Config | ExposureConfig | None = None,
 ) -> gpd.GeoDataFrame:
     """Square each structure's footprint area around its point.
 
@@ -223,9 +226,11 @@ def structure_footprints(
             "structure_footprints squares an area in metres, so it needs a projected "
             f"CRS; got {structures.crs}. Reproject to the analysis CRS first."
         )
+    settings = config.exposure if isinstance(config, Config) else (config or ExposureConfig())
+    floor = min_side_m if min_side_m is not None else settings.min_footprint_side_m
     frame = structures.copy()
     side = np.sqrt(np.maximum(frame["footprint_m2"].to_numpy(), 0.0))
-    side = np.maximum(side, min_side_m)
+    side = np.maximum(side, floor)
     half = side / 2.0
     xs = frame.geometry.x.to_numpy()
     ys = frame.geometry.y.to_numpy()

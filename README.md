@@ -330,7 +330,13 @@ uv run floodline damage exposed.parquet damage.parquet --samples 1000
 ```
 
 On the map, **Compute this watershed** draws depth; **Value the buildings this reaches**
-then runs exposure and damage and adds a warm damage layer over it. They are separate
+then runs exposure and damage and adds a warm damage layer over it. The discharge
+slider moves both: damage is computed at all 33 rungs of the same multiplier ladder the
+stage table uses, so dragging it answers *what would a bigger flood cost* rather than
+just redrawing the water. On Whiteoak Bayou that runs from USD 0 at no flow through
+USD 7.9 bn at Harvey's observed peak to USD 21.5 bn at three times it. The uncertainty
+band is computed at the observed discharge only, and the panel says so when you move
+away from it. They are separate
 buttons because they cost very different amounts of time: depth is 12–25 s, exposure is
 a couple of minutes cold (the structure inventory dominates) and cached after. The
 damage layer ships as a two-channel PNG on the flood layer's own grid — red is log₁₀

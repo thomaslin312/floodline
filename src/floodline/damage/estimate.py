@@ -151,6 +151,7 @@ def estimate_damage(
     DamageEstimate
     """
     damage_config = _resolve(config)
+    exposure_config = config.exposure if isinstance(config, Config) else None
     chosen = family if family is not None else damage_config.curve_family
     curve_set = curves if curves is not None else bundled_curves(chosen, config=damage_config)
 
@@ -204,7 +205,7 @@ def estimate_damage(
     if cap_storeys:
         if storeys is None:
             raise ValueError("cap_storeys is on but no storey count was given")
-        reach = storey_exposure(depths, storeys)
+        reach = storey_exposure(depths, storeys, config=exposure_config)
     fraction = fraction * reach
 
     per_building = fraction * value

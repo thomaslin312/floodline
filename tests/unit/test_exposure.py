@@ -242,3 +242,40 @@ def test_a_footprint_wholly_over_undefined_ground_stays_dry() -> None:
     )
     assert result.buildings["floor_margin_m"].iloc[0] == -np.inf
     assert result.n_inundated == 0
+
+
+def test_the_depth_percentile_is_configurable() -> None:
+    """The project's rule: no tunable literal outside config.py. p90 was hardcoded."""
+    grid = _depth({(1, 1): 0.0, (1, 2): 0.0, (2, 1): 0.0, (2, 2): 4.0})
+    footprint = _buildings((1.1, 7.1, 2.9, 8.9))
+    high = building_depths(
+        grid,
+        TRANSFORM,
+        footprint,
+        config=_config(building_depth_stat=BuildingDepthStat.P90, depth_percentile=0.99),
+    )
+    low = building_depths(
+        grid,
+        TRANSFORM,
+        footprint,
+        config=_config(building_depth_stat=BuildingDepthStat.P90, depth_percentile=0.50),
+    )
+    assert high.buildings["depth_m"].iloc[0] > low.buildings["depth_m"].iloc[0]
+
+
+def test_the_nominal_storey_height_is_configurable() -> None:
+    grid = _depth({(1, 2): 1.0})
+    tall = building_depths(
+        grid,
+        TRANSFORM,
+        _buildings((2.0, 8.0, 3.0, 9.0), height=[9.0]),
+        config=_config(storey_height_m=3.0),
+    )
+    short = building_depths(
+        grid,
+        TRANSFORM,
+        _buildings((2.0, 8.0, 3.0, 9.0), height=[9.0]),
+        config=_config(storey_height_m=4.5),
+    )
+    assert tall.buildings["storeys"].iloc[0] == pytest.approx(3.0)
+    assert short.buildings["storeys"].iloc[0] == pytest.approx(2.0)

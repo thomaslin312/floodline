@@ -92,7 +92,7 @@ def _append_terrain(
         reach_of.append(int(reaches[row, col]) if inside else -1)
 
 
-def _reduce(values: npt.NDArray[np.float64], stat: BuildingDepthStat) -> float:
+def _reduce(values: npt.NDArray[np.float64], stat: BuildingDepthStat, percentile: float) -> float:
     """Reduce the cells under one footprint to a single value.
 
     Non-finite cells are excluded before reducing rather than passed through. The
@@ -114,7 +114,7 @@ def _reduce(values: npt.NDArray[np.float64], stat: BuildingDepthStat) -> float:
     if stat is BuildingDepthStat.MEAN:
         return float(finite.mean())
     if stat is BuildingDepthStat.P90:
-        return float(np.percentile(finite, 90))
+        return float(np.percentile(finite, percentile * 100.0))
     raise ValueError(f"{stat} is not reduced from a cell sample")
 
 
@@ -240,15 +240,19 @@ def building_depths(
             transform=transform * Affine.translation(c0, r0),
             all_touched=True,
         )
-        depths.append(_reduce(window[covered], stat))
-        margins.append(_reduce(margin_window[covered], stat))
+        depths.append(_reduce(window[covered], stat, exposure.depth_percentile))
+        margins.append(_reduce(margin_window[covered], stat, exposure.depth_percentile))
         if hand_window is not None:
             # The low end of HAND under the footprint, matching the high end of depth:
             # the two must describe the same cell or a building's own depth and its
             # depth-from-stage would disagree.
             sample = hand_window[covered]
             finite = sample[np.isfinite(sample)]
-            hand_of.append(float(np.percentile(finite, 10)) if finite.size else np.inf)
+            hand_of.append(
+                float(np.percentile(finite, exposure.hand_percentile * 100.0))
+                if finite.size
+                else np.inf
+            )
         if reach_window is not None:
             ids = reach_window[covered]
             valid = ids[ids >= 0]
@@ -303,7 +307,7 @@ def _storeys(
     if height_column in buildings.columns:
         height = np.asarray(buildings[height_column], dtype=np.float64)
         usable = np.isfinite(height) & (height > 0)
-        out[usable] = np.maximum(np.round(height[usable] / 3.0), 1.0)
+        out[usable] = np.maximum(np.round(height[usable] / exposure.storey_height_m), 1.0)
 
     if storeys_column in buildings.columns:
         storeys = np.asarray(buildings[storeys_column], dtype=np.float64)

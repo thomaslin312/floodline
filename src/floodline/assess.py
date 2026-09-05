@@ -467,7 +467,9 @@ def assess_watershed(
                     # Four rungs the map layer interpolates between. They bracket the
                     # slider closely enough that the error between them is smaller than
                     # the model's own, and four is what fits in an RGBA image.
-                    reference_multipliers=(0.5, 1.0, 2.0, 3.0),
+                    reference_multipliers=tuple(
+                        float(m) for m in config.damage.map_reference_multipliers
+                    ),
                     config=config,
                 )
 

@@ -369,7 +369,30 @@ class ExposureConfig(Frozen):
         default=1.0, description="Storeys assumed when a footprint carries no height."
     )
     floor_height_m: Positive = Field(
-        default=0.15, description="Freeboard between ground and finished floor level."
+        default=0.15,
+        description="Freeboard between ground and finished floor level. Used only "
+        "where the inventory does not carry a real one; NSI does, per structure.",
+    )
+    depth_percentile: Fraction = Field(
+        default=0.90,
+        description="Percentile of depth under a footprint when building_depth_stat "
+        "is p90. Lower is more conservative about what counts as flooded.",
+    )
+    hand_percentile: Fraction = Field(
+        default=0.10,
+        description="Percentile of height-above-drainage under a footprint. The low "
+        "end, to mirror the high end taken for depth: a building's own depth and the "
+        "depth its stage implies have to describe the same cell.",
+    )
+    storey_height_m: Positive = Field(
+        default=3.0,
+        description="Nominal floor-to-floor height, for turning a building height "
+        "into a storey count and for capping how many storeys water reaches.",
+    )
+    min_footprint_side_m: Positive = Field(
+        default=4.0,
+        description="Side of the square used for a structure whose inventory records "
+        "no footprint area. NSI gives a point and an area, not an outline.",
     )
 
 
@@ -400,6 +423,12 @@ class DamageConfig(Frozen):
         "rebuild rates and the Monte Carlo samples cost_sigma_frac around them.",
     )
     default_class: str = Field(default="residential")
+    map_reference_multipliers: tuple[Fraction | Positive, ...] = Field(
+        default=(0.5, 1.0, 2.0, 3.0),
+        description="Discharge multipliers the map's damage layer is rendered at; the "
+        "browser interpolates between them as the slider moves. Four is the limit - "
+        "they are packed one per channel of an RGBA image.",
+    )
     usace_default_occupancy: str = Field(
         default="RES1-1SNB",
         description="Occupancy code for structures the USACE library does not cover. "
