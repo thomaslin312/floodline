@@ -1648,3 +1648,21 @@ Also fixed while verifying: the slider's redraw was scheduled on `requestAnimati
 alone, which never fires while a page is hidden. A backgrounded tab was left with the
 coalescing flag set and every later input dropped. It now falls back to a timer when
 hidden, and redraws on becoming visible again.
+
+## 2026-09-06 — the damage curve is drawn, not just tabulated
+
+The report and the CLI now carry damage against discharge, not only the figure at the
+observed flow. It is the most informative thing the model produces and the hardest to
+put in a table: how fast the cost climbs with the water. One inline SVG, 33 points, the
+observed discharge marked with a dashed line so a reader can see at a glance how much
+worse a worse flood gets. On Whiteoak Bayou the curve runs from zero to USD 21.45 bn
+at three times Harvey's peak, and the observed flood sits about a third of the way up
+it.
+
+Also moved to config, because the project's own rule is that no tunable literal lives
+in algorithm code and five had crept in: the depth percentile under a footprint (was a
+hardcoded 90), the height-above-drainage percentile (10), the nominal storey height
+(3 m, used both to infer storeys from a building height and to cap how many the water
+reaches), the fallback footprint side for a structure with no recorded area (4 m), and
+the four reference multipliers the map layer is rendered at. Unit conversions stay
+where they are - 0.3048 is not a preference.

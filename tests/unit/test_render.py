@@ -152,3 +152,53 @@ def test_marks_reach_the_report(tmp_path: Path) -> None:
         tmp_path / "r.html",
     ).read_text()
     assert "RMSE" in page
+
+
+def _ladder(damage: list[float]) -> object:
+    from floodline.damage.ladder import DamageLadder
+
+    n = len(damage)
+    return DamageLadder(
+        multipliers=tuple(i / (n - 1) * 3 for i in range(n)),
+        discharge_cms=tuple(i / (n - 1) * 3000 for i in range(n)),
+        damage=tuple(damage),
+        structure=tuple(d * 0.6 for d in damage),
+        contents=tuple(d * 0.4 for d in damage),
+        inundated=tuple(int(d / 1e5) for d in damage),
+        residents=tuple(d / 1e4 for d in damage),
+    )
+
+
+def test_the_damage_curve_is_drawn_when_there_is_a_ladder(tmp_path: Path) -> None:
+    page = render_report(
+        ReportInputs(assessment=_assessment(ladder=_ladder([0.0, 2e9, 6e9, 1.2e10]))),
+        tmp_path / "r.html",
+    ).read_text()
+    assert "Damage against discharge" in page
+    assert "<svg" in page
+    assert "polyline" in page
+
+
+def test_no_curve_is_drawn_without_a_ladder(tmp_path: Path) -> None:
+    page = render_report(ReportInputs(assessment=_assessment()), tmp_path / "r.html").read_text()
+    assert "Damage against discharge" not in page
+
+
+def test_an_all_zero_ladder_draws_nothing_rather_than_dividing_by_zero(
+    tmp_path: Path,
+) -> None:
+    page = render_report(
+        ReportInputs(assessment=_assessment(ladder=_ladder([0.0, 0.0, 0.0, 0.0]))),
+        tmp_path / "r.html",
+    ).read_text()
+    assert "Damage against discharge" not in page
+
+
+def test_the_chart_marks_the_discharge_the_report_is_about(tmp_path: Path) -> None:
+    page = render_report(
+        ReportInputs(
+            assessment=_assessment(ladder=_ladder([0.0, 2e9, 6e9, 1.2e10]), discharge_cms=1500.0)
+        ),
+        tmp_path / "r.html",
+    ).read_text()
+    assert ">observed<" in page

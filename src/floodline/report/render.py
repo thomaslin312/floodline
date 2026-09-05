@@ -63,6 +63,75 @@ def _depth_image(depth: np.ndarray, max_width: int) -> str:
     return to_data_uri(encode_png(rgba, "RGBA"))
 
 
+def _ladder_chart(result: Assessment, currency: str) -> str:
+    """Draw damage against discharge as an inline SVG.
+
+    The single most informative thing the model produces, and the hardest to convey in
+    a table: how fast the cost climbs with flow. Drawn as one path with the observed
+    discharge marked, because the reader's first question about any figure here is what
+    happens if the flood is worse.
+    """
+    ladder = result.ladder
+    if ladder is None or not ladder.damage or max(ladder.damage) <= 0:
+        return ""
+
+    width, height, pad = 620, 210, 44
+    xs = np.asarray(ladder.discharge_cms, dtype=np.float64)
+    ys = np.asarray(ladder.damage, dtype=np.float64)
+    top = float(ys.max())
+    right = float(xs.max()) or 1.0
+
+    def place(x: float, y: float) -> tuple[float, float]:
+        return (
+            pad + (x / right) * (width - pad - 14),
+            height - pad - (y / top) * (height - pad - 18),
+        )
+
+    plotted = (place(x, y) for x, y in zip(xs, ys, strict=True))
+    points = " ".join(f"{px:.1f},{py:.1f}" for px, py in plotted)
+    base_x, base_y = place(result.discharge_cms, float(np.interp(result.discharge_cms, xs, ys)))
+    floor_y = height - pad
+
+    ticks = []
+    for frac in (0.0, 0.5, 1.0):
+        value = top * frac
+        _, ty = place(0.0, value)
+        ticks.append(
+            f'<line x1="{pad}" y1="{ty:.1f}" x2="{width - 14}" y2="{ty:.1f}" '
+            f'class="grid"/><text x="{pad - 6}" y="{ty + 4:.1f}" class="ylab">'
+            f"{_money(value, currency)}</text>"
+        )
+    for frac in (0.0, 0.5, 1.0):
+        value = right * frac
+        tx, _ = place(value, 0.0)
+        ticks.append(
+            f'<text x="{tx:.1f}" y="{height - pad + 16:.1f}" class="xlab">{value:,.0f}</text>'
+        )
+
+    return f"""<figure><svg viewBox="0 0 {width} {height}" role="img"
+ aria-label="Modelled damage against discharge">
+<style>
+ .grid{{stroke:var(--line);stroke-width:1}}
+ .curve{{fill:none;stroke:var(--accent);stroke-width:2.4;stroke-linejoin:round}}
+ .fill{{fill:var(--accent);opacity:.10}}
+ .ylab{{fill:var(--ink-3);font:11px ui-monospace,Menlo,monospace;text-anchor:end}}
+ .xlab{{fill:var(--ink-3);font:11px ui-monospace,Menlo,monospace;text-anchor:middle}}
+ .mark{{stroke:var(--ink-2);stroke-width:1;stroke-dasharray:3 3}}
+ .dot{{fill:var(--accent)}}
+ .note{{fill:var(--ink-2);font:11.5px system-ui,sans-serif}}
+</style>
+{"".join(ticks)}
+<polygon class="fill" points="{pad},{floor_y} {points} {width - 14},{floor_y}"/>
+<polyline class="curve" points="{points}"/>
+<line class="mark" x1="{base_x:.1f}" y1="{base_y:.1f}" x2="{base_x:.1f}" y2="{floor_y}"/>
+<circle class="dot" cx="{base_x:.1f}" cy="{base_y:.1f}" r="4"/>
+<text class="note" x="{base_x + 8:.1f}" y="{base_y - 8:.1f}">observed</text>
+<text class="xlab" x="{width / 2:.0f}" y="{height - 6:.0f}">discharge at outlet, m3/s</text>
+</svg><figcaption>Damage against discharge, priced building by building at every rung.
+ The dashed line is the discharge this report is about; everything to its right is a
+ larger flood than the one observed.</figcaption></figure>"""
+
+
 def _row(label: str, value: str, note: str = "") -> str:
     """One line of the figures table."""
     suffix = f'<span class="note">{html.escape(note)}</span>' if note else ""
@@ -282,6 +351,8 @@ def render_report(inputs: ReportInputs, destination: Path) -> Path:
             )
 
     limits = "".join(f"<li>{html.escape(item)}</li>" for item in _limits(result, currency))
+    chart = _ladder_chart(result, currency)
+    ladder_block = f"<h2>Damage against discharge</h2>{chart}" if chart else ""
     depth_uri = _depth_image(result.depth.data, inputs.max_width_px)
     stamp = datetime.now(UTC).strftime("%Y-%m-%d %H:%M UTC")
     timings = ", ".join(f"{k} {v:.1f}s" for k, v in result.seconds.items())
@@ -306,7 +377,7 @@ def render_report(inputs: ReportInputs, destination: Path) -> Path:
 <h2>Figures</h2>
 <table>{"".join(figures)}</table>
 
-<h2>Modelled depth</h2>
+{ladder_block}<h2>Modelled depth</h2>
 <figure><img src="{depth_uri}" alt="Modelled flood depth over {html.escape(unit.name)}">
 <figcaption>Depth on a square-root scale, 0 to 8 m+, the same ramp the interactive map
  uses. Blank is dry or outside the watershed.</figcaption></figure>

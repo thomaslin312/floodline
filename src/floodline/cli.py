@@ -943,6 +943,18 @@ def assess(
                 err=True,
             )
 
+    if result.ladder is not None and max(result.ladder.damage) > 0:
+        unit_name = resolved.damage.currency
+        typer.echo("\ndamage against discharge")
+        step = max(1, len(result.ladder.multipliers) // 6)
+        for i in range(0, len(result.ladder.multipliers), step):
+            typer.echo(
+                f"  {result.ladder.multipliers[i]:>4.2f}x "
+                f"{result.ladder.discharge_cms[i]:>8,.0f} m3/s  "
+                f"{result.ladder.inundated[i]:>8,} buildings  "
+                f"{unit_name} {result.ladder.damage[i] / 1e9:>6.2f} bn"
+            )
+
     for gap in result.gaps:
         typer.secho(f"gap: {gap}", fg=typer.colors.YELLOW, err=True)
     for note in result.warnings:
