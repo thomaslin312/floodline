@@ -224,7 +224,13 @@ def monte_carlo_damage(
         sampled[family] += 1
         # A deeper stage and a lower DEM both mean deeper water at the building.
         # -inf margins stay dry under any perturbation, which is the point.
-        drawn = np.maximum(margins + stage_shift[i] + dem_error[i], 0.0)
+        #
+        # Not clamped at zero. Clamping here made every dry building look like water
+        # was touching its slab, and the USACE curves are 13.4% at that point - the
+        # same defect as passing a clamped depth to the point estimate, which is what
+        # `damage_below_floor` now refuses. The curves are defined below zero; let
+        # them answer for below zero.
+        drawn = margins + stage_shift[i] + dem_error[i]
         result = estimate_damage(
             drawn,
             areas,

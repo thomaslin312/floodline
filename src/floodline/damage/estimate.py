@@ -74,6 +74,7 @@ def estimate_damage(
     family: CurveFamily | None = None,
     cost_scale: float = 1.0,
     cap_storeys: bool = True,
+    damage_below_floor: bool | None = None,
     lookup: CurveLookup | None = None,
     contents_lookup: CurveLookup | None = None,
     class_index: npt.NDArray[np.int64] | None = None,
@@ -85,8 +86,16 @@ def estimate_damage(
     Parameters
     ----------
     floor_depth_m
-        Water depth above finished floor level, from `exposure.building_depths`.
-        Depths at or below zero produce zero damage.
+        Distance from the water surface to the finished floor, **signed**: negative
+        where the water stopped below it. Pass `floor_margin_m`, not `floor_depth_m`.
+
+        This is not a preference. A clamped depth cannot tell a building the water
+        missed by five metres from one it reached exactly, and the USACE curves are
+        non-zero at zero - RES1-1SNB is already at 13.4% when water touches the slab.
+        Feeding them a clamped depth charged 205,754 dry Houston buildings 13.4% of
+        their value each. The curves are indexed from -0.61 m precisely so the
+        below-floor part is theirs to answer, and `damage_below_floor` refuses the
+        combination that caused it.
     floor_area_m2
         Footprint area times storeys.
     building_class
@@ -137,6 +146,26 @@ def estimate_damage(
     if not (depths.shape == areas.shape == classes.shape):
         raise ValueError(
             f"depth {depths.shape}, area {areas.shape} and class {classes.shape} must match"
+        )
+
+    # Does this curve set charge a building the water never reached? Only a curve
+    # defined below zero can answer that, and only a signed input can ask it.
+    below_floor = (
+        damage_below_floor
+        if damage_below_floor is not None
+        else min(curve.depths_m[0] for curve in curve_set.curves.values()) < 0.0
+    )
+    # The signature of a clamped array is a pile of values at exactly 0.0 and nothing
+    # below it. A genuine signed margin is continuous, so exact zeros are vanishingly
+    # rare; a clamped one had 213,880 of them on Whiteoak Bayou. Pass
+    # damage_below_floor=False to override, for curves that really do start at zero.
+    if below_floor and np.any(depths == 0.0) and not np.any(depths < 0.0):
+        raise ValueError(
+            f"these curves are defined below floor level, but {int(np.sum(depths == 0.0)):,} "
+            "of the depths given are exactly 0.0 and none are negative, which is what a "
+            "clamped depth looks like. Pass the signed floor_margin_m instead: with a "
+            "clamped depth every dry building is charged the curve's value at zero, "
+            "which for USACE residential is 13.4% of the structure."
         )
 
     if lookup is not None and class_index is not None:

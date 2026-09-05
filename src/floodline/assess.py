@@ -380,8 +380,18 @@ def assess_watershed(
         if exposure is not None and len(exposure.buildings):
             started = time.perf_counter()
             frame = exposure.buildings
+            # The signed margin, not the clamped depth. The USACE curves are defined
+            # from -0.61 m and are non-zero at 0, so a clamped depth would charge every
+            # dry building the curve's at-floor value: 13.4% of a house, times 205,754
+            # of them on this watershed alone. -inf where HAND is undefined is finite
+            # enough for the curve, which holds its first value below its first point.
+            margins = np.where(
+                np.isfinite(frame["floor_margin_m"].to_numpy()),
+                frame["floor_margin_m"].to_numpy(),
+                -1e6,
+            )
             args = (
-                frame["floor_depth_m"].to_numpy(),
+                margins,
                 frame["floor_area_m2"].to_numpy(),
                 frame["building_class"].to_numpy(dtype=object),
             )
@@ -401,7 +411,7 @@ def assess_watershed(
             interval = monte_carlo_damage(
                 *args,
                 storeys=storeys,
-                floor_margin_m=frame["floor_margin_m"].to_numpy(),
+                floor_margin_m=margins,
                 monte_carlo=mc,
                 damage=config.damage,
                 # The published per-depth spread on each curve. With one library there

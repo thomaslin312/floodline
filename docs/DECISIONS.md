@@ -1547,3 +1547,48 @@ Also made explicit rather than silent: NSI publishes a vehicle value for every
 structure and the USACE library has no vehicle function, so that exposure is collected
 and left unpriced. It is now named in the report's limits and in the module docstring
 instead of just being a column nothing reads.
+
+## 2026-09-06 — every dry building was being charged 13.4% of its value
+
+Spotted from the map: the damage layer covered far more ground than the flood did.
+It was not a rendering problem.
+
+USACE curves are non-zero at zero. RES1-1SNB is already at 13.4% when water touches the
+slab, which is correct and is why the curves are indexed from -0.61 m. `floor_depth_m`
+is clamped at zero, so a building the water missed by five metres and one the water is
+touching are the same number: 0.0. Feeding the clamped depth to a curve defined below
+zero charged **205,754 dry buildings 13.4% of their structure value each**.
+
+I had removed the zero-clamp inside `damage_fraction` deliberately, so that USACE's
+at-floor damage would survive - and by removing it globally, let every dry building
+collect it. The fix that made one case right made the other wrong.
+
+It was in two places. The point estimate took the clamped depth; and
+`monte_carlo_damage` clamped the perturbed margin at zero before every draw, so the same
+charge landed on every sample too. Both now take the signed `floor_margin_m`, which is
+what the curves were always indexed on.
+
+Corrected numbers for Whiteoak Bayou:
+
+|  | before | after |
+|---|---|---|
+| damage | USD 17.12 bn | **USD 7.37 bn** |
+| structure / contents | 10.19 / 6.93 | 3.33 / 4.05 |
+| loss ratio | 9.0% | **3.86%** |
+| opaque map cells | 27.6% | **11.7%** |
+| vs NFIP paid | 24.3x | 10.5x |
+
+11.7% of cells against 12.7% of structures inundated - those finally agree, which is
+the check that says the layer is now drawing what the model actually computed.
+
+A guard now refuses the combination outright: a curve set defined below zero, given
+depths with a pile of values at exactly 0.0 and nothing negative, raises with the
+explanation. Exact zeros are the signature - a genuine signed margin is continuous and
+has almost none, while the clamped Houston array had 213,880. An all-wet batch has no
+negatives either, so "no negatives" alone was too blunt and produced a false positive
+on the first attempt; the zeros are what distinguish them.
+
+The lesson is not the fix. It is that four separate tests asserted this pipeline was
+right, the endpoint returned well-formed JSON, and the error was a factor of two in the
+headline number - and what caught it was someone looking at the map and asking why the
+orange went where the blue did not.

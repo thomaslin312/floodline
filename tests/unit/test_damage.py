@@ -5,7 +5,7 @@ import pytest
 
 from floodline.config import Config, CurveFamily, DamageConfig, MonteCarloConfig
 from floodline.damage.costs import exposed_value, storey_exposure
-from floodline.damage.curves import BUNDLED_FAMILIES, bundled_curves
+from floodline.damage.curves import BUNDLED_FAMILIES, CurveSet, DamageCurve, bundled_curves
 from floodline.damage.estimate import estimate_damage
 from floodline.damage.uncertainty import monte_carlo_damage
 
@@ -311,3 +311,119 @@ def test_curve_spread_widens_the_interval() -> None:
         *args, storeys=STOREYS, monte_carlo=quiet, curve_sigma=SIGMA, **single
     )
     assert (with_spread.upper - with_spread.lower) > (without.upper - without.lower)
+
+
+# --- the clamped-depth-into-a-below-floor-curve bug ---
+
+BELOW_FLOOR = CurveSet(
+    family=CurveFamily.USACE,
+    curves={
+        "RES1-1SNB": DamageCurve(
+            family=CurveFamily.USACE,
+            building_class="RES1-1SNB",
+            depths_m=(-0.61, -0.30, 0.0, 0.30),
+            fractions=(0.0, 0.027, 0.134, 0.231),
+            provenance="test",
+            verified=True,
+        )
+    },
+    default_class="RES1-1SNB",
+)
+CODES = np.array(["RES1-1SNB"] * 3, dtype=object)
+
+
+def test_a_dry_building_takes_no_damage_from_a_below_floor_curve() -> None:
+    """The bug: USACE curves are 13.4% at zero, and a clamped depth makes every dry
+    building look like water is touching its slab."""
+    margins = np.array([-5.0, -1.0, 0.5])
+    got = estimate_damage(
+        margins, AREAS, CODES, storeys=STOREYS, curves=BELOW_FLOOR, cap_storeys=False
+    )
+    assert got.per_building[0] == 0.0
+    assert got.per_building[1] == 0.0
+    assert got.per_building[2] > 0.0
+    assert got.n_damaged == 1
+
+
+def test_a_clamped_depth_against_a_below_floor_curve_is_refused() -> None:
+    with pytest.raises(ValueError, match="what a clamped depth looks like"):
+        estimate_damage(
+            np.zeros(3), AREAS, CODES, storeys=STOREYS, curves=BELOW_FLOOR, cap_storeys=False
+        )
+
+
+def test_an_all_wet_batch_is_not_mistaken_for_a_clamped_one() -> None:
+    """No negatives is not enough to call it clamped: a small all-wet batch has none
+    either. The tell is a pile of values at exactly zero."""
+    got = estimate_damage(
+        np.array([2.0, 1.5, 0.8]),
+        AREAS,
+        CODES,
+        storeys=STOREYS,
+        curves=BELOW_FLOOR,
+        cap_storeys=False,
+    )
+    assert got.n_damaged == 3
+
+
+def test_the_guard_can_be_overridden_for_curves_that_start_at_zero() -> None:
+    got = estimate_damage(
+        np.zeros(3),
+        AREAS,
+        CODES,
+        storeys=STOREYS,
+        curves=BELOW_FLOOR,
+        cap_storeys=False,
+        damage_below_floor=False,
+    )
+    assert got.total > 0.0
+
+
+def test_water_exactly_at_the_floor_still_takes_the_curve_value() -> None:
+    """The opposite error: refusing at-floor damage would throw away what the curve
+    actually says happens when water reaches the slab."""
+    got = estimate_damage(
+        np.array([-1.0, 0.0, 0.3]),
+        AREAS,
+        CODES,
+        storeys=STOREYS,
+        curves=BELOW_FLOOR,
+        cap_storeys=False,
+    )
+    assert got.per_building[1] > 0.0
+    assert got.per_building[1] < got.per_building[2]
+
+
+def test_curves_that_start_at_zero_still_accept_clamped_depths() -> None:
+    """The bundled families are zero at zero, so a clamped depth is fine for them."""
+    got = estimate_damage(np.zeros(3), AREAS, CLASSES, storeys=STOREYS)
+    assert got.total == 0.0
+
+
+def test_the_monte_carlo_does_not_clamp_dry_buildings_into_the_flood() -> None:
+    """Second home of the same bug: the draw loop clamped the perturbed margin at
+    zero, so on every draw a dry building looked like water was touching its slab."""
+    margins = np.array([-40.0, -30.0, 2.0])
+    result = monte_carlo_damage(
+        margins,
+        AREAS,
+        CODES,
+        storeys=STOREYS,
+        floor_margin_m=margins,
+        curves=BELOW_FLOOR,
+        cap_storeys=False,
+        monte_carlo=MonteCarloConfig(n_samples=120, seed=9, stage_sigma_m=0.3),
+    )
+    # Only the third building is wet, so the point estimate must equal that one
+    # priced alone: the dry pair contribute exactly nothing.
+    only_wet = estimate_damage(
+        margins[2:],
+        AREAS[2:],
+        CODES[2:],
+        storeys=STOREYS[2:],
+        curves=BELOW_FLOOR,
+        cap_storeys=False,
+    )
+    assert result.point == pytest.approx(only_wet.total)
+    # And no draw drags the dry pair 30 m uphill into the flood.
+    assert result.building_counts.max() == 1
