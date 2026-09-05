@@ -74,6 +74,18 @@ def _cache_path(root: Path, huc: str, resolution_m: float) -> Path:
     return root / f"{huc}_{resolution_m:g}m.json"
 
 
+def _exposure_cache_path(root: Path, huc: str, resolution_m: float, samples: int) -> Path:
+    """Return the cache file for one exposure run.
+
+    The sample count belongs in the key. It is a query parameter the caller may set
+    anywhere from 50 to 5000, and it sets the width of the reported interval directly
+    - a 400-sample run and a 5000-sample run are different answers, not the same
+    answer computed twice. Keying on the watershed alone served whichever the first
+    caller happened to ask for, silently, to everyone after.
+    """
+    return root / f"{huc}_{resolution_m:g}m_{samples}s_exposure.json"
+
+
 def _exposure_stats(result: Any, config: Config) -> dict[str, Any]:
     """Flatten an assessment's exposure and damage into JSON-safe summary numbers."""
     exposed = result.buildings
@@ -330,7 +342,7 @@ def create_app(
         map should ask for this only when a reader wants it, not on every click.
         Cached afterwards like the compute bundle.
         """
-        path = cache / f"{huc}_{resolution:g}m_exposure.json"
+        path = _exposure_cache_path(cache, huc, resolution, samples)
         if path.exists() and not refresh:
             payload = json.loads(path.read_text())
             if _fresh(payload):

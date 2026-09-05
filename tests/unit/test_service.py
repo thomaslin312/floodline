@@ -214,3 +214,23 @@ def test_a_written_cache_carries_the_schema(tmp_path: Path) -> None:
     payload = {"huc": "1", "cached": False, "schema": CACHE_SCHEMA}
     (tmp_path / "c.json").write_text(json.dumps(payload))
     assert _fresh(json.loads((tmp_path / "c.json").read_text())) is True
+
+
+def test_the_exposure_cache_is_keyed_on_the_sample_count(tmp_path: Path) -> None:
+    """A 400-sample interval and a 5000-sample interval are different answers.
+
+    `samples` is a query parameter anywhere from 50 to 5000 and it sets the width of
+    the reported interval directly. The key left it out, so whichever count the first
+    caller asked for was served to everyone after, with no sign that the number of
+    draws behind the interval was not the one requested.
+    """
+    from floodline.service import _exposure_cache_path
+
+    paths = {_exposure_cache_path(tmp_path, "1204010403", 30.0, n) for n in (400, 1000)}
+    assert len(paths) == 2, "two sample counts must not collide on one cache file"
+
+    # Resolution and HUC still separate, and the same request still hits the same file.
+    same = _exposure_cache_path(tmp_path, "1204010403", 30.0, 400)
+    assert same == _exposure_cache_path(tmp_path, "1204010403", 30.0, 400)
+    assert same != _exposure_cache_path(tmp_path, "1204010403", 10.0, 400)
+    assert same != _exposure_cache_path(tmp_path, "1204010404", 30.0, 400)

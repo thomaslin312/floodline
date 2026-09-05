@@ -1781,3 +1781,16 @@ the reader to assume it was measured on their curves. It was not.
 
 The regression test now builds a curve breaking at whole feet and asserts equality to
 1e-12. Against the old implementation it fails by 5.9e-4.
+
+## 2026-09-06 — the exposure cache ignored the sample count
+
+`/api/exposure/{huc}` takes `samples` anywhere from 50 to 5,000 and the cache key was
+`{huc}_{resolution}m_exposure.json`. The sample count sets the width of the reported
+interval directly, so whichever count the first caller asked for was served to every
+caller after, with nothing in the payload to say the interval behind it came from 400
+draws rather than the 5,000 requested. A wider or narrower interval is a different
+answer, not the same answer computed twice.
+
+Keyed on samples now. Rejected: recording the count in the payload and serving it
+anyway with a warning — a caller who asks for 5,000 draws wants 5,000 draws, and the
+reason to ask is usually that the interval is about to be quoted somewhere.
