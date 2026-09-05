@@ -423,6 +423,16 @@ class DamageConfig(Frozen):
         "rebuild rates and the Monte Carlo samples cost_sigma_frac around them.",
     )
     default_class: str = Field(default="residential")
+    discharge_ladder_step: Positive = Field(
+        default=0.1,
+        description="Spacing of the discharge multiplier ladder, from 0 to "
+        "discharge_ladder_max. Must divide 1.0 exactly, so the observed discharge is a "
+        "rung rather than a point interpolated between two: it is the one multiplier "
+        "every number in the model is anchored to.",
+    )
+    discharge_ladder_max: Positive = Field(
+        default=3.0, description="Top of the multiplier ladder the slider spans."
+    )
     map_reference_multipliers: tuple[Fraction | Positive, ...] = Field(
         default=(0.5, 1.0, 2.0, 3.0),
         description="Discharge multipliers the map's damage layer is rendered at; the "
@@ -435,6 +445,17 @@ class DamageConfig(Frozen):
         "Single-family, one storey, no basement - the commonest US dwelling, and the "
         "conservative choice for an unclassified building.",
     )
+
+    @model_validator(mode="after")
+    def _ladder_contains_the_observed_discharge(self) -> Self:
+        rungs = round(1.0 / self.discharge_ladder_step)
+        if abs(rungs * self.discharge_ladder_step - 1.0) > 1e-9:
+            raise ValueError(
+                f"discharge_ladder_step {self.discharge_ladder_step} does not divide 1.0, "
+                "so the observed discharge would fall between two rungs and every "
+                "figure reported at it would be interpolated"
+            )
+        return self
 
     @model_validator(mode="after")
     def _default_class_priced(self) -> Self:

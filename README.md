@@ -104,10 +104,10 @@ The README says a screening model should put the observed building count inside 
 
 | | Whiteoak Bayou, Harvey |
 |---|---|
-| modelled inundated | 33,239 (interval 15,795 – 49,976) |
+| modelled inundated | 33,279 (interval 15,795 – 49,976) |
 | NFIP claims filed inside the watershed | 6,769, area-weighted from block groups |
 | paid on those claims | USD 705 M |
-| modelled damage | USD 7.94 bn (structure 3.51, contents 4.43) |
+| modelled damage | USD 7.95 bn (structure 3.51, contents 4.44) |
 | loss ratio | 4.2% of USD 191 bn exposed |
 
 **The interval does not contain the claim count, and it should not.** An NFIP claim

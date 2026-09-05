@@ -72,6 +72,7 @@ __all__ = [
     "ComputeResult",
     "WatershedNotFoundError",
     "compute_watershed",
+    "discharge_ladder",
     "gauge_for_watershed",
     "geometry_wgs84",
     "marks_within",
@@ -412,7 +413,7 @@ def compute_watershed(
     timings["rating"] = time.perf_counter() - start
 
     start = time.perf_counter()
-    ladder = multipliers if multipliers is not None else np.linspace(0.0, 3.0, 33)
+    ladder = discharge_ladder(resolved, multipliers)
     factor = max(1, int(np.ceil(dem.data.shape[1] / target_width)))
     hand_r = block_reduce(chain.hand.hand, factor, how="mean")
     reach_r = block_reduce(
@@ -678,6 +679,22 @@ def marks_within(unit: Watershed, config: Config, path: Path) -> list[dict[str, 
             }
         )
     return out
+
+
+def discharge_ladder(
+    config: Config, override: npt.NDArray[np.float64] | None = None
+) -> npt.NDArray[np.float64]:
+    """Return the discharge multiplier ladder both the map and the damage curve use.
+
+    One definition, because the stage table and the damage ladder have to agree about
+    what "1.00x" means. The step is validated to divide 1.0, so the observed discharge
+    is a rung rather than something interpolated between two.
+    """
+    if override is not None:
+        return override
+    damage = config.damage
+    steps = round(damage.discharge_ladder_max / damage.discharge_ladder_step) + 1
+    return np.asarray(np.linspace(0.0, float(damage.discharge_ladder_max), steps))
 
 
 def to_web_mercator(

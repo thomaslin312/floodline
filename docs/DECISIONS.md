@@ -1666,3 +1666,20 @@ hardcoded 90), the height-above-drainage percentile (10), the nominal storey hei
 reaches), the fallback footprint side for a structure with no recorded area (4 m), and
 the four reference multipliers the map layer is rendered at. Unit conversions stay
 where they are - 0.3048 is not a preference.
+
+## 2026-09-06 — the observed discharge is now a rung, not an interpolation
+
+The multiplier ladder was `linspace(0, 3, 33)`, step 0.09375. One point on it matters
+more than all the others - 1.00x, the discharge every figure in the model is anchored
+to - and it was not on the ladder. The map's depth at "1.00x" was interpolated between
+0.9375 and 1.03125, and so was the damage panel's. That is where the last 0.12%
+disagreement between the ladder and the point estimate came from: not two methods, just
+a rung that was not there.
+
+The ladder now steps 0.1 from 0 to 3, which puts 1.0 on it along with every map
+reference multiplier, and `discharge_ladder_step` is validated to divide 1.0 exactly -
+a config that would step past the observed discharge is refused with the reason. Both
+the stage table and the damage ladder read one `discharge_ladder` helper, so they
+cannot drift apart about what a multiplier means.
+
+The ladder and the point estimate now agree to 0.0005%, which is float rounding.

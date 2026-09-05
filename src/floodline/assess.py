@@ -28,7 +28,13 @@ import shapely
 from pyproj import CRS, Transformer
 from rasterio.transform import rowcol
 
-from floodline.compute import gauge_for_watershed, geometry_wgs84, marks_within, wgs84_bounds
+from floodline.compute import (
+    discharge_ladder,
+    gauge_for_watershed,
+    geometry_wgs84,
+    marks_within,
+    wgs84_bounds,
+)
 from floodline.config import Config
 from floodline.damage.estimate import NO_WATER, DamageEstimate, estimate_damage
 from floodline.damage.ladder import DamageLadder, damage_ladder
@@ -221,7 +227,7 @@ def assess_watershed(
             discharge_cms, area_cells, links, chain.accumulation.accumulation, config=config
         )
         stages = stage_field_from_discharge(reach_of, curves, flows)
-        ladder_steps = multipliers if multipliers is not None else np.linspace(0.0, 3.0, 33)
+        ladder_steps = discharge_ladder(config, multipliers)
         flood = inundate(
             chain.hand.hand,
             stages.stage_m,
