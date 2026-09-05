@@ -88,6 +88,19 @@ def _exposure_stats(result: Any, config: Config) -> dict[str, Any]:
             if damage is not None
             else {}
         ),
+        "ladder": (
+            {
+                "multipliers": list(result.ladder.multipliers),
+                "discharge_cms": list(result.ladder.discharge_cms),
+                "damage": list(result.ladder.damage),
+                "structure": list(result.ladder.structure),
+                "contents": list(result.ladder.contents),
+                "inundated": list(result.ladder.inundated),
+                "residents": list(result.ladder.residents),
+            }
+            if result.ladder is not None
+            else None
+        ),
         "flooded_km2": result.flooded_km2,
         "max_depth_m": result.max_depth_m,
         "discharge_cms": result.discharge_cms,
@@ -347,6 +360,11 @@ def create_app(
             currency=local.damage.currency,
             stats=_exposure_stats(result, local),
             notes=list(result.damage.notes),
+            damage_by_multiplier=(
+                dict(result.ladder.per_building)
+                if result.ladder is not None and result.ladder.per_building
+                else None
+            ),
         )
         payload = {
             # ExposureBundle uses slots, so it has no __dict__ to splat.

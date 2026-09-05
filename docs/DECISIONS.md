@@ -1592,3 +1592,59 @@ The lesson is not the fix. It is that four separate tests asserted this pipeline
 right, the endpoint returned well-formed JSON, and the error was a factor of two in the
 headline number - and what caught it was someone looking at the map and asking why the
 orange went where the blue did not.
+
+## 2026-09-06 — damage is a function of discharge, not one answer at one flow
+
+The slider always moved the water and never moved the damage, which made the most
+interesting question the model can answer — what would a different flood cost — the one
+thing it could not show. Now it answers it, in the numbers and on the map.
+
+The insight that makes it cheap: nothing about a building changes with discharge. Its
+value, its curve, its foundation height and its height above the nearest drainage are
+fixed; only the stage in its reach moves. So the expensive work — reading the raster,
+reducing each footprint, matching occupancy codes — happens once, and each further
+point is a gather:
+
+    depth above floor at multiplier m = stage_m[reach of building] - HAND - foundation
+
+Thirty-three multipliers over 258,527 structures costs about 13 s, against several
+minutes if the raster were re-read at each. `exposure.building_depths` now returns
+`hand_m` and `reach_id` per structure, which is all the ladder needs.
+
+On the map, four channels of one RGBA image hold log-damage per cell at multipliers
+0.5, 1.0, 2.0 and 3.0, and the browser interpolates between the bracketing pair and
+recolours. A raster per rung of the ladder would have been ten megabytes; this is 235
+kB and follows the slider continuously. Exactly the trick the depth overlay plays with
+its per-reach stage table.
+
+The interval is computed at the observed discharge only. A Monte Carlo at every rung
+costs a quarter of an hour and says the same thing stretched, so the panel says which
+discharge the band belongs to rather than implying it moved.
+
+## 2026-09-06 — three defects the ladder exposed, all of them older than it
+
+Building the ladder meant computing the same quantity two ways, which is the fastest
+way to find out that one of them was wrong. All three predate the ladder.
+
+1. **Zero discharge cost USD 0.46 bn.** The USACE curves are defined below floor level
+   because water can sit in a crawlspace without reaching the boards - but that only
+   means anything when there *is* water. At zero discharge the channel is empty, and a
+   channel-side building was being charged 2.7% of its value against it. The gate is
+   that `stage - HAND` must be positive before the below-floor part of a curve applies.
+2. **A building with no water was still charged if it had a basement.** Four USACE
+   with-basement types start at 1.7% at -2.44 m, correctly: a basement eight feet down
+   does take water. `np.interp` holds a curve's first value below its first point, so
+   the sentinel standing for "no water at all" collected it. `NO_WATER` is now a named
+   constant and anything below `NO_WATER_BELOW` is dry regardless of the curve - a
+   distinction the code previously did not make at all.
+3. **The panel and the ladder disagreed by 12%.** The point estimate derived a
+   building's depth by reducing the depth raster under its footprint; the ladder
+   derived it from `stage[reach] - HAND`. Two samplings of one quantity, and no reason
+   for a reader to trust either. There is now one definition, used by the point
+   estimate, the Monte Carlo and the ladder alike, and they agree to 0.12% - which is
+   float noise, not method.
+
+Also fixed while verifying: the slider's redraw was scheduled on `requestAnimationFrame`
+alone, which never fires while a page is hidden. A backgrounded tab was left with the
+coalescing flag set and every later input dropped. It now falls back to a timer when
+hidden, and redraws on becoming visible again.

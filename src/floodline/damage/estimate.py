@@ -18,7 +18,21 @@ from floodline.config import Config, CurveFamily, DamageConfig
 from floodline.damage.costs import exposed_value, storey_exposure
 from floodline.damage.curves import CurveLookup, CurveSet, bundled_curves
 
-__all__ = ["DamageEstimate", "estimate_damage"]
+__all__ = ["NO_WATER", "DamageEstimate", "estimate_damage"]
+
+NO_WATER = -1_000_000.0
+"""Depth standing for "no water reached this building at all".
+
+Distinct from a depth merely below a curve's first point, which is a real state a real
+curve answers for: four USACE with-basement types start at 1.7% at -2.44 m, because a
+basement eight feet down does take water. `np.interp` holds a curve's first value below
+its first point, so without this distinction every basement in the watershed was
+charged 1.7% at zero discharge. Anything below `NO_WATER_BELOW` is dry, full stop."""
+
+NO_WATER_BELOW = -1_000.0
+"""Depths under this are the sentinel, not a measurement. A thousand metres below a
+building's floor is not a flood state any curve has an opinion about, and it leaves
+room for the Monte Carlo to add noise to the sentinel without lifting it."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -172,6 +186,9 @@ def estimate_damage(
         fraction = lookup.fraction(depths, class_index, sigma_z=curve_sigma_z)
     else:
         fraction = curve_set.damage_fraction(depths, classes, config=damage_config)
+    # No water is not the same as water below the curve's range.
+    dry = depths <= NO_WATER_BELOW
+    fraction = np.where(dry, 0.0, fraction)
     if structure_value is None:
         value = exposed_value(areas, classes, config=damage_config, cost_scale=cost_scale)
     else:
@@ -207,7 +224,7 @@ def estimate_damage(
             contents_fraction = (
                 contents_curves.damage_fraction(depths, classes, config=damage_config) * reach
             )
-        contents_damage = contents_fraction * contents
+        contents_damage = np.where(dry, 0.0, contents_fraction) * contents
         per_building = per_building + contents_damage
     elif (contents_value is None) != (contents_curves is None):
         raise ValueError("contents_value and contents_curves must be given together")

@@ -30,7 +30,8 @@ from rasterio.transform import rowcol
 
 from floodline.compute import gauge_for_watershed, geometry_wgs84, marks_within, wgs84_bounds
 from floodline.config import Config
-from floodline.damage.estimate import DamageEstimate, estimate_damage
+from floodline.damage.estimate import NO_WATER, DamageEstimate, estimate_damage
+from floodline.damage.ladder import DamageLadder, damage_ladder
 from floodline.damage.uncertainty import DamageInterval, monte_carlo_damage
 from floodline.damage.usace import UsaceCurves, ensure_usace_curves, load_usace_curves
 from floodline.exposure.buildings import BuildingExposure, building_depths
@@ -94,6 +95,10 @@ class Assessment:
     inventory: str = "none"
     """Which structure inventory the exposure came from."""
 
+    ladder: DamageLadder | None = None
+    """Damage at every discharge on the slider's ladder, so the map can answer "what
+    would a bigger flood cost" without another pass over the raster."""
+
     marks: MarkMetrics | None = None
     """Modelled water surface scored against surveyed high-water marks. This is the
     project's only real extent validation - CSI needs an observed polygon and there
@@ -130,6 +135,7 @@ def assess_watershed(
     graded_marks_only: bool = True,
     inventory: str = "nsi",
     download_curves: bool = False,
+    multipliers: npt.NDArray[np.float64] | None = None,
     download_population: bool = False,
     population_product: PopulationProduct = PopulationProduct.WORLDPOP_CONSTRAINED,
     samples: int | None = None,
@@ -215,6 +221,7 @@ def assess_watershed(
             discharge_cms, area_cells, links, chain.accumulation.accumulation, config=config
         )
         stages = stage_field_from_discharge(reach_of, curves, flows)
+        ladder_steps = multipliers if multipliers is not None else np.linspace(0.0, 3.0, 33)
         flood = inundate(
             chain.hand.hand,
             stages.stage_m,
@@ -294,18 +301,31 @@ def assess_watershed(
                         depth_raster.transform,
                         boxes,
                         unclamped_depth=margin,
+                        hand=chain.hand.hand,
+                        reach=reach_of,
                         config=config,
                         class_column="building_class",
                         storeys_column="num_floors",
                         default_class=config.damage.usace_default_occupancy,
                     )
                     frame = exposure.buildings
-                    # NSI records a real foundation height per structure, so the single
-                    # global freeboard constant is not needed and not used here.
-                    frame["floor_depth_m"] = np.maximum(frame["depth_m"] - frame["found_ht_m"], 0.0)
-                    frame["floor_margin_m"] = frame["floor_margin_m"] + (
-                        config.exposure.floor_height_m - frame["found_ht_m"]
+                    # One definition of how deep the water is at a building, derived
+                    # the same way the ladder derives it: stage in its reach, minus its
+                    # height above drainage, minus its own foundation height. The
+                    # alternative was reducing the depth raster under the footprint,
+                    # which is a different sampling of the same quantity - and the two
+                    # disagreed by 12% on the damage total, which is exactly the sort
+                    # of gap that makes a panel and a slider tell different stories.
+                    stage_at = np.array(
+                        [stages.by_reach.get(int(r), 0.0) for r in frame["reach_id"]],
+                        dtype=np.float64,
                     )
+                    hand_at = np.asarray(frame["hand_m"].to_numpy(), dtype=np.float64)
+                    water = np.where(np.isfinite(hand_at), stage_at - hand_at, -np.inf)
+                    frame["depth_m"] = np.maximum(water, 0.0)
+                    found_at = np.asarray(frame["found_ht_m"].to_numpy(), dtype=np.float64)
+                    frame["floor_margin_m"] = np.where(water > 0.0, water - found_at, -np.inf)
+                    frame["floor_depth_m"] = np.maximum(frame["floor_margin_m"], 0.0)
                     wet = frame["floor_depth_m"] > 0.0
                     night_pop = float(frame.loc[wet, "pop_night"].sum())
                     day_pop = float(frame.loc[wet, "pop_day"].sum())
@@ -377,6 +397,7 @@ def assess_watershed(
         # ---- damage --------------------------------------------------------
         damage: DamageEstimate | None = None
         interval: DamageInterval | None = None
+        ladder: DamageLadder | None = None
         if exposure is not None and len(exposure.buildings):
             started = time.perf_counter()
             frame = exposure.buildings
@@ -388,7 +409,7 @@ def assess_watershed(
             margins = np.where(
                 np.isfinite(frame["floor_margin_m"].to_numpy()),
                 frame["floor_margin_m"].to_numpy(),
-                -1e6,
+                NO_WATER,
             )
             args = (
                 margins,
@@ -405,6 +426,51 @@ def assess_watershed(
                     "curves": damage_curves.structure,
                 }
             damage = estimate_damage(*args, storeys=storeys, config=config, **extra)
+
+            # ---- damage as a function of discharge -------------------------
+            # Nothing about a building changes with flow; only the stage in its reach
+            # does. So the whole ladder costs a gather per rung rather than another
+            # pass over the raster.
+            if "hand_m" in frame.columns and "reach_id" in frame.columns:
+                stage_table = np.zeros((len(curves) and max(curves) + 1, len(ladder_steps)))
+                for step, factor in enumerate(ladder_steps):
+                    stepped = discharge_by_area_ratio(
+                        discharge_cms * float(factor),
+                        area_cells,
+                        links,
+                        chain.accumulation.accumulation,
+                        config=config,
+                    )
+                    for reach, curve in curves.items():
+                        stage_table[reach, step] = curve.stage_for_discharge(
+                            stepped.get(reach, 0.0)
+                        )
+                ladder = damage_ladder(
+                    frame["hand_m"].to_numpy(),
+                    frame["reach_id"].to_numpy(),
+                    frame["found_ht_m"].to_numpy()
+                    if "found_ht_m" in frame.columns
+                    else np.full(len(frame), config.exposure.floor_height_m),
+                    frame["floor_area_m2"].to_numpy(),
+                    frame["building_class"].to_numpy(dtype=object),
+                    storeys,
+                    stage_by_multiplier=stage_table,
+                    multipliers=np.asarray(ladder_steps, dtype=np.float64),
+                    base_discharge_cms=discharge_cms,
+                    structure_value=extra.get("structure_value"),
+                    contents_value=extra.get("contents_value"),
+                    curves=extra.get("curves"),
+                    contents_curves=extra.get("contents_curves"),
+                    residents=frame["pop_night"].to_numpy()
+                    if "pop_night" in frame.columns
+                    else None,
+                    # Four rungs the map layer interpolates between. They bracket the
+                    # slider closely enough that the error between them is smaller than
+                    # the model's own, and four is what fits in an RGBA image.
+                    reference_multipliers=(0.5, 1.0, 2.0, 3.0),
+                    config=config,
+                )
+
             mc = config.monte_carlo
             if samples is not None:
                 mc = mc.model_copy(update={"n_samples": samples})
@@ -436,6 +502,7 @@ def assess_watershed(
             people=people,
             damage=damage,
             interval=interval,
+            ladder=ladder,
             marks=scored,
             n_marks_available=n_marks,
             inventory=used_inventory,

@@ -76,6 +76,22 @@ def _resolve(config: Config | ExposureConfig | None) -> ExposureConfig:
     return config if config is not None else ExposureConfig()
 
 
+def _append_terrain(
+    hand_of: list[float],
+    reach_of: list[int],
+    heights: npt.NDArray[np.float64] | None,
+    reaches: npt.NDArray[np.int64] | None,
+    row: int,
+    col: int,
+    inside: bool,
+) -> None:
+    """Record the centroid cell's HAND and reach, for the centroid statistic."""
+    if heights is not None:
+        hand_of.append(float(heights[row, col]) if inside else np.inf)
+    if reaches is not None:
+        reach_of.append(int(reaches[row, col]) if inside else -1)
+
+
 def _reduce(values: npt.NDArray[np.float64], stat: BuildingDepthStat) -> float:
     """Reduce the cells under one footprint to a single value.
 
@@ -108,6 +124,8 @@ def building_depths(
     buildings: gpd.GeoDataFrame,
     *,
     unclamped_depth: npt.NDArray[np.floating] | None = None,
+    hand: npt.NDArray[np.floating] | None = None,
+    reach: npt.NDArray[np.integer] | None = None,
     config: Config | ExposureConfig | None = None,
     storeys_column: str = "num_floors",
     height_column: str = "height",
@@ -132,6 +150,11 @@ def building_depths(
         water missed by a centimetre and one it missed by five metres. The Monte
         Carlo needs that difference, because perturbing a value clamped at zero can
         only ever invent flooding.
+    hand, reach
+        Height above nearest drainage and the reach each cell drains to. Optional, and
+        what makes damage a function of discharge rather than a single answer: with
+        them each building carries `hand_m` and `reach_id`, so its depth at any other
+        flow is `stage_of_that_reach - hand_m` and needs no re-reading of the raster.
     buildings
         Footprints. Any of `storeys_column`, `height_column` and `class_column` that
         are present are used; missing ones fall back to config defaults.
@@ -169,9 +192,18 @@ def building_depths(
     kept = buildings.loc[keep].copy()
     kept["area_m2"] = areas.loc[keep]
 
+    heights = None if hand is None else np.asarray(hand, dtype=np.float64)
+    reaches = None if reach is None else np.asarray(reach, dtype=np.int64)
+    if heights is not None and heights.shape != grid.shape:
+        raise ValueError(f"hand shape {heights.shape} does not match depth {grid.shape}")
+    if reaches is not None and reaches.shape != grid.shape:
+        raise ValueError(f"reach shape {reaches.shape} does not match depth {grid.shape}")
+
     stat = exposure.building_depth_stat
     depths: list[float] = []
     margins: list[float] = []
+    hand_of: list[float] = []
+    reach_of: list[int] = []
     outside = 0
 
     for geom in kept.geometry:
@@ -184,16 +216,21 @@ def building_depths(
             outside += 1
             depths.append(0.0)
             margins.append(-np.inf if has_margin else 0.0)
+            hand_of.append(np.inf)
+            reach_of.append(-1)
             continue
 
         window = grid[r0:r1, c0:c1]
         margin_window = margin_grid[r0:r1, c0:c1]
+        hand_window = None if heights is None else heights[r0:r1, c0:c1]
+        reach_window = None if reaches is None else reaches[r0:r1, c0:c1]
         if stat is BuildingDepthStat.CENTROID:
             point = geom.centroid
             row, col = rowcol(transform, point.x, point.y)
             inside = 0 <= int(row) < rows and 0 <= int(col) < cols
             depths.append(float(grid[int(row), int(col)]) if inside else 0.0)
             margins.append(float(margin_grid[int(row), int(col)]) if inside else -np.inf)
+            _append_terrain(hand_of, reach_of, heights, reaches, int(row), int(col), inside)
             continue
 
         # geometry_mask returns True *outside* the shape by default.
@@ -205,6 +242,19 @@ def building_depths(
         )
         depths.append(_reduce(window[covered], stat))
         margins.append(_reduce(margin_window[covered], stat))
+        if hand_window is not None:
+            # The low end of HAND under the footprint, matching the high end of depth:
+            # the two must describe the same cell or a building's own depth and its
+            # depth-from-stage would disagree.
+            sample = hand_window[covered]
+            finite = sample[np.isfinite(sample)]
+            hand_of.append(float(np.percentile(finite, 10)) if finite.size else np.inf)
+        if reach_window is not None:
+            ids = reach_window[covered]
+            valid = ids[ids >= 0]
+            # The reach most of the footprint drains to, not an average: reach ids are
+            # labels, and the mean of two labels is a third reach that does not exist.
+            reach_of.append(int(np.bincount(valid).argmax()) if valid.size else -1)
 
     kept["depth_m"] = np.asarray(depths, dtype=np.float64)
     # Depth-damage curves are defined above finished floor level, not above ground.
@@ -212,6 +262,10 @@ def building_depths(
     # Signed distance from the water surface to the finished floor. Negative means the
     # water stopped short, and how far short is what the Monte Carlo perturbs.
     kept["floor_margin_m"] = np.asarray(margins, dtype=np.float64) - exposure.floor_height_m
+    if heights is not None:
+        kept["hand_m"] = np.asarray(hand_of, dtype=np.float64)
+    if reaches is not None:
+        kept["reach_id"] = np.asarray(reach_of, dtype=np.int64)
 
     storeys = _storeys(kept, exposure, storeys_column, height_column)
     kept["storeys"] = storeys

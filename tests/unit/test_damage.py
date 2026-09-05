@@ -6,7 +6,7 @@ import pytest
 from floodline.config import Config, CurveFamily, DamageConfig, MonteCarloConfig
 from floodline.damage.costs import exposed_value, storey_exposure
 from floodline.damage.curves import BUNDLED_FAMILIES, CurveSet, DamageCurve, bundled_curves
-from floodline.damage.estimate import estimate_damage
+from floodline.damage.estimate import NO_WATER, estimate_damage
 from floodline.damage.uncertainty import monte_carlo_damage
 
 CLASSES = np.array(["residential", "commercial", "residential"], dtype=object)
@@ -426,4 +426,48 @@ def test_the_monte_carlo_does_not_clamp_dry_buildings_into_the_flood() -> None:
     )
     assert result.point == pytest.approx(only_wet.total)
     # And no draw drags the dry pair 30 m uphill into the flood.
+    assert result.building_counts.max() == 1
+
+
+def test_a_basement_curve_does_not_charge_a_building_with_no_water() -> None:
+    """Four USACE with-basement types start at 1.7% at -2.44 m, correctly: a basement
+    eight feet down does take water. np.interp holds a curve's first value below its
+    first point, so the sentinel for "no water at all" charged every basement in the
+    watershed 1.7% at zero discharge."""
+    basement = CurveSet(
+        family=CurveFamily.USACE,
+        curves={
+            "RES1-2SWB": DamageCurve(
+                family=CurveFamily.USACE,
+                building_class="RES1-2SWB",
+                depths_m=(-2.44, 0.0, 1.0),
+                fractions=(0.017, 0.20, 0.35),
+                provenance="test",
+                verified=True,
+            )
+        },
+        default_class="RES1-2SWB",
+    )
+    codes = np.array(["RES1-2SWB"] * 3, dtype=object)
+    depths = np.array([NO_WATER, -3.0, 0.5])
+    got = estimate_damage(depths, AREAS, codes, storeys=STOREYS, curves=basement, cap_storeys=False)
+    assert got.per_building[0] == 0.0, "no water must mean no damage"
+    # Water below the curve's first point is a real state the curve answers for.
+    assert got.per_building[1] > 0.0
+    assert got.per_building[2] > got.per_building[1]
+
+
+def test_the_sentinel_survives_monte_carlo_noise() -> None:
+    codes = np.array(["RES1-1SNB"] * 2, dtype=object)
+    margins = np.array([NO_WATER, 1.0])
+    result = monte_carlo_damage(
+        margins,
+        AREAS[:2],
+        codes,
+        storeys=STOREYS[:2],
+        floor_margin_m=margins,
+        curves=BELOW_FLOOR,
+        cap_storeys=False,
+        monte_carlo=MonteCarloConfig(n_samples=60, seed=3, stage_sigma_m=0.5),
+    )
     assert result.building_counts.max() == 1

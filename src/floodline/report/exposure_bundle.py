@@ -7,6 +7,14 @@ applies here: rasterise onto the bundle's own display grid and ship a PNG. A few
 hundred kilobytes, and it lines up with the flood layer pixel for pixel because it is
 built on the same transform.
 
+Four channels, one per reference discharge. The slider moves the water, so it has to
+move the damage too, and shipping a raster per rung of the 33-step ladder would be ten
+megabytes to draw one picture. Instead each channel holds log-damage per cell at one of
+four multipliers and the browser interpolates between the two that bracket wherever the
+slider is - the same trick the depth overlay plays with its per-reach stage table, and
+for the same reason. Colour and transparency are then decided in the browser, which is
+what lets one image serve every discharge.
+
 The image carries finished colour, not packed data channels. The depth overlay packs
 HAND and reach ids into channels because the browser has to recompute depth every time
 the discharge slider moves; damage does not change until the whole assessment is rerun,
@@ -86,23 +94,29 @@ DAMAGE_RAMP = np.array(
 )
 
 
-def encode_damage(damage: npt.NDArray[np.floating]) -> npt.NDArray[np.uint8]:
-    """Colour a damage grid on a log ramp, transparent where nothing was damaged.
+def log_scale(damage: npt.NDArray[np.floating]) -> npt.NDArray[np.uint8]:
+    """Scale a damage grid onto 0-255, logarithmically, zero where nothing was hit.
 
     Logarithmic because flood damage spans five orders of magnitude across one
     watershed - a shed and a hospital in the same frame - and a linear 8-bit ramp
-    would put almost every cell in the bottom two values and show nothing.
+    would put almost every cell in the bottom two values and show nothing. Zero is
+    reserved for "no damage", so the usable range starts at 1.
     """
-    scaled = np.zeros(damage.shape, dtype=np.float64)
+    out = np.zeros(damage.shape, dtype=np.float64)
     hit = damage >= DAMAGE_FLOOR
     if np.any(hit):
         low = np.log10(DAMAGE_FLOOR)
         high = np.log10(DAMAGE_CEILING)
-        scaled[hit] = (np.log10(np.clip(damage[hit], DAMAGE_FLOOR, DAMAGE_CEILING)) - low) / (
-            high - low
-        )
+        span = (np.log10(np.clip(damage[hit], DAMAGE_FLOOR, DAMAGE_CEILING)) - low) / (high - low)
+        out[hit] = 1.0 + span * 254.0
+    return np.clip(np.rint(out), 0, 255).astype(np.uint8)
 
-    position = scaled * (len(DAMAGE_RAMP) - 1)
+
+def encode_damage(damage: npt.NDArray[np.floating]) -> npt.NDArray[np.uint8]:
+    """Colour a single damage grid on the warm ramp, for a static image."""
+    scaled = log_scale(damage).astype(np.float64)
+    hit = scaled > 0
+    position = np.where(hit, (scaled - 1.0) / 254.0, 0.0) * (len(DAMAGE_RAMP) - 1)
     low_i = np.clip(np.floor(position).astype(int), 0, len(DAMAGE_RAMP) - 1)
     high_i = np.clip(low_i + 1, 0, len(DAMAGE_RAMP) - 1)
     frac = (position - low_i)[..., None]
@@ -129,7 +143,11 @@ class ExposureBundle:
     """Web Mercator, matching the depth overlay so the layers register."""
 
     damage_png: str = ""
-    """RGBA data URI, coloured on a log ramp and transparent where nothing was hit."""
+    """RGBA data URI. Each channel is log-scaled damage per cell at one of
+    `reference_multipliers`; the browser interpolates between the bracketing pair and
+    colours the result, which is what lets one image serve every slider position."""
+
+    reference_multipliers: tuple[float, ...] = ()
 
     damage_floor: float = DAMAGE_FLOOR
     damage_ceiling: float = DAMAGE_CEILING
@@ -151,18 +169,33 @@ def build_exposure_bundle(
     currency: str = "USD",
     stats: dict[str, Any] | None = None,
     notes: list[str] | None = None,
+    damage_by_multiplier: dict[float, npt.NDArray[np.float64]] | None = None,
 ) -> ExposureBundle:
     """Rasterise a priced building table onto the display grid and encode it.
 
     `reduction` is the same block factor the depth overlay uses, so the two layers
     land on identical pixels and a reader comparing them is comparing the same ground.
     """
-    damage, count = rasterise_damage(buildings, transform, shape)
+    # One channel per reference discharge, so the layer can follow the slider. Falls
+    # back to a single channel repeated when only one damage field is available.
+    by_multiplier = damage_by_multiplier or {}
+    columns = sorted(by_multiplier)
+    if columns:
+        frames = [
+            rasterise_damage(
+                buildings.assign(_d=by_multiplier[m]), transform, shape, damage_column="_d"
+            )[0]
+            for m in columns
+        ]
+    else:
+        frames = [rasterise_damage(buildings, transform, shape)[0]]
+    damage = frames[-1]
+    _, count = rasterise_damage(buildings, transform, shape)
     display_transform = transform
     if reduction > 1:
         # Sum, not mean: these are totals per cell, and averaging would quietly
         # divide the watershed's damage by the block area.
-        damage = block_reduce(damage, reduction, how="sum")
+        frames = [block_reduce(f, reduction, how="sum") for f in frames]
         count = block_reduce(count.astype(np.float64), reduction, how="sum").astype(np.int32)
         display_transform = transform * Affine.scale(reduction, reduction)
 
@@ -173,16 +206,30 @@ def build_exposure_bundle(
     # Nearest, not bilinear. Damage is a per-cell total over a sparse set of
     # buildings, and interpolating it spreads money into cells that hold none:
     # bilinear made 37% of the grid opaque for 32,833 damaged structures.
-    damage, mercator_bounds = to_web_mercator(damage, display_transform, config, "nearest")
-    damage = np.nan_to_num(damage, nan=0.0)
+    warped = []
+    mercator_bounds = bounds
+    for frame in frames:
+        out, mercator_bounds = to_web_mercator(frame, display_transform, config, "nearest")
+        warped.append(np.nan_to_num(out, nan=0.0))
 
-    rgba = encode_damage(damage)
+    if columns:
+        # Up to four reference discharges, one per channel. More than four would need a
+        # second image, and four brackets the slider closely enough that interpolating
+        # between them is smaller than the model's own error.
+        stack = np.zeros((*warped[0].shape, 4), dtype=np.uint8)
+        for i, frame in enumerate(warped[:4]):
+            stack[..., i] = log_scale(frame)
+        rgba = stack
+    else:
+        rgba = encode_damage(warped[0])
+    damage = warped[-1]
     return ExposureBundle(
         huc=huc,
         inventory=inventory,
         width=int(damage.shape[1]),
         height=int(damage.shape[0]),
         bounds=mercator_bounds,
+        reference_multipliers=tuple(columns),
         damage_png=to_data_uri(encode_png(rgba, "RGBA")),
         currency=currency,
         stats=stats or {},

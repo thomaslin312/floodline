@@ -846,19 +846,69 @@ function bestFit(){
 
 /* ---------------- exposure and damage ---------------- */
 
-/* The damage layer is a two-channel PNG on the same grid as the flood overlay: red is
-   log10 currency per cell, green is how many buildings that cell holds. Both are
-   needed - one costly building and forty flooded houses can carry the same total, and
-   a reader looking for where people were hit wants the count. */
+/* The damage image holds four channels, one per reference discharge, each log-scaled
+   damage per cell. Shipping a raster for every rung of the 33-step ladder would be ten
+   megabytes; four brackets the slider closely enough that interpolating between them
+   is smaller than the model's own error. So the picture is recoloured in the browser
+   whenever the slider moves, exactly as the depth overlay is. */
+const DAMAGE_RAMP = [[253,227,199],[247,178,103],[239,123,69],[214,73,51],[140,28,19]];
+let damagePixels = null;   // decoded RGBA of the four-channel source
+
+function loadDamagePixels(){
+  if(!expo || !expo.damage_png) return Promise.resolve(null);
+  return pixels(expo.damage_png).then(p => { damagePixels = p; return p; });
+}
+
+/* Value at the slider's position, interpolated between the two reference channels
+   that bracket it. Below the first reference the layer fades to nothing at zero
+   discharge, which is what the ladder says happens. */
+function damageAt(mult){
+  const refs = expo.reference_multipliers || [];
+  if(!refs.length) return null;
+  if(mult <= refs[0]) return {a: -1, b: 0, t: Math.max(0, mult / refs[0])};
+  for(let i = 0; i < refs.length - 1; i++){
+    if(mult <= refs[i+1]){
+      return {a: i, b: i+1, t: (mult - refs[i]) / (refs[i+1] - refs[i])};
+    }
+  }
+  return {a: refs.length - 1, b: refs.length - 1, t: 0};
+}
+
 function paintDamage(){
-  if(!expo || !expo.damage_png) return;
+  if(!expo || !expo.damage_png || !damagePixels) return;
+  const refs = expo.reference_multipliers || [];
+  const pick = damageAt(+$("qs").value/100);
+  const src = damagePixels.d, w = damagePixels.w, h = damagePixels.h;
+
+  const cv = document.createElement("canvas"); cv.width = w; cv.height = h;
+  const ctx = cv.getContext("2d");
+  const img = ctx.createImageData(w, h), px = img.data;
+
+  for(let i = 0; i < w*h; i++){
+    const o = i*4;
+    let v;
+    if(!refs.length){ v = src[o]; }
+    else if(pick.a < 0){ v = src[o + pick.b] * pick.t; }
+    else { const lo = src[o + pick.a], hi = src[o + pick.b]; v = lo + (hi - lo) * pick.t; }
+    if(v < 1){ px[o+3] = 0; continue; }
+    const p = ((v - 1) / 254) * (DAMAGE_RAMP.length - 1);
+    const k = Math.min(DAMAGE_RAMP.length - 2, Math.floor(p)), f = p - k;
+    const A = DAMAGE_RAMP[k], B = DAMAGE_RAMP[k+1];
+    px[o]   = A[0] + (B[0]-A[0])*f;
+    px[o+1] = A[1] + (B[1]-A[1])*f;
+    px[o+2] = A[2] + (B[2]-A[2])*f;
+    px[o+3] = 225;
+  }
+  ctx.putImageData(img, 0, 0);
+  const url = cv.toDataURL();
+
   whenReady(() => {
     ensureLayers();
-    const [w,s,e,n] = expo.bounds;
-    const [wl,sl] = mercToLngLat(w,s), [el,nl] = mercToLngLat(e,n);
+    const [bw,bs,be,bn] = expo.bounds;
+    const [wl,sl] = mercToLngLat(bw,bs), [el,nl] = mercToLngLat(be,bn);
     const corners = [[wl,nl],[el,nl],[el,sl],[wl,sl]];
-    if(map.getSource("damage")) map.getSource("damage").updateImage({url:expo.damage_png, coordinates:corners});
-    else map.addSource("damage", {type:"image", url:expo.damage_png, coordinates:corners});
+    if(map.getSource("damage")) map.getSource("damage").updateImage({url, coordinates:corners});
+    else map.addSource("damage", {type:"image", url, coordinates:corners});
     if(!map.getLayer("damage")){
       map.addLayer({id:"damage", type:"raster", source:"damage", paint:{
         "raster-opacity":0.92, "raster-fade-duration":0, "raster-resampling":"nearest",
@@ -884,25 +934,57 @@ function money(v, unit){
   return `${unit} ${Math.round(v).toLocaleString()}`;
 }
 
+/* The ladder holds damage at each rung of the same multiplier ladder the stage table
+   uses, so the panel can answer "what would a bigger flood cost" without another pass
+   over the raster. Between rungs, interpolate: the curve is smooth and monotone. */
+function ladderAt(mult){
+  const L = expo && expo.stats && expo.stats.ladder;
+  if(!L) return null;
+  const xs = L.multipliers;
+  const clamped = Math.max(xs[0], Math.min(xs[xs.length-1], mult));
+  let i = 0;
+  while(i < xs.length - 2 && xs[i+1] < clamped) i++;
+  const span = xs[i+1] - xs[i];
+  const t = span > 0 ? (clamped - xs[i]) / span : 0;
+  const lerp = (a) => a[i] + (a[i+1] - a[i]) * t;
+  return {
+    multiplier: clamped,
+    damage: lerp(L.damage), structure: lerp(L.structure), contents: lerp(L.contents),
+    inundated: Math.round(lerp(L.inundated)), residents: lerp(L.residents),
+  };
+}
+
 function showExposure(){
   const st = expo.stats || {};
   const u = expo.currency || "USD";
   const q = st.quantiles ? `${Math.round(st.quantiles[0]*100)}–${Math.round(st.quantiles[1]*100)}%` : "";
   $("expo-stats").hidden = false;
+  const mult = +$("qs").value/100;
+  const at = ladderAt(mult);
+  const now = at || {damage: st.damage, inundated: st.inundated,
+                     residents: st.night_population, structure: null, contents: null};
+  const ratio = st.exposed_value ? now.damage / st.exposed_value : null;
   $("expo-stats").innerHTML = [
     ["Structures", (st.structures||0).toLocaleString(), ""],
-    ["Inundated", `${(st.inundated||0).toLocaleString()}`, ""],
+    ["Inundated", `${Math.round(now.inundated||0).toLocaleString()}`, ""],
     ["Interval", `${(st.inundated_low||0).toLocaleString()}–${(st.inundated_high||0).toLocaleString()}`, ""],
-    ["Residents", st.night_population != null ? Math.round(st.night_population).toLocaleString() : "—", ""],
-    ["Damage", money(st.damage, u), ""],
-    ["Loss ratio", st.loss_ratio != null ? (st.loss_ratio*100).toFixed(1)+"%" : "—", ""],
+    ["Residents", now.residents != null ? Math.round(now.residents).toLocaleString() : "—", ""],
+    ["Damage", money(now.damage, u), ""],
+    ["Loss ratio", ratio != null ? (ratio*100).toFixed(1)+"%" : "—", ""],
   ].map(([k,v,c])=>`<div><dt>${k}</dt><dd class="${c}">${v}</dd></div>`).join("");
 
-  let note = `${q} interval ${money(st.damage_low,u)} to ${money(st.damage_high,u)}`
+  const shifted = at && Math.abs(mult - 1) > 0.005;
+  let note = shifted ? `At <b>${mult.toFixed(2)}×</b> the observed discharge. ` : "";
+  note += `${q} interval ${money(st.damage_low,u)} to ${money(st.damage_high,u)}`
     + ` on <b>${st.curve_family || "?"}</b> curves`
     + `, over ${money(st.exposed_value,u)} exposed.`;
-  if(st.damage_contents){
-    note += ` Structure ${money(st.damage_structure,u)} plus contents ${money(st.damage_contents,u)}.`;
+  if(now.contents){
+    note += ` Structure ${money(now.structure,u)} plus contents ${money(now.contents,u)}.`;
+  }
+  if(shifted){
+    note += `<br><span style="color:var(--ink-3)">The interval is computed at the`
+      + ` observed discharge only. A Monte Carlo at every rung of the ladder costs a`
+      + ` quarter of an hour and says the same thing stretched.</span>`;
   }
   if(st.day_population != null){
     note += `<br>${Math.round(st.night_population).toLocaleString()} residents overnight,`
@@ -942,6 +1024,7 @@ async function runExposure(){
     // routing through the click handler made the order of two whenReady callbacks
     // decide whether the legend appeared.
     setChip("c-dmg", true);
+    await loadDamagePixels();
     showExposure();
   }catch(e){
     clearInterval(tick);
@@ -984,7 +1067,17 @@ $("fit").addEventListener("click", () => {
   $("fitnote").innerHTML = html;
   repaint();
 });
-$("qs").addEventListener("input", ()=>{ if(!raf) raf=requestAnimationFrame(()=>{raf=0;repaint();}); });
+/* Coalesce slider input to one update per frame. requestAnimationFrame is the right
+   clock while the page is visible and never fires while it is not, which would leave a
+   backgrounded page frozen with `raf` set and every later input dropped. So a hidden
+   page falls back to a timer. */
+function scheduleRedraw(){
+  if(raf) return;
+  const run = () => { raf = 0; repaint(); if(expo) showExposure(); };
+  raf = document.hidden ? setTimeout(run, 16) : requestAnimationFrame(run);
+}
+$("qs").addEventListener("input", scheduleRedraw);
+document.addEventListener("visibilitychange", () => { if(!document.hidden) scheduleRedraw(); });
 
 function chip(id, on){
   const el=$(id), box=el.querySelector("input");
