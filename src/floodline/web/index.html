@@ -100,6 +100,7 @@
   .brand b{font-family:var(--display);font-weight:700;font-size:15.5px;letter-spacing:-.02em}
   .brand span{font-family:var(--mono);font-size:9px;letter-spacing:.15em;text-transform:uppercase;
     color:var(--ink-3);margin-left:auto}
+  .brand #helpbtn{margin-left:9px}
   .searchrow{display:flex;gap:8px}
   input[type=text]{flex:1;min-width:0;padding:9px 12px;border:1px solid var(--hair);
     border-radius:var(--r-sm);background:var(--solid);color:var(--ink);font-family:var(--body);
@@ -217,6 +218,47 @@
   .keyrow span{display:inline-flex;align-items:center;gap:7px;font-size:11px;color:var(--ink-3)}
   .keyrow i{width:9px;height:9px;border-radius:50%;display:inline-block;flex:none}
 
+  /* ---------- first-run tour ---------- */
+  .scrim{position:fixed;inset:0;z-index:2000;display:flex;align-items:center;
+    justify-content:center;padding:20px;background:#0a1c2266;
+    -webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);
+    animation:fade .28s var(--ease) both}
+  @keyframes fade{from{opacity:0}to{opacity:1}}
+  .tour{width:min(560px,100%);max-height:calc(100vh - 40px);overflow-y:auto;
+    background:var(--glass);border-radius:var(--r);box-shadow:var(--shadow),var(--sheen);
+    -webkit-backdrop-filter:blur(24px) saturate(180%);backdrop-filter:blur(24px) saturate(180%);
+    padding:22px 24px 18px;animation:pop .34s var(--ease) both}
+  @keyframes pop{from{opacity:0;transform:translateY(10px) scale(.985)}
+                 to{opacity:1;transform:none}}
+  .tour .brand{margin-bottom:16px}
+  .tour h3{font-family:var(--display);font-size:20px;font-weight:600;letter-spacing:-.02em;
+    margin:10px 0 6px;line-height:1.25;text-wrap:balance}
+  .tour p{margin:0;color:var(--ink-2);font-size:14px;line-height:1.55;max-width:52ch}
+  .tour p + p{margin-top:9px}
+  .tour .aside{color:var(--ink-3);font-size:12.5px}
+  .tour figure{margin:0 0 4px;padding:14px;border-radius:var(--r-sm);
+    background:var(--hair-2);border:1px solid var(--hair)}
+  /* Only the illustration stretches. The brand mark next to it is 16px and was
+     being blown up to the full panel width by a bare `.tour svg` rule. */
+  .tour figure svg{display:block;width:100%;height:auto}
+  .tourfoot{display:flex;align-items:center;gap:12px;margin-top:18px;
+    padding-top:14px;border-top:1px solid var(--hair)}
+  .dots{display:flex;gap:6px;margin-right:auto}
+  .dots button{width:7px;height:7px;padding:0;border-radius:50%;background:var(--hair);
+    box-shadow:none;transition:background .18s var(--ease),width .18s var(--ease)}
+  .dots button[aria-current="true"]{background:var(--accent);width:18px;border-radius:4px}
+  .tourfoot .skip{background:transparent;color:var(--ink-3);font-weight:500;padding:8px 4px;
+    box-shadow:none}
+  .tourfoot .skip:hover{color:var(--ink-2);filter:none}
+  /* Lives in the header rather than floating over the map: bottom-right belongs to
+     the zoom control and bottom-left to the legend, and a floating button would have
+     landed on one of them at some width. */
+  #helpbtn{width:20px;height:20px;padding:0;border-radius:50%;background:transparent;
+    color:var(--ink-3);border:1px solid var(--hair);font-size:11px;font-weight:600;
+    line-height:1;flex:none}
+  #helpbtn:hover{color:var(--accent);border-color:var(--accent-3);
+    background:var(--accent-2);filter:none}
+
   .bar{position:absolute;top:0;left:0;height:2px;width:0;z-index:1200;
     background:linear-gradient(90deg,var(--accent),var(--accent));
     box-shadow:0 0 10px var(--accent-3);transition:width .35s var(--ease)}
@@ -235,6 +277,28 @@
 <div id="map"></div>
 <div class="bar" id="bar"></div>
 
+<div class="scrim" id="tour" hidden role="dialog" aria-modal="true" aria-labelledby="tour-title">
+  <section class="tour">
+    <div class="brand">
+      <svg class="mark" viewBox="0 0 16 16" aria-hidden="true">
+        <path d="M3.6 6.8 8 1.8l4.4 5"/>
+        <path d="M1 10.6c1.75 0 1.75-1.7 3.5-1.7s1.75 1.7 3.5 1.7 1.75-1.7 3.5-1.7 1.75 1.7 3.5 1.7"/>
+        <path d="M1 14c1.75 0 1.75-1.7 3.5-1.7S6.25 14 8 14s1.75-1.7 3.5-1.7S13.25 14 15 14" opacity=".45"/>
+      </svg>
+      <b>floodline</b><span id="tour-step">1 of 4</span>
+    </div>
+    <div id="tour-body"></div>
+    <div class="tourfoot">
+      <div class="dots" id="tour-dots"></div>
+      <button class="skip" id="tour-skip">Skip</button>
+      <button id="tour-back" class="quiet" hidden>Back</button>
+      <button id="tour-next">Next</button>
+    </div>
+  </section>
+</div>
+
+
+
 <section class="panel" id="search">
   <div class="brand">
     <svg class="mark" viewBox="0 0 16 16" aria-hidden="true">
@@ -243,6 +307,7 @@
       <path d="M1 14c1.75 0 1.75-1.7 3.5-1.7S6.25 14 8 14s1.75-1.7 3.5-1.7S13.25 14 15 14" opacity=".45"/>
     </svg>
     <b>floodline</b><span>any US watershed</span>
+    <button id="helpbtn" title="How this works" aria-label="How this works">?</button>
   </div>
   <div class="searchrow">
     <input type="text" id="q" placeholder="ZIP, address, or HUC code" autocomplete="off">
@@ -1031,6 +1096,158 @@ async function runExposure(){
     $("expo-note").innerHTML = `<span style="color:var(--bad)">Exposure failed: ${e.message}</span>`;
   }finally{ expoBusy = false; btn.disabled = false; }
 }
+
+/* ---------------- first-run tour ---------------- */
+
+/* Four steps, because a reader who has to be told five things about a map will read
+   none of them. Each one names a thing on screen and what it means, and the first one
+   states the model's limit before its capability - the same order the README uses,
+   for the same reason: someone should know what this cannot tell them before they
+   look at a number it produced. */
+const TOUR = [
+  {
+    title: "A flood model for any US watershed",
+    art: `<svg viewBox="0 0 360 74" aria-hidden="true">
+      <path d="M10 58c26 0 26-16 52-16s26 16 52 16 26-16 52-16 26 16 52 16 26-16 52-16 26 16 52 16"
+        fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" opacity=".55"/>
+      <path d="M10 42c26 0 26-16 52-16s26 16 52 16 26-16 52-16 26 16 52 16 26-16 52-16 26 16 52 16"
+        fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round"/>
+      <path d="M96 26 130 6l34 20" fill="none" stroke="var(--ink-3)" stroke-width="2"
+        stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="M196 26 230 6l34 20" fill="none" stroke="var(--ink-3)" stroke-width="2"
+        stroke-linecap="round" stroke-linejoin="round" opacity=".5"/>
+    </svg>`,
+    body: `<p>Terrain from USGS lidar, discharge from a river gauge, and every structure's
+      value from the USACE National Structure Inventory. Type a place and it computes the
+      flood live — no dataset to download.</p>
+      <p class="aside">It is a screening model, not a hydraulic one. It assumes the water
+      surface parallels the drainage line, so it knows nothing about levees, culverts or
+      reservoir releases. Read it as an estimate of scale, not a prediction for an address.</p>`,
+  },
+  {
+    title: "Start with a place",
+    art: `<svg viewBox="0 0 360 74" aria-hidden="true">
+      <rect x="8" y="14" width="248" height="30" rx="7" fill="var(--solid)"
+        stroke="var(--hair)"/>
+      <text x="22" y="34" fill="var(--ink-3)" font-size="13"
+        font-family="system-ui, sans-serif">77008</text>
+      <rect x="264" y="14" width="60" height="30" rx="7" fill="var(--accent)"/>
+      <text x="280" y="34" fill="var(--on-accent)" font-size="12.5" font-weight="600"
+        font-family="system-ui, sans-serif">Find</text>
+      <text x="8" y="64" fill="var(--ink-3)" font-size="11.5"
+        font-family="system-ui, sans-serif">ZIP · street address · HUC code · or click the map</text>
+    </svg>`,
+    body: `<p>A ZIP code, a full street address, a hydrologic unit code, or a click
+      anywhere on the globe. <b>Click picks</b> sets how much ground you get: HUC-12 is a
+      neighbourhood-sized subwatershed, HUC-8 a whole basin.</p>
+      <p class="aside">Watersheds, not boxes — flow accumulation depends on everything
+      upstream, so terrain computed over an arbitrary rectangle is wrong at its edges.</p>`,
+  },
+  {
+    title: "Compute the flood, then check it",
+    art: `<svg viewBox="0 0 360 74" aria-hidden="true">
+      <defs><linearGradient id="tg1" x1="0" x2="1">
+        <stop offset="0" stop-color="#cfe6f2"/><stop offset=".45" stop-color="#3d8fc0"/>
+        <stop offset="1" stop-color="#062242"/></linearGradient></defs>
+      <rect x="8" y="14" width="200" height="9" rx="4.5" fill="url(#tg1)"/>
+      <text x="8" y="40" fill="var(--ink-3)" font-size="11"
+        font-family="ui-monospace, monospace">0 m</text>
+      <text x="180" y="40" fill="var(--ink-3)" font-size="11"
+        font-family="ui-monospace, monospace">8 m+</text>
+      <circle cx="240" cy="19" r="6" fill="var(--good)" stroke="#fff" stroke-width="1.5"/>
+      <circle cx="266" cy="19" r="6" fill="var(--warn)" stroke="#fff" stroke-width="1.5"/>
+      <circle cx="292" cy="19" r="6" fill="var(--bad)" stroke="#fff" stroke-width="1.5"/>
+      <text x="228" y="40" fill="var(--ink-3)" font-size="11"
+        font-family="system-ui, sans-serif">surveyed marks</text>
+    </svg>`,
+    body: `<p>Blue is modelled water depth. The dots are real high-water marks surveyed
+      after the flood, coloured by how far the model missed them — green within a metre,
+      red over three.</p>
+      <p class="aside">The <b>RMSE</b> figure is the model marking its own homework
+      against those marks. On the best-validated watershed it is 1.6 m.</p>`,
+  },
+  {
+    title: "Price it, then change the flood",
+    art: `<svg viewBox="0 0 360 74" aria-hidden="true">
+      <defs><linearGradient id="tg2" x1="0" x2="1">
+        <stop offset="0" stop-color="#fde3c7"/><stop offset=".5" stop-color="#ef7b45"/>
+        <stop offset="1" stop-color="#8c1c13"/></linearGradient></defs>
+      <rect x="8" y="12" width="150" height="9" rx="4.5" fill="url(#tg2)"/>
+      <text x="8" y="36" fill="var(--ink-3)" font-size="11"
+        font-family="system-ui, sans-serif">damage per cell</text>
+      <line x1="200" y1="17" x2="344" y2="17" stroke="var(--hair)" stroke-width="4"
+        stroke-linecap="round"/>
+      <line x1="200" y1="17" x2="272" y2="17" stroke="var(--accent)" stroke-width="4"
+        stroke-linecap="round"/>
+      <circle cx="272" cy="17" r="7" fill="var(--solid)" stroke="var(--accent)"
+        stroke-width="2.5"/>
+      <text x="200" y="36" fill="var(--ink-3)" font-size="11"
+        font-family="system-ui, sans-serif">discharge</text>
+      <text x="8" y="62" fill="var(--ink-2)" font-size="12"
+        font-family="system-ui, sans-serif">drag it and both layers follow</text>
+    </svg>`,
+    body: `<p><b>Value the buildings this reaches</b> adds a warm layer showing where the
+      money is, and counts structures, residents and damage.</p>
+      <p>Then drag the discharge slider. It is a multiplier on the gauge's observed peak,
+      and it moves the water <em>and</em> the damage together — so you can ask what a
+      flood half again as large would cost.</p>
+      <p class="aside">Structure values are modelled replacement costs, sound across tens
+      of thousands of buildings and not for any single one.</p>`,
+  },
+];
+
+const TOUR_SEEN = "floodline.tour.v1";
+let tourAt = 0;
+
+function drawTour(){
+  const step = TOUR[tourAt];
+  $("tour-step").textContent = `${tourAt + 1} of ${TOUR.length}`;
+  $("tour-body").innerHTML =
+    `<figure>${step.art}</figure><h3 id="tour-title">${step.title}</h3>${step.body}`;
+  $("tour-dots").innerHTML = TOUR.map((_, i) =>
+    `<button type="button" data-i="${i}" aria-current="${i === tourAt}"
+      aria-label="Step ${i + 1}"></button>`).join("");
+  $("tour-back").hidden = tourAt === 0;
+  $("tour-next").textContent = tourAt === TOUR.length - 1 ? "Start exploring" : "Next";
+}
+
+function openTour(at){
+  tourAt = at || 0;
+  drawTour();
+  $("tour").hidden = false;
+  $("tour-next").focus();
+}
+
+function closeTour(){
+  $("tour").hidden = true;
+  try{ localStorage.setItem(TOUR_SEEN, "1"); }catch(e){ /* private window: show again */ }
+  $("q").focus();
+}
+
+$("tour-next").addEventListener("click", () => {
+  if(tourAt < TOUR.length - 1){ tourAt++; drawTour(); } else { closeTour(); }
+});
+$("tour-back").addEventListener("click", () => { if(tourAt > 0){ tourAt--; drawTour(); } });
+$("tour-skip").addEventListener("click", closeTour);
+$("tour-dots").addEventListener("click", (ev) => {
+  const b = ev.target.closest("button[data-i]");
+  if(b){ tourAt = +b.dataset.i; drawTour(); }
+});
+$("helpbtn").addEventListener("click", () => openTour(0));
+$("tour").addEventListener("click", (ev) => { if(ev.target === $("tour")) closeTour(); });
+document.addEventListener("keydown", (ev) => {
+  if($("tour").hidden) return;
+  if(ev.key === "Escape") closeTour();
+  if(ev.key === "ArrowRight") $("tour-next").click();
+  if(ev.key === "ArrowLeft") $("tour-back").click();
+});
+
+/* Shown to anyone who has not finished it, including on a return visit. Someone who
+   clicked through to the end has been taught and does not need teaching again; the ?
+   button is there for when they do. */
+try{
+  if(!localStorage.getItem(TOUR_SEEN)) openTour(0);
+}catch(e){ openTour(0); }
 
 /* ---------------- wiring ---------------- */
 // A click on a mark opens its readout; only empty map picks a watershed.

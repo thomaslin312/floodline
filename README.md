@@ -330,6 +330,11 @@ uv run floodline exposure depth.tif buildings.parquet exposed.parquet \
 uv run floodline damage exposed.parquet damage.parquet --samples 1000
 ```
 
+A four-step tour opens on a first visit — what the model is and what it cannot do,
+how to find a watershed, how to read the depth and the surveyed marks, and how the
+discharge slider moves both the water and the damage. It is remembered once finished;
+the `?` beside the wordmark reopens it.
+
 On the map, **Compute this watershed** draws depth; **Value the buildings this reaches**
 then runs exposure and damage and adds a warm damage layer over it. The discharge
 slider moves both: damage is computed at all 33 rungs of the same multiplier ladder the

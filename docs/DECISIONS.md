@@ -1707,3 +1707,32 @@ damaged structures of 80,104, on a watershed where the flood reaches 6.7% of the
 This is the fourth defect in this project found by looking at a picture rather than by
 a test, and the third where the tests were all green. Payload shape is easy to assert;
 whether the payload still means what the reader thinks it means is not.
+
+## 2026-09-06 — a four-step tour on first open
+
+The map assumed a reader who already knew what HAND, a HUC and a discharge multiplier
+were. Four steps now, because someone who has to be told five things about a map reads
+none of them:
+
+1. what this is, and the limit before the capability
+2. how to pick a place
+3. how to read the depth and the surveyed marks, and what RMSE means
+4. how to price it, and that the slider moves the damage as well as the water
+
+Step one states the model's limit before its capability - screening, not hydraulic;
+no levees, no culverts, no reservoir releases - which is the same order the README
+uses and for the same reason. Someone should know what a number cannot tell them
+before they look at one.
+
+Shown to anyone who has not finished it, including on a return visit, and remembered
+in `localStorage` once they click through to the end. Someone who has been taught does
+not need teaching again; a `?` beside the wordmark reopens it. A private window that
+refuses storage shows the tour every time, which is the right failure.
+
+The reopen button lives in the header, not floating over the map: bottom-right belongs
+to the zoom control and bottom-left to the legend, and a floating button would have
+landed on one of them at some viewport width.
+
+One bug worth recording because it is a CSS classic: a bare `.tour svg` rule sized the
+illustrations to the panel width and caught the 16px brand mark next to the wordmark
+along with them, blowing it up to fill the dialog. Scoped to `.tour figure svg`.
