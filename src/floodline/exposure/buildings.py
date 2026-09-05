@@ -265,7 +265,18 @@ def building_depths(
     kept["floor_depth_m"] = np.maximum(kept["depth_m"] - exposure.floor_height_m, 0.0)
     # Signed distance from the water surface to the finished floor. Negative means the
     # water stopped short, and how far short is what the Monte Carlo perturbs.
-    kept["floor_margin_m"] = np.asarray(margins, dtype=np.float64) - exposure.floor_height_m
+    if has_margin:
+        kept["floor_margin_m"] = np.asarray(margins, dtype=np.float64) - exposure.floor_height_m
+    else:
+        # Without an unclamped field the depth raster records every dry building as
+        # exactly 0, so how far below its floor the water stopped is *unknown*, not
+        # small. Recording a uniform -floor_height_m would look like a measurement and
+        # behave like one: a 0.15 m stage sigma would walk every dry building in the
+        # watershed into the flood, which is how a point estimate of 20 damaged
+        # buildings came back with an interval of 18 to 124. Water that is present but
+        # below the floor is still a real, signed margin; no water is -inf.
+        ground = np.asarray(depths, dtype=np.float64)
+        kept["floor_margin_m"] = np.where(ground > 0.0, ground - exposure.floor_height_m, -np.inf)
     if heights is not None:
         kept["hand_m"] = np.asarray(hand_of, dtype=np.float64)
     if reaches is not None:

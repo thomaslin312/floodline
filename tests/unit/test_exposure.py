@@ -191,13 +191,29 @@ def test_margin_is_signed_when_an_unclamped_field_is_supplied() -> None:
     assert result.buildings["floor_margin_m"].iloc[0] == pytest.approx(-3.15)
 
 
-def test_without_an_unclamped_field_the_margin_is_only_the_freeboard() -> None:
+def test_without_an_unclamped_field_a_dry_building_is_unknown_not_nearly_wet() -> None:
+    """How far below the floor the water stopped is unknown, not small.
+
+    Recording a uniform -floor_height_m looked like a measurement and behaved like
+    one: a 0.15 m stage sigma walked every dry building into the flood, turning a
+    point estimate of 20 damaged buildings into an interval of 18 to 124.
+    """
     grid = _depth({(1, 2): 0.0})
     result = building_depths(
         grid, TRANSFORM, _buildings((2.1, 8.1, 2.9, 8.9)), config=_config(floor_height_m=0.15)
     )
     assert result.has_margin is False
-    assert result.buildings["floor_margin_m"].iloc[0] == pytest.approx(-0.15)
+    assert result.buildings["floor_margin_m"].iloc[0] == -np.inf
+
+
+def test_water_on_the_ground_but_below_the_floor_is_still_a_real_margin() -> None:
+    """Only "no water at all" is unknown. Water present and below the boards is a
+    state the curves answer for, and it has to survive."""
+    grid = _depth({(1, 2): 0.05})
+    result = building_depths(
+        grid, TRANSFORM, _buildings((2.1, 8.1, 2.9, 8.9)), config=_config(floor_height_m=0.15)
+    )
+    assert result.buildings["floor_margin_m"].iloc[0] == pytest.approx(-0.10)
 
 
 def test_unclamped_field_must_share_the_depth_grid() -> None:

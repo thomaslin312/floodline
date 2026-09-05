@@ -1736,3 +1736,19 @@ landed on one of them at some viewport width.
 One bug worth recording because it is a CSS classic: a bare `.tour svg` rule sized the
 illustrations to the panel width and caught the 16px brand mark next to the wordmark
 along with them, blowing it up to fill the dialog. Scoped to `.tour figure svg`.
+
+## 2026-09-06 — a dry building's floor margin is unknown, not small
+
+The non-NSI path had no unclamped depth field, so every dry building got a floor
+margin of exactly `-floor_height_m`. That is a plausible-looking number and it is not
+a measurement: the depth raster records dry ground as 0, which says the water did not
+arrive, not that it stopped 0.15 m short. The Monte Carlo then perturbs stage by a
+sigma of that same order and walks the entire dry watershed into the flood — a point
+estimate of 20 damaged buildings came back with an interval of 18 to 124.
+
+Dry is `-inf` now. Water present but below the floor is still a real signed margin and
+keeps its value; only "no water at all" is unknown. The interval became 18 to 21.
+
+Rejected: sampling dry buildings from a distribution of plausible margins. There is no
+information in the raster to fit one to, and inventing a spread would put the same
+fiction behind a wider number.
