@@ -439,36 +439,18 @@ def compute_watershed(
 
     marks = marks_within(unit, resolved, marks_path) if marks_path else []
 
-    # If the marks all come from one flood, drive the model with *that* flood's
-    # discharge rather than the largest on record. Otherwise a watershed whose peak
-    # of record is 1935 gets compared against marks surveyed after a 2017 storm,
-    # and the residual measures the difference between two events.
-    if marks and gauge and gauge.get("series"):
-        counts: dict[str, int] = {}
-        for mark in marks:
-            year = (mark.get("event_date") or "")[:4]
-            if year:
-                counts[year] = counts.get(year, 0) + 1
-        if counts:
-            dominant = max(counts, key=lambda y: counts[y])
-            matched = [p for p in gauge["series"] if p["date"][:4] == dominant]
-            if matched:
-                best = max(matched, key=lambda p: p["cms"])
-                gauge = {
-                    **gauge,
-                    "event_year": dominant,
-                    "event_discharge_cms": best["cms"],
-                    "event_date": best["date"],
-                    "matched_marks": counts[dominant],
-                }
-                reference_discharge = best["cms"]
-                flows = discharge_by_area_ratio(
-                    reference_discharge,
-                    reference_area,
-                    links,
-                    chain.accumulation.accumulation,
-                    config=resolved,
-                )
+    # Drive the model with the flood the marks came from, not the largest on record.
+    matched_gauge = event_matched_gauge(gauge, marks)
+    if matched_gauge is not gauge and matched_gauge is not None:
+        gauge = matched_gauge
+        reference_discharge = float(gauge["event_discharge_cms"])
+        flows = discharge_by_area_ratio(
+            reference_discharge,
+            reference_area,
+            links,
+            chain.accumulation.accumulation,
+            config=resolved,
+        )
     if marks:
         # Place each mark on the display grid so the page can draw it, and record the
         # model's own ground elevation there, which is what a residual is measured from.
@@ -671,6 +653,10 @@ def marks_within(unit: Watershed, config: Config, path: Path) -> list[dict[str, 
                 "event": mark.get("eventName", "") or "unnamed event",
                 "event_date": mark.get("eventDate", ""),
                 "quality": mark.get("hwm_quality_id"),
+                # USGS labels each mark Riverine or Coastal. HAND models a river,
+                # so a coastal mark is the wrong physics rather than a hard case,
+                # and scoring against one measures the absence of a surge model.
+                "environment": mark.get("hwm_environment") or "",
                 "height_above_gnd_m": (
                     round(float(mark["height_above_gnd"]) * 0.3048, 2)
                     if isinstance(mark.get("height_above_gnd"), int | float)
@@ -679,6 +665,67 @@ def marks_within(unit: Watershed, config: Config, path: Path) -> list[dict[str, 
             }
         )
     return out
+
+
+def event_matched_gauge(
+    gauge: dict[str, Any] | None, marks: list[dict[str, Any]]
+) -> dict[str, Any] | None:
+    """Re-point a gauge at the flood its marks came from, if they share one.
+
+    A watershed whose peak of record is 1935 scored against marks surveyed after a
+    2017 storm produces a residual that measures the difference between two events,
+    not the model's error. Where the marks agree on a year and the gauge has a peak
+    in it, that peak is the discharge to model.
+
+    Returns the gauge unchanged when there is nothing to match - no marks, no annual
+    series, no dominant year, or no gauged peak in that year. Callers read
+    `event_discharge_cms` to find out whether a match happened.
+
+    Lives here rather than in either caller because both the map and the assessment
+    need it and they must not disagree: for eight months only `compute_watershed`
+    did this, and the reference watershed was the one basin where it made no
+    difference, because Harvey *is* Whiteoak Bayou's peak of record.
+    """
+    if not marks or not gauge or not gauge.get("series"):
+        return gauge
+    counts: dict[str, int] = {}
+    for mark in marks:
+        year = (mark.get("event_date") or "")[:4]
+        if year:
+            counts[year] = counts.get(year, 0) + 1
+    if not counts:
+        return gauge
+    dominant = max(counts, key=lambda y: counts[y])
+    matched = [p for p in gauge["series"] if p["date"][:4] == dominant]
+    if not matched:
+        return gauge
+    best = max(matched, key=lambda p: p["cms"])
+    return {
+        **gauge,
+        "event_year": dominant,
+        "event_discharge_cms": best["cms"],
+        "event_date": best["date"],
+        "matched_marks": counts[dominant],
+    }
+
+
+def scorable_marks(
+    marks: list[dict[str, Any]], *, graded_only: bool = True
+) -> tuple[list[dict[str, Any]], int]:
+    """Split marks into the ones this model can be judged by, and count what was cut.
+
+    Two exclusions, for different reasons. Grade 3 and below are rough surveys - on
+    Whiteoak Bayou they carried an RMSE of 4.9 m against 1.0 m for the good ones, so
+    scoring everything lets them set the headline. Coastal marks are excluded because
+    HAND has no surge term at all: on Monterey Bay the model leaves 95% of them dry,
+    which is not a fit to improve but a mechanism the method does not contain.
+
+    Returns the usable marks and the number of coastal ones dropped, so a caller can
+    say why a watershed has little or no ground truth left.
+    """
+    graded = [m for m in marks if not graded_only or m.get("quality") in (1, 2)]
+    usable = [m for m in graded if (m.get("environment") or "").lower() != "coastal"]
+    return usable, len(graded) - len(usable)
 
 
 def discharge_ladder(

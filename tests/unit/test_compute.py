@@ -131,3 +131,70 @@ def test_southern_latitudes_are_refused_rather_than_silently_wrong() -> None:
 
     with pytest.raises(ValueError, match="southern hemisphere"):
         utm_crs_for(151.2, -33.9)
+
+
+def test_event_matching_picks_the_flood_the_marks_came_from() -> None:
+    """A residual against the wrong flood measures the gap between two events.
+
+    This is why the map and the assessment must share one definition: for months
+    only the map did it, and the reference watershed was the one place it made no
+    difference, because Harvey is Whiteoak Bayou's peak of record.
+    """
+    from floodline.compute import event_matched_gauge
+
+    gauge = {
+        "site": "05464500",
+        "discharge_cms": 2400.0,  # peak of record, 1993
+        "series": [
+            {"date": "1993-07-09", "cms": 2400.0},
+            {"date": "2008-06-12", "cms": 1600.0},
+            {"date": "2019-05-30", "cms": 900.0},
+        ],
+    }
+    marks = [{"event_date": "2008-06-14"}] * 7 + [{"event_date": "1993-07-10"}]
+    matched = event_matched_gauge(gauge, marks)
+    assert matched is not None
+    assert matched["event_discharge_cms"] == 1600.0, "the dominant year wins, not the largest"
+    assert matched["event_year"] == "2008"
+    assert matched["matched_marks"] == 7
+    # The peak of record is preserved: it is still what "in the record" is measured against.
+    assert matched["discharge_cms"] == 2400.0
+
+
+def test_event_matching_leaves_the_gauge_alone_when_it_cannot_match() -> None:
+    from floodline.compute import event_matched_gauge
+
+    gauge = {"discharge_cms": 500.0, "series": [{"date": "1993-07-09", "cms": 500.0}]}
+    assert event_matched_gauge(gauge, []) is gauge, "no marks, nothing to match"
+    assert event_matched_gauge(None, [{"event_date": "1993-01-01"}]) is None
+    # A year the gauge never recorded is not a match, and must not invent one.
+    unmatched = event_matched_gauge(gauge, [{"event_date": "2011-08-28"}])
+    assert unmatched is not None and "event_discharge_cms" not in unmatched
+    # Marks with no date at all.
+    assert event_matched_gauge(gauge, [{"event_date": ""}]) is gauge
+
+
+def test_coastal_marks_are_excluded_from_scoring() -> None:
+    """HAND has no surge term, so a coastal mark is the wrong physics, not a hard case.
+
+    Counting them as misses made Monterey Bay look like a 2.1 m error when what it
+    actually shows is that the method does not model the mechanism that flooded it.
+    """
+    from floodline.compute import scorable_marks
+
+    marks = [
+        {"quality": 1, "environment": "Riverine"},
+        {"quality": 2, "environment": "Coastal"},
+        {"quality": 1, "environment": "coastal"},  # case is not guaranteed
+        {"quality": 1, "environment": ""},  # unlabelled stays in
+        {"quality": 3, "environment": "Riverine"},  # rough survey, dropped by grade
+    ]
+    usable, n_coastal = scorable_marks(marks)
+    assert len(usable) == 2
+    assert n_coastal == 2
+    assert all((m.get("environment") or "").lower() != "coastal" for m in usable)
+
+    # Ungraded scoring keeps grade 3 but still drops coastal.
+    usable_all, n_coastal_all = scorable_marks(marks, graded_only=False)
+    assert len(usable_all) == 3
+    assert n_coastal_all == 2

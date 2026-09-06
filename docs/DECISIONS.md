@@ -1856,3 +1856,35 @@ Rejected: exposing a `discharge` parameter on `/api/exposure` so an ungauged bas
 could be priced as an explicit scenario. The CLI already allows exactly that, and the
 error message points at it. On a map it would be a number typed into a box and then
 screenshotted without the box.
+
+## 2026-09-06 — one definition of which flood to model, and no coastal scoring
+
+Two fixes the multi-basin run forced out.
+
+**Event matching lived in only one of the two entry points.** `compute_watershed` has
+always re-pointed the gauge at the flood its marks came from; its own comment explains
+why, that otherwise "the residual measures the difference between two events".
+`assess_watershed` — the CLI, the report, the exposure route — took the peak of record
+and never matched. So the map and the assessment could model different discharges for
+the same watershed, and the reference basin is the one place they agree, because
+Harvey *is* Whiteoak Bayou's peak of record. Now one function, `event_matched_gauge`,
+called by both.
+
+Worth recording honestly: **this did not improve accuracy.** It changed the discharge
+in 4 of 16 basins and moved the median RMSE from 2.19 to 2.16 m. I expected it to be
+the largest single term and it was not — marks are mostly surveyed after the biggest
+flood on record, so the match is usually a no-op. It is a correctness fix, not an
+accuracy one, and the two are not the same thing.
+
+**Coastal marks are no longer scored.** USGS labels every mark Riverine or Coastal;
+3,581 of 16,193 graded marks nationally are coastal. HAND has no surge term, so a
+coastal mark is not a hard case but an absent mechanism, and counting it as a miss
+reports the wrong quantity: Monterey Bay scored 2.12 m on 517 marks of which the model
+wet 5%, which reads as a bad fit and is actually a category error. `scorable_marks`
+drops them and reports the count, and two basins now correctly say they have no
+riverine ground truth rather than producing a number.
+
+Rejected: refusing coastal *watersheds* outright, the way ungauged ones are refused.
+The riverine part of a coastal basin is still modelled correctly, and a HUC-10 at the
+coast is not automatically surge-driven. Withholding the score is honest; withholding
+the model would be over-correction.

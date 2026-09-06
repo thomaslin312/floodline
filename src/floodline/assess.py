@@ -30,9 +30,11 @@ from rasterio.transform import rowcol
 
 from floodline.compute import (
     discharge_ladder,
+    event_matched_gauge,
     gauge_for_watershed,
     geometry_wgs84,
     marks_within,
+    scorable_marks,
     wgs84_bounds,
 )
 from floodline.config import Config
@@ -205,6 +207,24 @@ def assess_watershed(
             chain.hand.hand, chain.filled, links, reach_of, config=config, cellsize=dem.cellsize
         )
 
+        # Marks are loaded before the discharge is chosen, because they decide which
+        # flood to model. Same file the service uses, so the CLI and the map validate
+        # against identical ground truth rather than two copies that can drift apart.
+        marks_cache = marks_path or (
+            config.paths.raw / "validation" / "high_water_marks_national.json"
+        )
+        try:
+            found = marks_within(unit, config, marks_cache)
+        except Exception as exc:
+            found = []
+            gaps.append(f"high-water marks unavailable: {type(exc).__name__}: {exc}")
+        usable, n_coastal = scorable_marks(found, graded_only=graded_marks_only)
+        if n_coastal:
+            gaps.append(
+                f"{n_coastal} surveyed mark(s) here are coastal, and HAND has no surge "
+                "term, so they are excluded from the score rather than counted as misses"
+            )
+
         gauge: dict[str, Any] | None = None
         history: HistoricalContext | None = None
         if discharge_cms is None:
@@ -215,7 +235,11 @@ def assess_watershed(
                     "discharge to drive the model. Pass one explicitly to get exposure and "
                     "damage numbers, and label them as a scenario when you do."
                 )
-            discharge_cms = float(gauge["discharge_cms"])
+            # Model the flood the marks came from, not the largest on record. Without
+            # this the residual measures the gap between two different events, and the
+            # assessment silently disagrees with the map, which has always done it.
+            gauge = event_matched_gauge(gauge, usable) or gauge
+            discharge_cms = float(gauge.get("event_discharge_cms") or gauge["discharge_cms"])
 
         gauged = gauge is not None
         area_cells = (
@@ -248,20 +272,8 @@ def assess_watershed(
 
         # ---- validation against surveyed marks -----------------------------
         scored: MarkMetrics | None = None
-        n_marks = 0
-        # Same file the service uses, so the CLI and the map validate against
-        # identical ground truth rather than two copies that can drift apart.
-        cache = marks_path or (config.paths.raw / "validation" / "high_water_marks_national.json")
-        try:
-            found = marks_within(unit, config, cache)
-        except Exception as exc:
-            found = []
-            gaps.append(f"high-water marks unavailable: {type(exc).__name__}: {exc}")
-        # USGS grades every mark; 1 and 2 are surveys to a few centimetres and 3 and
-        # below are progressively rougher. On this watershed the rough ones carried an
-        # RMSE of 4.9 m against 1.0 m for the good, so scoring everything would let
-        # them set the headline number.
-        usable = [m for m in found if not graded_marks_only or m.get("quality") in (1, 2)]
+        # `usable` was filtered by `scorable_marks` above: graded surveys only, and no
+        # coastal marks, because those measure a mechanism the model does not contain.
         n_marks = len(usable)
         if usable:
             forward = Transformer.from_crs(CRS.from_epsg(4326), config.crs.analysis, always_xy=True)
