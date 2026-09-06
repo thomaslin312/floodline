@@ -1857,6 +1857,30 @@ could be priced as an explicit scenario. The CLI already allows exactly that, an
 error message points at it. On a map it would be a number typed into a box and then
 screenshotted without the box.
 
+## 2026-09-06 — n=1 was a case study; here is the distribution
+
+The accuracy claim rested on one watershed. Whiteoak Bayou, 16 marks, RMSE 1.38 m,
+quoted in the README as the model's accuracy. Scoring every HUC-10 in the country
+holding at least eight quality-1/2 marks — 16 basins that survive, 1,287 marks, same
+code at 30 m, no per-basin tuning — gives a **median RMSE of 2.16 m**, range 0.97 to
+11.85, with only three basins under 1.5 m.
+
+Whiteoak is in the best decile. Quoting it as *the* accuracy was the most misleading
+thing in the repository, and the README now leads with the median and keeps the
+single-basin table only for its comparison against the alternatives.
+
+Bias has no consistent sign: median +0.11 m across −2.08 to +8.34. So the +1.04 m on
+Whiteoak was local, and there is no global offset to subtract. Roughly unbiased
+nationally, unreliable individually.
+
+The number that matters most is neither: **the model leaves 53% of surveyed riverine
+marks dry.** Marks are a one-sided sample — nobody surveys where water never came — so
+this bounds the misses and says nothing at all about false positives, which is the
+error CSI would catch and which nothing here measures.
+
+Miller Creek–Cedar River (RMSE 11.85 m, bias +8.34 m) is unexplained and stays in the
+table. Dropping the basin that disagrees is how a validation becomes a selection.
+
 ## 2026-09-06 — one definition of which flood to model, and no coastal scoring
 
 Two fixes the multi-basin run forced out.

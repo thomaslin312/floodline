@@ -11,14 +11,19 @@ economic damage using depth–damage curves, with a Monte Carlo uncertainty band
 can reproduce the extent of a real major flood to within a stated error and put the
 observed building count inside its 90% interval.
 
-**How far that claim has actually been taken.** The extent half is done and measured:
-against 2,298 USGS surveyed high-water marks from Hurricane Harvey, the modelled water
-surface has an RMSE of 1.60 m in the best-validated watershed. The exposure and damage
-half runs end to end and is tested, but has not been validated against anything, and
-its depth–damage curve constants are not transcribed from the source tables — see
+**How far that claim has actually been taken.** The extent half is measured across
+**16 watersheds nationally, against 1,287 quality-1/2 surveyed high-water marks**: the
+modelled water surface has a **median RMSE of 2.16 m**, ranging from 0.97 m to 11.85 m.
+Only 3 of the 16 come in under 1.5 m. The exposure and damage half runs end to end and
+is tested, but has not been validated against anything — see
 [Damage: what is and is not trustworthy](#damage-what-is-and-is-not-trustworthy).
 CSI is not reported at all, because it needs an observed extent polygon and the
 Sentinel-1 route was dropped for want of credentials.
+
+**Read the median, not the best case.** An earlier version of this file quoted 1.38 m
+from Whiteoak Bayou alone. That number is real and reproducible, and it is the best
+decile — quoting it as *the* accuracy was the single most misleading thing in this
+repository. The national picture is roughly 2 m, with a tail.
 
 The full brief is in [docs/SPEC.md](docs/SPEC.md); the working rules are in
 [CONTRIBUTING.md](CONTRIBUTING.md).
@@ -36,8 +41,9 @@ Stated first, on purpose. HAND is a screening model, not a hydraulic one.
   reach is an approximation whose error grows with distance from the gauge.
 - **Sentinel-1 is a lower bound on urban extent.** SAR misses water under tree canopy
   and in dense urban areas (double bounce), so agreement metrics against it are not
-  symmetric in meaning. That is why the primary reference here is 2,298 surveyed
-  high-water marks, with SAR as a secondary check.
+  symmetric in meaning. That is why the primary reference here is surveyed
+  high-water marks — 1,287 of them across 16 watersheds — with SAR as a secondary
+  check.
 - **Population grids disagree with each other by tens of percent** in small towns.
   floodline reports Census block groups, WorldPop and HRSL rather than picking one —
   but they agree far better across a metro the size of Houston than they would in a
@@ -46,9 +52,54 @@ Stated first, on purpose. HAND is a screening model, not a hydraulic one.
 
 ## Where it stands against ground truth
 
-Validated against USGS surveyed high-water marks in the gauged watershed
-(HUC 1204010403, Whiteoak Bayou–Buffalo Bayou, 491 km² at 10 m, 16 quality-1/2
-marks). Harvey peak discharge 1,433 m³/s at gauge 08074500.
+### Nationally: 16 watersheds, 1,287 marks
+
+Every HUC-10 in the country holding at least eight quality-1/2 marks, scored by the
+same code at 30 m with no per-basin tuning. Coastal marks are excluded — HAND has no
+surge term, so scoring against them measures an absent mechanism rather than a fit.
+Eight further basins were refused outright for having no gauge, and two dropped out
+because every mark in them was coastal.
+
+| Watershed | HUC-10 | Marks | RMSE | Bias | Marks wet |
+|---|---|---|---|---|---|
+| Clear Creek | `0708020901` | 36 | 0.97 m | -0.03 m | 97% |
+| Black Hawk Creek | `0708020506` | 19 | 1.33 m | +0.76 m | 84% |
+| Elk Creek | `1003010405` | 50 | 1.49 m | -0.74 m | 14% |
+| Sugar Creek-South Skunk River | `0708010509` | 88 | 1.65 m | -0.50 m | 95% |
+| Meramec River | `0714010210` | 76 | 1.89 m | -1.08 m | 4% |
+| Rock Creek | `1007000609` | 82 | 1.97 m | -0.15 m | 11% |
+| Rio Ruidoso | `1306000801` | 160 | 2.04 m | +1.06 m | 51% |
+| Gills Creek | `0305011002` | 200 | 2.08 m | -0.77 m | 13% |
+| Trail Creek-Yellowstone River | `1007000204` | 90 | 2.24 m | +0.59 m | 41% |
+| Keg Creek-Missouri River | `1024000101` | 61 | 2.40 m | -2.08 m | 0% |
+| San Lorenzo River | `1806001502` | 16 | 2.41 m | -0.97 m | 94% |
+| Bloody Run-East Fork Des Moines River | `0710000309` | 23 | 2.42 m | +0.81 m | 91% |
+| Lower Deerfield River | `0108020305` | 68 | 2.80 m | +1.44 m | 66% |
+| Headwaters Guadalupe River | `1210020101` | 118 | 3.19 m | +0.25 m | 49% |
+| Blue Creek-Cedar River | `0708020515` | 92 | 4.00 m | +0.68 m | 76% |
+| Miller Creek-Cedar River | `0708020509` | 108 | 11.85 m | +8.34 m | 95% |
+
+**Median RMSE 2.16 m. Three of sixteen under 1.5 m. One basin at 11.85 m.** Bias has
+no consistent sign — median +0.11 m, spanning −2.08 m to +8.34 m — so there is no
+single offset to correct. The model is roughly unbiased across the country and
+unreliable in any one place, which is the honest shape of a screening method.
+
+**It leaves 53% of surveyed riverine marks dry.** 677 of 1,287 places where water
+demonstrably reached are outside the modelled extent. High-water marks cannot show the
+opposite error — nobody surveys a mark where the water never came — so the true extent
+error is worse than this in an unmeasured direction.
+
+Miller Creek–Cedar River (`0708020509`, RMSE 11.85 m, bias +8.34 m) is not explained
+and is left in. Dropping the basin that disagrees is how a validation becomes a
+selection.
+
+### The reference basin, and why it flatters the method
+
+Whiteoak Bayou–Buffalo Bayou (HUC 1204010403, 491 km² at 10 m, 16 quality-1/2 marks,
+Harvey peak 1,433 m³/s at gauge 08074500) is where the method was developed, and at
+1.38 m it sits in the best decile of the table above. It is kept here because the
+comparison against the alternatives is the useful part, not because the number is
+representative — it is not.
 
 | | mean residual | RMSE | within 1 m | modelled extent |
 |---|---|---|---|---|
@@ -158,7 +209,8 @@ anything. So 1 m is demonstrated to run and not demonstrated to help.
 CSI, hit rate, false alarm ratio and bias against an observed wet mask you supply, and
 is verified against a hand-computed CSI. floodline has no observed extent of its own:
 the Sentinel-1 route needs credentials, so no CSI is reported for Harvey. Validation
-that *is* reported runs against 2,298 surveyed high-water marks. The resolution and
+that *is* reported runs against 1,287 surveyed high-water marks in 16 watersheds.
+The resolution and
 population experiments have not been written up, though the population disagreement has
 already shown itself — WorldPop counts 98,412 people in flooded cells where NSI counts
 134,030 residents in flooded structures, 36% apart on the same flood.
