@@ -25,7 +25,7 @@ from typing import Any
 
 import httpx
 import numpy as np
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse, JSONResponse
 from rasterio.errors import RasterioIOError
 
@@ -40,6 +40,12 @@ from floodline.compute import (
 )
 from floodline.config import Config
 from floodline.io.sources import FetchContext, SourceError, find_gauges, make_client
+from floodline.limits import (
+    ConcurrencyLimiter,
+    RateLimiter,
+    TooBusyError,
+    TooManyRequestsError,
+)
 from floodline.report.exposure_bundle import build_exposure_bundle
 
 __all__ = ["create_app"]
@@ -73,6 +79,34 @@ ZCTA = (
     "tigerWMS_Current/MapServer/2/query"
 )
 ONELINE = "https://geocoding.geo.census.gov/geocoder/locations/onelineaddress"
+
+
+def evict_cache(cache: Path, budget_mb: float) -> int:
+    """Delete the least recently used bundles until the cache fits its budget.
+
+    Unbounded growth fills the volume and takes the service down with a failure that
+    looks nothing like its cause, so this runs after every write rather than on a
+    timer that somebody has to remember to start.
+
+    Ordered by modification time rather than access time. Many filesystems mount with
+    relatime or noatime, so access time is not reliably maintained, and a
+    least-recently-*used* policy built on it would quietly become arbitrary.
+    """
+    files = sorted(cache.glob("*.json"), key=lambda f: f.stat().st_mtime)
+    total = sum(f.stat().st_size for f in files)
+    budget = budget_mb * 1024 * 1024
+    removed = 0
+    while files and total > budget:
+        oldest = files.pop(0)
+        try:
+            total -= oldest.stat().st_size
+            oldest.unlink()
+            removed += 1
+        except OSError:
+            continue
+    if removed:
+        logger.info("evicted %d cached bundle(s) to stay under %.0f MB", removed, budget_mb)
+    return removed
 
 
 def _cache_path(root: Path, huc: str, resolution_m: float) -> Path:
@@ -152,6 +186,10 @@ def create_app(
     cache_dir: Path | None = None,
     max_cells: int = 40_000_000,
     marks_path: Path | None = None,
+    max_concurrent: int = 2,
+    rate_per_minute: float = 30.0,
+    rate_burst: int = 10,
+    cache_budget_mb: float = 2048.0,
 ) -> FastAPI:
     """Build the application.
 
@@ -166,15 +204,48 @@ def create_app(
         Largest grid the service will attempt. Depression filling is global, so the
         whole watershed has to fit in memory; a request over this is refused with an
         explanation rather than being allowed to exhaust the machine.
+    max_concurrent
+        Watershed computations allowed in flight at once. This guards the machine:
+        each one holds its whole grid resident, so a few in parallel exhaust memory
+        whatever the request rate is.
+    rate_per_minute, rate_burst
+        Per-client token bucket. This guards everyone upstream - every request here
+        becomes range reads against USGS and calls to USACE, all keyless and all
+        wearing this machine's identity.
+    cache_budget_mb
+        Disk the finished bundles may occupy. Past it, the least recently used are
+        deleted. Unbounded growth fills the volume and takes the service down with a
+        failure that looks nothing like its cause.
     """
     base = config or Config()
     cache = cache_dir or Path("outputs/cache")
     cache.mkdir(parents=True, exist_ok=True)
     marks = marks_path or (base.paths.raw / "validation" / "high_water_marks_national.json")
     app = FastAPI(title="floodline", docs_url="/api/docs")
+    heavy = ConcurrencyLimiter(limit=max_concurrent)
+    rate = RateLimiter(per_minute=rate_per_minute, burst=rate_burst)
 
     def client() -> httpx.Client:
         return make_client(base.sources)
+
+    def guard(request: Request) -> None:
+        """Refuse before doing the work, not after.
+
+        A rejection has to be cheap and it has to say when to come back, or a caller
+        retries immediately and the limit achieves nothing.
+        """
+        who = request.client.host if request.client else "unknown"
+        try:
+            rate.check(who)
+        except TooManyRequestsError as exc:
+            raise HTTPException(
+                429,
+                str(exc),
+                headers={"Retry-After": str(max(1, int(exc.retry_after_s)))},
+            ) from exc
+
+    def evict() -> int:
+        return evict_cache(cache, cache_budget_mb)
 
     @app.get("/")
     def index() -> FileResponse:
@@ -316,6 +387,7 @@ def create_app(
 
     @app.get("/api/compute/{huc}")
     def compute(
+        request: Request,
         huc: str,
         resolution: float = Query(default=10.0, ge=1.0, le=100.0),
         refresh: bool = False,
@@ -325,6 +397,7 @@ def create_app(
         Typically 11 to 25 seconds cold, depending on the watershed's size, dominated
         by reading the DEM. Cached afterwards.
         """
+        guard(request)
         path = _cache_path(cache, huc, resolution)
         if path.exists() and not refresh:
             payload = json.loads(path.read_text())
@@ -334,7 +407,9 @@ def create_app(
             logger.info("cache for %s is an older schema; recomputing", huc)
 
         try:
-            with client() as http:
+            # The slot is taken only for real work. A cache hit above never reaches
+            # here, so a warm watershed stays instant however busy the machine is.
+            with heavy, client() as http:
                 unit, local = watershed_by_huc(huc, config=base, client=http)
                 result = compute_watershed(
                     unit,
@@ -344,6 +419,8 @@ def create_app(
                     max_cells=max_cells,
                     marks_path=marks if marks.exists() else None,
                 )
+        except TooBusyError as exc:
+            raise HTTPException(503, str(exc), headers={"Retry-After": "30"}) from exc
         except WatershedNotFoundError as exc:
             raise HTTPException(404, str(exc)) from exc
         except SourceError as exc:
@@ -367,6 +444,7 @@ def create_app(
             "schema": CACHE_SCHEMA,
         }
         path.write_text(json.dumps(payload, default=float))
+        evict()
         logger.info(
             "computed %s at %gm in %.1fs (%d tiles)",
             huc,
@@ -378,6 +456,7 @@ def create_app(
 
     @app.get("/api/exposure/{huc}")
     def exposure(
+        request: Request,
         huc: str,
         resolution: float = Query(default=30.0, ge=10.0, le=100.0),
         samples: int = Query(default=400, ge=50, le=5000),
@@ -390,6 +469,7 @@ def create_app(
         map should ask for this only when a reader wants it, not on every click.
         Cached afterwards like the compute bundle.
         """
+        guard(request)
         path = _exposure_cache_path(cache, huc, resolution, samples)
         if path.exists() and not refresh:
             payload = json.loads(path.read_text())
@@ -399,7 +479,7 @@ def create_app(
             logger.info("exposure cache for %s is an older schema; recomputing", huc)
 
         try:
-            with client() as http:
+            with heavy, client() as http:
                 unit, local = watershed_by_huc(huc, config=base, client=http)
                 result = assess_watershed(
                     unit,
@@ -410,6 +490,8 @@ def create_app(
                     samples=samples,
                     with_population=False,
                 )
+        except TooBusyError as exc:
+            raise HTTPException(503, str(exc), headers={"Retry-After": "60"}) from exc
         except NoDischargeError as exc:
             raise HTTPException(422, str(exc)) from exc
         except WatershedNotFoundError as exc:
@@ -457,6 +539,7 @@ def create_app(
             "schema": CACHE_SCHEMA,
         }
         path.write_text(json.dumps(payload, default=float))
+        evict()
         logger.info("exposure %s at %gm in %.1fs", huc, resolution, sum(result.seconds.values()))
         return JSONResponse(payload)
 

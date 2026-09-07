@@ -8,7 +8,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from floodline.config import Config
-from floodline.service import create_app
+from floodline.service import create_app, evict_cache
 
 
 @pytest.fixture
@@ -297,3 +297,30 @@ def test_exposure_on_an_ungauged_basin_is_refused_not_estimated(
     response = client.get("/api/exposure/160600121003")
     assert response.status_code == 422
     assert "no USGS gauge" in response.json()["detail"]
+
+
+def test_the_cache_is_evicted_to_its_budget(tmp_path: Path) -> None:
+    """Unbounded growth fills the volume and fails in a way that looks unrelated."""
+    import os
+    import time
+
+    from floodline.service import evict_cache
+
+    for i in range(6):
+        f = tmp_path / f"{i}_30m.json"
+        f.write_text("x" * 400)
+        # Distinct modification times, so least-recently-used has a defined order.
+        stamp = time.time() - (10 - i)
+        os.utime(f, (stamp, stamp))
+
+    # 2.4 kB of files against a 1 kB budget: the four oldest go.
+    removed = evict_cache(tmp_path, budget_mb=1024 / (1024 * 1024))
+    assert removed == 4
+    left = sorted(f.name for f in tmp_path.glob("*.json"))
+    assert left == ["4_30m.json", "5_30m.json"], "the newest survive"
+
+
+def test_eviction_leaves_a_cache_inside_its_budget_alone(tmp_path: Path) -> None:
+    (tmp_path / "a_30m.json").write_text("x" * 10)
+    assert evict_cache(tmp_path, budget_mb=1.0) == 0
+    assert (tmp_path / "a_30m.json").exists()
