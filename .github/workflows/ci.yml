@@ -65,6 +65,52 @@ jobs:
           NUMBA_DISABLE_JIT: ${{ matrix.jit == 'off' && '1' || '0' }}
         run: uv run pytest -q
 
+  docker:
+    name: image + stack
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # The credentials compose refuses to start without. A throwaway password, because
+      # this database exists for ninety seconds and is deleted with its volume.
+      - name: Write .env
+        run: |
+          {
+            echo "POSTGRES_USER=floodline"
+            echo "POSTGRES_PASSWORD=$(openssl rand -base64 24)"
+            echo "POSTGRES_DB=floodline"
+          } > .env
+
+      - name: Build and start the stack
+        run: docker compose up -d --build --wait --wait-timeout 300
+
+      # Proves the entrypoint applied migrations rather than the image merely starting.
+      - name: Migrations ran on first boot
+        run: |
+          docker compose logs api | grep -E "floodline: schema (migrated|already at)" \
+            || { echo "the entrypoint did not report a migration"; exit 1; }
+
+      - name: Smoke the running stack
+        run: ./docker/smoke.sh
+
+      # A second boot against a migrated database must be a no-op, not a re-run: this
+      # is what makes a restart, a redeploy and a second replica safe.
+      - name: Migrations are idempotent
+        run: |
+          docker compose restart api
+          timeout 120 sh -c 'until curl -sf -m 2 http://127.0.0.1:8000/health >/dev/null; do sleep 2; done'
+          docker compose logs api | grep -q "floodline: schema already at" \
+            || { echo "a restart did not find the schema already at head"; exit 1; }
+          ./docker/smoke.sh
+
+      - name: Logs on failure
+        if: failure()
+        run: docker compose logs --no-color --tail 200
+
+      - name: Tear down
+        if: always()
+        run: docker compose down -v
+
   pre-commit:
     name: pre-commit
     runs-on: ubuntu-latest

@@ -1,0 +1,81 @@
+# The half of the deployment that CI deliberately does not gate on.
+#
+# `ci.yml` builds the image and smokes the stack without touching an agency, because
+# upstream degradation is this project's most common failure and a pull request should
+# not go red because USGS is having an afternoon. That leaves the live path unchecked,
+# which is why this exists: same stack, real fetches, on a schedule.
+#
+# A failure here means an agency moved, not that a commit is bad. Three of these
+# endpoints changed host or format during development and each time it was a code
+# change, so finding out on a Monday is worth more than finding out from a visitor.
+#
+# NSI is not exercised. The structure inventory is on a `.mil` host that many CI
+# runners cannot resolve, so asserting it would make this permanently red for a reason
+# that has nothing to do with USACE. Exposure's upstream is checked by running it.
+
+name: upstream
+
+on:
+  schedule:
+    # Mondays, 07:00 UTC. Early enough in the week to act on.
+    - cron: "0 7 * * 1"
+  workflow_dispatch:
+
+jobs:
+  live:
+    name: real fetches against a running stack
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Write .env
+        run: |
+          {
+            echo "POSTGRES_USER=floodline"
+            echo "POSTGRES_PASSWORD=$(openssl rand -base64 24)"
+            echo "POSTGRES_DB=floodline"
+          } > .env
+
+      - name: Build and start the stack
+        run: docker compose up -d --build --wait --wait-timeout 300
+
+      # USACE go-consequences on GitHub, and the USGS Short-Term Network. Both are
+      # required after a deploy, so a break here breaks every fresh deployment.
+      - name: prewarm fetches the curve library and the marks
+        run: docker compose exec -T api floodline prewarm
+
+      # USGS TNM product search, 3DEP over range requests, WBD, and NWIS. The whole
+      # cold path a first visitor pays for.
+      - name: A cold scenario on Whiteoak Bayou
+        run: |
+          curl -sS -m 900 -o result.json -w 'HTTP %{http_code} in %{time_total}s\n' \
+            -X POST http://127.0.0.1:8000/api/scenario \
+            -H 'content-type: application/json' \
+            -d '{"huc":"1204010403","discharge_cms":1433.0,"resolution_m":30.0}'
+          cat result.json
+          python3 - <<'PY'
+          import json, sys
+
+          KNOWN = 74.39  # flooded km2 at Harvey's peak, 30 m, from the verified stack
+          result = json.load(open("result.json"))
+          got = result["flooded_km2"]
+          drift = abs(got - KNOWN) / KNOWN
+          print(f"flooded_km2 {got} against {KNOWN} ({drift:.2%} drift)")
+          if drift > 0.01:
+              print(
+                  "The modelled extent has moved by more than 1%. This may be "
+                  "legitimate - 3DEP republishes lidar, NWIS revises a peak - but it "
+                  "is a change in a published number and wants a human.",
+                  file=sys.stderr,
+              )
+              sys.exit(1)
+          PY
+
+      - name: Logs on failure
+        if: failure()
+        run: docker compose logs --no-color --tail 200
+
+      - name: Tear down
+        if: always()
+        run: docker compose down -v
