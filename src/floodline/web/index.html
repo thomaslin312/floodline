@@ -737,7 +737,12 @@ function scored(){
   // below are progressively rougher, and on the one watershed measured they carried
   // an RMSE of 4.9 m against 1.0 m for the good ones. Scoring on everything lets the
   // roughest surveys set the headline number, so the default is the graded subset.
-  const all = bundle.marks||[];
+  // Coastal marks are dropped whatever the toggle says, matching `scorable_marks`
+  // on the server. HAND has no surge term, so scoring against one measures a
+  // mechanism the model does not contain rather than a fit it got wrong — on
+  // Monterey Bay that read as a 2.1 m error over 517 marks it left 95% dry. They are
+  // still drawn, as uncounted, because where the water reached is worth seeing.
+  const all = (bundle.marks||[]).filter(m => (m.environment||"").toLowerCase() !== "coastal");
   return $("c-q").classList.contains("on") ? all.filter(m=>GOOD.has(m.quality)) : all;
 }
 
