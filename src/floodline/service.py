@@ -46,7 +46,7 @@ __all__ = ["create_app"]
 
 logger = logging.getLogger("floodline.service")
 
-CACHE_SCHEMA = 2
+CACHE_SCHEMA = 3
 """Shape of a cached payload. Bump it whenever a field is added, removed or
 reinterpreted, and every older entry becomes a miss instead of being served to code
 that expects something else.
@@ -54,7 +54,12 @@ that expects something else.
 Learned the hard way: the exposure payload gained a damage ladder and four reference
 multipliers, and caches written before that were still served afterwards. The new
 decoder read the old image's channels as something they were not and drew a damage
-layer covering most of the watershed for a flood that reached 6% of it."""
+layer covering most of the watershed for a flood that reached 6% of it.
+
+Bumped to 3 because the numbers themselves moved, not the fields: the assessment now
+event-matches the gauge and samples across curve families, so a cached discharge and
+a cached damage interval from schema 2 are answers to a question this code no longer
+asks. A stale value that still parses is the dangerous kind."""
 
 
 def _fresh(payload: dict[str, Any]) -> bool:
@@ -443,10 +448,23 @@ def create_app(
 
     @app.get("/api/health")
     def health() -> dict[str, Any]:
-        cached = sorted(p.name for p in cache.glob("*.json"))
+        # Count what can actually be served, not what is on disk. After a schema bump
+        # every older file is a miss, and reporting those as "cached" says the next
+        # click will be instant when it is about to recompute the whole watershed.
+        fresh = 0
+        stale = 0
+        for path in cache.glob("*.json"):
+            try:
+                fresh += _fresh(json.loads(path.read_text()))
+            except (OSError, ValueError):
+                stale += 1
+                continue
+        stale += len(list(cache.glob("*.json"))) - fresh - stale
         return {
             "ok": True,
-            "cached_watersheds": len(cached),
+            "cached_watersheds": fresh,
+            "stale_entries": stale,
+            "cache_schema": CACHE_SCHEMA,
             "max_cells": max_cells,
             "high_water_marks": marks.exists(),
         }
