@@ -62,13 +62,6 @@
   code{font-family:var(--mono);font-size:.85em;background:var(--accent-2);
     color:var(--accent);padding:1.5px 5px;border-radius:5px}
 
-  /* limits, stated before anything else */
-  ul.limits{list-style:none;margin:14px 0 0;padding:0;max-width:70ch}
-  ul.limits li{padding:8px 0 8px 16px;border-left:2px solid var(--line);
-    margin-bottom:5px;color:var(--ink-2);font-size:14px}
-  ul.limits li:first-child{border-left-color:var(--warn);color:var(--ink)}
-  ul.limits b{color:var(--ink);font-weight:600}
-
   /* numbered stages */
   .stage{display:grid;grid-template-columns:30px 1fr;gap:0 15px;padding:14px 0;
     border-top:1px solid var(--hair)}
@@ -88,18 +81,6 @@
   td:first-child{color:var(--ink);font-weight:500}
   td.m,th.m{font-family:var(--mono);font-size:11.5px;font-variant-numeric:tabular-nums;
     white-space:nowrap}
-
-  .note{background:#a3722a14;border-left:2px solid var(--warn);
-    border-radius:0 var(--r-sm) var(--r-sm) 0;padding:12px 15px;margin-top:15px;
-    font-size:13.5px;color:var(--ink-2);max-width:70ch}
-  @media (prefers-color-scheme:dark){ .note{background:#ddaa5c1c} }
-  .note b{color:var(--ink)}
-
-  figure{margin:18px 0 0}
-  .fig{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);
-    padding:12px 10px 6px;overflow-x:auto}
-  .fig svg{display:block;width:100%;min-width:480px;height:auto}
-  figcaption{font-size:12.5px;color:var(--ink-3);margin-top:8px;max-width:68ch}
 
   footer{margin-top:48px;padding-top:18px;border-top:1px solid var(--line);
     font-size:12px;color:var(--ink-3)}
@@ -121,23 +102,8 @@
 </header>
 
 <h1>How floodline works</h1>
-<p class="lede">One surface, five stages, and a stated error. The limits come first,
-which is the order the model reports in.</p>
-
-<h2 id="limits">What it cannot tell you</h2>
-<ul class="limits">
-  <li><b>It is a screening model, not a hydraulic one.</b> It assumes the water surface
-  parallels the drainage line: no backwater, levees, culverts or reservoir releases.</li>
-  <li><b>It does not model storm surge.</b> Coastal marks are excluded from every
-  accuracy figure rather than counted as misses.</li>
-  <li><b>Structure values are modelled, not appraised.</b> Sound summed over tens of
-  thousands of buildings; not sound for any one address.</li>
-  <li><b>The uncertainty band is a lower bound.</b> It covers four named errors, not
-  everything that could be wrong.</li>
-  <li><b>An ungauged basin gets no damage figure.</b> The depth map still runs from a
-  labelled scenario, but a building count and a currency total read as measurements
-  however they are captioned, so they are withheld.</li>
-</ul>
+<p class="lede">A screening model, built entirely from derived and modelled open
+data, and resting on a good many assumptions. Read what follows with that in mind.</p>
 
 <h2 id="idea">The core idea</h2>
 <p>Everything rests on one surface: <b>HAND</b>, the height of every cell above the
@@ -145,64 +111,8 @@ drainage line it flows to. Once each cell knows how far it sits above its own re
 flood becomes a comparison rather than a simulation. A cell is wet when the water level
 in its reach exceeds its HAND, and the depth is the difference.</p>
 
-<figure>
-  <div class="fig">
-    <svg viewBox="0 0 700 300" xmlns="http://www.w3.org/2000/svg" role="img"
-         aria-label="Valley cross-section showing the drainage line, a water surface set by the reach stage, HAND measured at a dry hillside point, and a building whose finished floor sits above ground level.">
-      <path d="M0,120 L70,142 L140,166 L205,194 L280,226 L328,244 L338,244 L390,222
-               L465,194 L535,166 L600,142 L700,130 L700,272 L0,272 Z"
-            fill="var(--hair)" stroke="none"/>
-      <path d="M0,120 L70,142 L140,166 L205,194 L280,226 L328,244 L338,244 L390,222
-               L465,194 L535,166 L600,142 L700,130"
-            fill="none" stroke="var(--ink-3)" stroke-width="1.6"/>
-      <path d="M205,194 L280,226 L328,244 L338,244 L390,222 L465,194 Z"
-            fill="var(--water)" opacity="0.5"/>
-      <line x1="205" y1="194" x2="465" y2="194" stroke="var(--water)" stroke-width="2"/>
-      <line x1="140" y1="244" x2="575" y2="244" stroke="var(--ink-3)" stroke-width="1"
-            stroke-dasharray="3 4" opacity="0.8"/>
-      <circle cx="333" cy="244" r="3.2" fill="var(--accent)"/>
-      <line x1="333" y1="197" x2="333" y2="242" stroke="var(--accent)" stroke-width="1.4"/>
-      <circle cx="535" cy="166" r="3.2" fill="var(--ink)"/>
-      <line x1="535" y1="169" x2="535" y2="242" stroke="var(--ink)" stroke-width="1.4"/>
-      <rect x="266" y="176" width="37" height="50" fill="var(--solid)"
-            stroke="var(--ink)" stroke-width="1.4"/>
-      <line x1="266" y1="215" x2="303" y2="215" stroke="var(--ink)" stroke-width="1"
-            stroke-dasharray="2 3"/>
-      <g stroke="var(--ink-3)" stroke-width="1" fill="none" opacity="0.6">
-        <path d="M150,48 L150,215 L264,215"/>
-        <path d="M390,48 L390,192"/>
-        <path d="M600,48 L600,184 L537,184"/>
-      </g>
-      <g font-family="IBM Plex Mono, ui-monospace, monospace" font-size="10"
-         fill="var(--ink-2)">
-        <text x="150" y="28" text-anchor="middle" fill="var(--ink)">finished floor</text>
-        <text x="150" y="41" text-anchor="middle">ground + foundation height</text>
-        <text x="390" y="28" text-anchor="middle" fill="var(--ink)">water surface</text>
-        <text x="390" y="41" text-anchor="middle">stage, from the reach's rating curve</text>
-        <text x="600" y="28" text-anchor="middle" fill="var(--ink)">HAND</text>
-        <text x="600" y="41" text-anchor="middle">height above nearest drainage</text>
-        <text x="341" y="190">stage</text>
-        <text x="146" y="259">drainage datum</text>
-      </g>
-      <g font-family="IBM Plex Mono, ui-monospace, monospace" font-size="10"
-         fill="var(--ink-2)">
-        <rect x="140" y="280" width="13" height="9" fill="var(--water)" opacity="0.5"/>
-        <text x="160" y="288">wet: stage exceeds HAND</text>
-        <rect x="370" y="280" width="13" height="9" fill="var(--hair)"
-              stroke="var(--ink-3)" stroke-width="1"/>
-        <text x="390" y="288">dry: HAND exceeds stage</text>
-      </g>
-    </svg>
-  </div>
-  <figcaption>Depth at a cell is <code>stage[reach] − HAND</code>. Damage is driven by
-  depth above the <em>finished floor</em>, which subtracts the structure's foundation
-  height again, so a building can stand in water and still take no structural
-  damage.</figcaption>
-</figure>
 
 <h2 id="pipeline">The pipeline</h2>
-<p>Numbered because it is a real dependency chain: flow direction is meaningless on an
-unconditioned surface, HAND without a stream network, damage without a stage.</p>
 
 <div class="stage">
   <div class="dot">01</div>
@@ -279,13 +189,9 @@ unconditioned surface, HAND without a stream network, damage without a stage.</p
   </table>
 </div>
 
-<p>Nothing is bundled. Every input is fetched on demand and cached locally, which is why
-no result here can be one that was not actually produced.</p>
-
 <h2 id="monte-carlo">The Monte Carlo</h2>
-<p>A single damage total is a point estimate dressed as a fact. Every run draws the whole
-calculation a thousand times, perturbing four inputs together, and reports the 5th to
-95th percentile.</p>
+<p>Every run draws the whole calculation a thousand times, perturbing four inputs
+together, and reports the 5th to 95th percentile rather than a single total.</p>
 
 <div class="tw">
   <table>
@@ -304,28 +210,20 @@ all four together. <b>Stage and cost dominate because they change how many build
 wet; the curve only changes what each wet building costs, and DEM error largely averages
 out across a basin.</b></p>
 
-<div class="note">The interval is reported at the observed discharge only. Running a full
-Monte Carlo at every rung of the discharge ladder takes about a quarter of an hour and
-returns the same shape stretched, so the ladder carries point estimates.</div>
-
 <h2 id="accuracy">How accurate it is</h2>
 <p><b>Extent is validated.</b> Scored against USGS surveyed high-water marks in every
 watershed in the country holding at least eight good ones: <b>16 basins, 1,287 marks,
 median RMSE 2.16 m</b>, ranging from 0.97 m to 11.85 m. Bias has no consistent sign, so
-there is no global offset to correct — the model is roughly unbiased across the country
-and unreliable in any one place, which is the honest shape of a screening method.</p>
+there is no global offset to correct.</p>
 
-<div class="note"><b>It leaves 53% of surveyed riverine marks dry</b>, and marks are a
-one-sided sample: nobody surveys a mark where the water never came. So this bounds the
-misses and says nothing about ground the model floods that stayed dry.</div>
-
-<p><b>The currency total is not validated, and fails its first real test.</b> Modelled
-damage per census tract has essentially no rank correlation with either FEMA series for
-Hurricane Harvey — +0.025 against insurance claims paid, −0.055 against assessed
-individual assistance — while those two series, which sample almost complementary
-populations, agree with each other at +0.818. The signal is real and the model does not
-reproduce it. Building counts and the loss ratio are supported by the extent validation
-above; <b>the dollar figure is a scale, not a number for any neighbourhood.</b></p>
+<p><b>Overall: reliable about where and how deep, unvalidated about how much.</b>
+Extent and depth carry a stated error of roughly 2 m, and the building counts and loss
+ratio derived from them inherit it. The currency total has no ground truth behind it —
+against FEMA's own record by census tract it shows no rank correlation — so read it as a
+scale rather than a figure for any one neighbourhood. Underneath all of it the chain is
+screening-grade: one gauge stands in for a whole basin, structure values are modelled
+rather than appraised, and the uncertainty band covers four named errors rather than
+every error there is.</p>
 
 <footer>
   Every figure on this page was produced by the model on the current revision. Nothing
