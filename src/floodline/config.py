@@ -275,7 +275,16 @@ class HydraulicsConfig(Frozen):
         default=0.035,
         description="Manning's roughness for the synthetic rating curve. 0.035 is a "
         "natural channel with some vegetation; an engineered concrete bayou is nearer "
-        "0.015, which is a factor of two on discharge at the same stage.",
+        "0.015, which is a factor of two on discharge at the same stage. "
+        "Calibrated against 16 watersheds with the marks held out, and left at the "
+        "physical value on purpose: lowering it to 0.020 improves held-out median "
+        "RMSE from 2.25 m to 2.04 m, but the curve keeps improving down to 0.008, "
+        "which is smoother than glass, and per-basin optima scatter across the whole "
+        "range from 0.008 to 0.110. A parameter whose best value runs past physical "
+        "plausibility is absorbing someone else's error - most likely channel "
+        "capacity, since a lidar DEM sees the water surface rather than the bed - and "
+        "shipping the fitted value would label a bias correction as a roughness. Set "
+        "it per basin if you have marks to fit against.",
     )
     rating_max_stage_m: Positive = Field(
         default=25.0,
@@ -479,8 +488,28 @@ class MonteCarloConfig(Frozen):
     curve_family_weights: dict[CurveFamily, Fraction] = Field(
         default_factory=lambda: {CurveFamily.HAZUS: 0.6, CurveFamily.JRC_GLOBAL: 0.4},
         description="Sampling weights over curve families. HAZUS leads because the "
-        "validation case is US; JRC_GLOBAL carries the disagreement between families, "
-        "which is the largest single term in the interval at depth.",
+        "validation case is US; JRC_GLOBAL carries the disagreement between families. "
+        "That disagreement is large per building - about 2.3x at one metre - but it "
+        "is not the largest term in the reported interval, which was claimed here "
+        "before it was measured. Decomposed on Whiteoak Bayou, each term alone as a "
+        "share of the point estimate: stage 100%, cost 84%, curve and family together "
+        "16%, DEM 8%. Stage and cost win because they move how many buildings are "
+        "wet; the curve only moves what each wet building costs.",
+    )
+    sample_across_families: bool = Field(
+        default=True,
+        description="Whether an explicitly loaded curve library is still sampled "
+        "against the bundled families. Loading one library used to collapse the "
+        "family term to nothing, which silently removed the largest single source "
+        "of damage uncertainty. Set False only to price against one library on "
+        "purpose, knowing the interval then understates itself.",
+    )
+    supplied_family_weight: Fraction = Field(
+        default=0.6,
+        description="Weight given to an explicitly loaded library when it is sampled "
+        "alongside the bundled families. It leads because it was chosen deliberately "
+        "and is usually the most specific to the study area; the remainder is split "
+        "over curve_family_weights in proportion.",
     )
     interval: tuple[Fraction, Fraction] = Field(
         default=(0.05, 0.95), description="Reported credible interval quantiles."

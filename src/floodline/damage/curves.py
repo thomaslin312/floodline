@@ -41,6 +41,7 @@ __all__ = [
     "CurveSet",
     "DamageCurve",
     "bundled_curves",
+    "generic_class",
     "load_curves",
 ]
 
@@ -149,6 +150,39 @@ class DamageCurve:
         return np.asarray(out, dtype=np.float64)
 
 
+# HAZUS occupancy codes are prefixed by sector, and every US inventory and curve
+# library in this project uses them. The generic four are what the international
+# libraries publish, so this is the join between the two vocabularies.
+_GENERIC_BY_PREFIX = {
+    "RES": "residential",
+    "COM": "commercial",
+    "IND": "industrial",
+    "AGR": "other",
+    "GOV": "other",
+    "EDU": "other",
+    "REL": "other",
+}
+
+
+def generic_class(name: str) -> str:
+    """Reduce a HAZUS occupancy code to the generic class an international curve uses.
+
+    `RES1-2SWB` becomes `residential`, `COM4` becomes `commercial`. A name that is
+    already generic passes through unchanged, and anything unrecognised is returned
+    as-is so the caller's own default handling applies rather than a wrong guess.
+
+    Deliberately coarse. Collapsing twenty residential curves onto one is a real loss
+    of detail, and it is the price of asking a library that never published that
+    detail what it thinks. The alternative - not sampling other families at all -
+    hides the largest single term in the damage interval.
+    """
+    upper = name.strip().upper()
+    for prefix, generic in _GENERIC_BY_PREFIX.items():
+        if upper.startswith(prefix):
+            return generic
+    return name
+
+
 @dataclass(frozen=True, slots=True)
 class CurveLookup:
     """Every curve in a set resampled onto one depth grid, for repeated evaluation.
@@ -175,11 +209,28 @@ class CurveLookup:
     Present only where the source publishes it, which currently means USACE."""
 
     def indices_for(self, building_class: npt.ArrayLike) -> npt.NDArray[np.int64]:
-        """Map class names to rows once, so draws can reuse the result."""
+        """Map class names to rows once, so draws can reuse the result.
+
+        Names this set does not carry are tried again as their generic equivalent
+        before falling back to the default row. That is what lets one inventory be
+        priced against curve libraries with different vocabularies: NSI labels a
+        building `RES1-2SWB`, the USACE library has a curve of that exact name, and
+        the JRC library has `residential`. Without the second attempt every one of
+        the 42 occupancy types would land on JRC's default row, and sampling across
+        families would compare a detailed library against a single curve.
+        """
         classes = np.asarray(building_class, dtype=object)
         out = np.full(classes.shape, self.default_index, dtype=np.int64)
+        unmatched = np.ones(classes.shape, dtype=bool)
         for name, row in self.index_of.items():
-            out[classes == name] = row
+            hit = classes == name
+            out[hit] = row
+            unmatched &= ~hit
+        if unmatched.any():
+            for name in np.unique(classes[unmatched]):
+                fallback = self.index_of.get(generic_class(str(name)))
+                if fallback is not None:
+                    out[unmatched & (classes == name)] = fallback
         return out
 
     def fraction(

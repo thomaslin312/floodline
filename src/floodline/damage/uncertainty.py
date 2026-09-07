@@ -2,20 +2,34 @@
 
 Each draw perturbs the inputs and re-runs the deterministic estimate:
 
+Measured on Whiteoak Bayou, each term sampled alone, as a share of the point
+estimate: **stage 100%, cost 84%, curve and family together 16%, DEM 8%**, against
+123% for all of them at once. Stage and cost dominate because they change how many
+buildings are wet; the curve only changes what each wet building costs, and the DEM
+error largely averages out. Worth stating because this file previously asserted that
+curve family was the largest term, which was reasoning rather than measurement.
+
 * **Stage** (`stage_sigma_m`) - the gauge reading, and everything the rating curve
   did with it. Shifts every building's depth together, so it moves the total far
   more than its size suggests: it is a systematic error, not a per-building one.
 * **DEM** (`dem_sigma_m`) - vertical error in the terrain, and so in HAND. Applied
   per building and independently, because lidar error decorrelates over tens of
   metres, so it largely averages out across a basin and mostly widens the tails.
-* **The curve** - two ways, depending on what is loaded. With the bundled
-  approximations it is `curve_family_weights`: which published family is right, the
-  largest single term at depth because families disagree about where a curve saturates
-  far more than a gauge disagrees with itself. With the USACE library there is one
-  library rather than an ensemble, so family sampling is off and the curve's own
-  published standard deviation is sampled instead - one draw for the whole curve, since
-  the spread is uncertainty about where the curve sits and drawing it per building
-  would average away across a quarter of a million of them.
+* **The curve** - two terms, both live. `curve_family_weights` asks which published
+  family is right, and it is the largest single term at depth, because families
+  disagree about where a curve saturates far more than a gauge disagrees with itself.
+  Loading the USACE library used to switch this off, on the reasoning that one library
+  is not an ensemble - but the disagreement does not stop existing because only one
+  opinion was consulted, and the band came out *tighter* for having more specific
+  curves, which is backwards. The loaded library now leads at
+  `supplied_family_weight` and the bundled families take the rest. Alongside it, each
+  curve's own published standard deviation is sampled - one draw for the whole curve,
+  since the spread is uncertainty about where the curve sits and drawing it per
+  building would average away across a quarter of a million of them.
+
+  Contents curves are the exception: only the USACE library publishes them here, so a
+  draw that prices structure against JRC still prices contents against USACE. That
+  term is therefore still missing, and the interval remains a lower bound.
 * **Cost** (`cost_sigma_frac`) - the replacement rate. Log-normal, so a draw cannot
   make rebuilding free, and applied as one scalar per draw because construction
   costs move together across a region.
@@ -133,14 +147,15 @@ def monte_carlo_damage(
         Curve sets by family, for when transcribed tables have been loaded. Missing
         families fall back to the bundled constants.
     curve_sigma
-        Published per-depth standard deviation of each curve, keyed by class. Supplying
-        it is what puts curve uncertainty into the interval when a single library has
-        turned family sampling off; without it that term is simply absent.
+        Published per-depth standard deviation of each curve, keyed by class. This is
+        the within-library term, separate from the between-library one; without it
+        that half is simply absent.
     curves
-        A single curve set used for every draw, which turns family sampling off. That
-        is the right mode for the published USACE library: there is one library, not
-        an ensemble of competing approximations, so the disagreement term family
-        sampling stands in for does not apply.
+        A library loaded explicitly, which leads the family sampling at
+        `supplied_family_weight` rather than replacing it. The point estimate is
+        priced against this set alone; the interval around it carries the other
+        families too. Set `sample_across_families` False to price against this one
+        library only, knowing the interval then understates itself.
     structure_value, contents_value, contents_curves
         Passed to `estimate_damage`. Real per-structure values replace the
         area-times-rate proxy, which makes the cost sigma perturb a valuation rather
@@ -178,10 +193,30 @@ def monte_carlo_damage(
 
     sets: dict[CurveFamily, CurveSet] = {}
     single = curves is not None
-    if curves is not None:
+    if curves is not None and not mc.sample_across_families:
+        # Priced against one library on purpose. The interval then carries stage, DEM,
+        # cost and the library's own published spread, and nothing for the choice of
+        # library, which is the term that dominates at depth.
         families = [curves.family]
         weights = np.asarray([1.0], dtype=np.float64)
         sets = {curves.family: curves}
+    elif curves is not None:
+        # A loaded library leads, but the bundled families still get a share, because
+        # "which published family is right" is a real question and answering it with
+        # silence understates the interval. Families differ by about 2.3x at one metre;
+        # loading USACE used to remove that entirely, so the band looked tighter for
+        # having more specific curves, which is backwards.
+        others = [f for f in mc.curve_family_weights if f != curves.family]
+        lead = float(mc.supplied_family_weight)
+        families = [curves.family, *others]
+        rest = np.asarray([float(mc.curve_family_weights[f]) for f in others])
+        rest = rest / rest.sum() * (1.0 - lead) if rest.size and rest.sum() > 0 else rest
+        weights = np.concatenate([[lead], rest]) if rest.size else np.asarray([1.0])
+        weights = weights / weights.sum()
+        sets = {curves.family: curves}
+        for family in others:
+            supplied = curve_sets.get(family) if curve_sets else None
+            sets[family] = supplied or bundled_curves(family, config=damage_config)
     else:
         for family in families:
             supplied = curve_sets.get(family) if curve_sets else None

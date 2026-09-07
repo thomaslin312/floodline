@@ -1912,3 +1912,39 @@ Rejected: refusing coastal *watersheds* outright, the way ungauged ones are refu
 The riverine part of a coastal basin is still modelled correctly, and a HUC-10 at the
 coast is not automatically surge-driven. Withholding the score is honest; withholding
 the model would be over-correction.
+
+## 2026-09-07 — cross-family sampling is on, and it is not the biggest term
+
+Loading the USACE library used to collapse family sampling to a single family, so
+the interval carried no answer at all to "which published family is right". The band
+came out *tighter* for having more specific curves, which is backwards. A loaded
+library now leads at `supplied_family_weight` (0.6) and the bundled families take the
+rest; `sample_across_families` turns it off for anyone pricing against one library on
+purpose.
+
+The join between vocabularies is `generic_class`: NSI and USACE speak HAZUS occupancy
+codes, the international libraries publish four generic classes, and `indices_for`
+now tries the generic equivalent before falling back to a default row. Without it all
+42 occupancy types landed on JRC's default and the comparison was meaningless.
+
+Then the measurement, which contradicts what this repository has claimed since the
+Monte Carlo was written. Each term sampled alone on Whiteoak Bayou, as a share of the
+point estimate:
+
+| term | interval width |
+|---|---|
+| stage | 100% |
+| cost | 84% |
+| curve + family | 16% |
+| DEM | 8% |
+| all together | 123% |
+
+`curve_family_weights` was documented as "the largest single term in the interval at
+depth". It is third, and about six times smaller than stage. The reasoning behind the
+claim was sound — families really do disagree by ~2.3x at one metre — but it was
+reasoning, not measurement, and it was wrong about the aggregate. Stage and cost win
+because they change *how many* buildings are wet; the curve only changes what each
+wet building costs. Both descriptions now carry the measured table.
+
+Turning it on widened the reported band by 1.7% of the point estimate. Worth having
+because the term should not be silently zero, not because it moved the answer.

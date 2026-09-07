@@ -471,3 +471,46 @@ def test_the_sentinel_survives_monte_carlo_noise() -> None:
         monte_carlo=MonteCarloConfig(n_samples=60, seed=3, stage_sigma_m=0.5),
     )
     assert result.building_counts.max() == 1
+
+
+def test_a_loaded_library_still_samples_against_the_bundled_families() -> None:
+    """Loading one library used to zero the family term, tightening the band.
+
+    That is backwards: more specific curves should not buy a narrower interval by
+    removing the question of which library is right. The loaded set leads at
+    `supplied_family_weight` and the others take the rest.
+    """
+    import numpy as np
+
+    from floodline.config import Config, CurveFamily
+    from floodline.damage.curves import bundled_curves
+    from floodline.damage.uncertainty import monte_carlo_damage
+
+    cfg = Config()
+    supplied = bundled_curves(CurveFamily.HAZUS, config=cfg.damage)
+    n = 400
+    depths = np.full(n, 1.2)
+    areas = np.full(n, 140.0)
+    storeys = np.full(n, 1.0)
+    classes = np.array(["residential"] * n, dtype=object)
+
+    def run(across: bool) -> object:
+        mc = cfg.monte_carlo.model_copy(update={"sample_across_families": across, "n_samples": 120})
+        return monte_carlo_damage(
+            depths,
+            areas,
+            classes,
+            storeys=storeys,
+            monte_carlo=mc,
+            config=cfg,
+            curves=supplied,
+        )
+
+    off, on = run(False), run(True)
+    assert set(off.families_sampled) == {CurveFamily.HAZUS}
+    assert len(on.families_sampled) > 1, "the bundled families must get draws"
+    assert on.families_sampled[CurveFamily.HAZUS] > max(
+        v for f, v in on.families_sampled.items() if f != CurveFamily.HAZUS
+    ), "the supplied library leads"
+    # The point estimate is still priced against the loaded library alone.
+    assert on.point == off.point

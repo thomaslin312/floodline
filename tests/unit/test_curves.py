@@ -249,3 +249,37 @@ def test_an_impossible_grid_is_refused() -> None:
     )
     with pytest.raises(ValueError, match="lookup grid would be empty"):
         curves.lookup(config=DamageConfig(max_curve_depth_m=5.0))
+
+
+def test_generic_class_joins_the_two_curve_vocabularies() -> None:
+    """NSI and USACE speak HAZUS occupancy codes; the international libraries do not.
+
+    Without this join every one of the 42 occupancy types lands on JRC's default row,
+    and sampling across families compares a detailed library against a single curve
+    while looking like it worked.
+    """
+    from floodline.damage.curves import generic_class
+
+    assert generic_class("RES1-2SWB") == "residential"
+    assert generic_class("COM4") == "commercial"
+    assert generic_class("IND2") == "industrial"
+    for code in ("AGR1", "GOV1", "EDU2", "REL1"):
+        assert generic_class(code) == "other", code
+    # Already-generic names pass through, and an unknown one is left alone so the
+    # caller's own default handling applies rather than a wrong guess.
+    assert generic_class("residential") == "residential"
+    assert generic_class("wharf") == "wharf"
+
+
+def test_a_hazus_occtype_finds_a_generic_family_row() -> None:
+    curves = bundled_curves(CurveFamily.JRC_GLOBAL)
+    table = curves.lookup()
+    classes = np.array(["RES1-2SWB", "COM4", "IND2", "AGR1", "residential"], dtype=object)
+    rows = table.indices_for(classes)
+    assert rows[0] == table.index_of["residential"]
+    assert rows[1] == table.index_of["commercial"]
+    assert rows[2] == table.index_of["industrial"]
+    assert rows[3] == table.index_of["other"]
+    assert rows[4] == table.index_of["residential"]
+    # An unrecognisable name still falls back rather than raising.
+    assert table.indices_for(np.array(["nonsense"], dtype=object))[0] == table.default_index
