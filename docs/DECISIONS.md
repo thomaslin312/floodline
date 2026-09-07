@@ -2053,3 +2053,41 @@ right across many reaches, wrong on any particular one, which is the same bargai
 rest of this model makes.
 
 Off by default until the sweep says otherwise.
+
+## 2026-09-07 — bathymetry does not rescue Manning's n, and both stay off
+
+The hypothesis was specific and testable: a lidar DEM images the water surface, so
+channel capacity is under-counted, so the model over-floods at low stage, so the n
+sweep runs to a roughness smoother than glass because n is standing in for the missing
+channel. Restore the channel and n should come to rest somewhere physical.
+
+Criterion, fixed before the run: the held-out RMSE curve acquires an interior minimum
+inside 0.025 to 0.060. It did not.
+
+|     n | train median | test median |
+|-------|--------------|-------------|
+| 0.012 |        2.090 |       2.047 |
+| 0.020 |        2.119 |       2.098 |
+| 0.028 |        2.149 |       2.384 |
+| 0.035 |        2.175 |       2.375 |
+| 0.045 |        2.265 |       2.309 |
+| 0.060 |        2.404 |       2.340 |
+| 0.080 |        2.453 |       2.529 |
+
+Chosen on train: 0.012, the bottom of the grid again. Ten of the twelve basins that
+scored put their own optimum on one edge or the other, the same split as before, and
+the two interior ones sit on curves flat to within 0.01 m across the whole range.
+
+So bathymetry is off by default and n stays at 0.035. The mechanism is real - the burn
+demonstrably deepens HAND, by about half a metre on a test surface - but it is not the
+mechanism behind the n behaviour. The likely reason is scale: at the discharges these
+marks were surveyed at, the water is far overbank, and one to two metres of recovered
+channel is a small share of a floodplain cross-section several hundred metres wide.
+Bathymetry should matter for in-bank and low-return-period flows, which is not the
+regime this model is validated in.
+
+The code stays. It is correct, it is tested, the coefficients are fitted from 36,308
+real measurements, and it is one config flag away from being used by anyone modelling
+a smaller flood. Deleting a negative result is how it gets rediscovered.
+
+Not tuned further, per the plan: the criterion was set in advance and it was not met.
