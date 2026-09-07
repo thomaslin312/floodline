@@ -2569,8 +2569,74 @@ Three of three exact. The planner used the GiST index on the largest and chose a
 sequential scan on the two smaller ones, which is correct behaviour rather than a
 missing index - the `huc` filter already narrows those to a small enough fraction.
 
-One thing not verified: the compose stack was never brought up as a unit. The
-`postgis/postgis:16-3.4` pull stalled with no progress for over twenty minutes, so the
-API container was run against a locally-initialised PostGIS 3.6 instead. The image
-builds, the container serves, the endpoints answer, and the database half is real - but
-`docker compose up` end to end is unproven and should be the first thing anyone checks.
+One thing not verified at the time: the compose stack was never brought up as a unit.
+The `postgis/postgis:16-3.4` pull stalled with no progress for over twenty minutes, so
+the API container was run against a locally-initialised PostGIS 3.6 instead. That gap
+is closed below.
+
+## 2026-09-07 — the deployment, and the five things wrong with it
+
+`docker compose up` was run end to end. It works now; it did not before, and the
+interesting part is what was broken while looking correct.
+
+**The image served a 404 on the only page anyone opens.** The Dockerfile ran the API
+factory, which has no map on it. `floodline serve` and the container were two different
+applications, and only the one nobody deployed had the interface. Merged: map at `/`,
+service under `/api`, `/health` and `/ready` at the root. The CMD needed no change,
+which is exactly why this survived - the entrypoint symbol was right and what it
+resolved to was not.
+
+**The database had no consumer but its own health check.** `floodline.db` was imported
+by `/ready` and by a unit test. The structure intersection now runs through it,
+ST_Intersects over the GiST index, with the in-process predicate kept behind
+`FLOODLINE_BUILDING_INDEX=geopandas` so the equivalence stays a measurement.
+
+That equivalence immediately earned its keep. Binding the watershed polygon through
+`shapely.to_wkt` rounds to six decimal places by default - about 0.1 m - so PostGIS was
+being tested against a *different polygon* from the one GeoPandas used, and Whiteoak
+Bayou returned 258,526 against 258,527. One structure, inside the true boundary and
+outside the rounded one. WKB now. A quiet off-by-one in a building count is
+indistinguishable from a better model.
+
+**Nothing ran the migrations.** `alembic.ini` was in the image, the versions shipped
+inside it, and no table was ever created. An entrypoint migrates then serves, and does
+not refuse to boot without a database, because the model degrades honestly; `/ready`
+gained a `schema` check so a container behind head stays out of the load balancer.
+Locating `alembic.ini` by counting parents would have silently reported head as `None`
+from an installed package - "already at None" reading as success - so it is searched
+for.
+
+**A fresh container came up degraded and said so nowhere a deployer looks.** The curve
+library and the 38,230 high-water marks belong to no watershed, so no request pulls
+them. `floodline prewarm` fetches both. Writing it reproduced the failure it was for:
+it fetched into the config's `paths.raw` while the service reads
+`settings().marks_path`, putting 33 MB on disk and leaving the map still reporting *no
+marks scored*, with a zero exit status.
+
+**The memory limit is measured.** Peak container memory over two real runs of one
+basin - 308.4 MiB at 1.10M cells, 809.7 MiB at 9.94M - fits 245.8 MiB fixed plus 59.5
+bytes per cell. At the 40M `max_cells` ceiling with concurrency 2 that is 4.67 GiB, so
+the cap is 6 GiB. The container refuses work rather than being OOM-killed.
+
+Credentials moved to `.env`, which was not gitignored and now is; 5432 is no longer
+published. `POSTGRES_PASSWORD` initialises a *new* data directory and nothing else, so
+changing it against an existing volume leaves the api failing authentication against a
+database that reports itself healthy. Found by hitting it.
+
+Verified on a stack built from nothing, `down -v` first:
+
+| | |
+|---|---|
+| `up -d --build` | 64 s, db healthy before api starts |
+| volume ownership | `10001:10001`, writable |
+| migrations | `empty -> b2c4a91d7e30`, idempotent on restart |
+| PostGIS | 3.4.3 on PostgreSQL 16.4 |
+| `GET /` | 200, the map |
+| `POST /api/scenario` | 20.5 s cold, 1.40 s warm, identical results |
+| exposure | 258,527 structures, 33,279 inundated - unchanged |
+| damage | USD 7.95 bn, matching the README, curves cached not bundled |
+| marks | 13/15 wet, RMSE 1.66 m, where it read "none scored" before |
+
+One thing left open rather than fixed: `postgis/postgis:16-3.4` is amd64 only, so on an
+arm64 host it runs under emulation. It works and it is slow, and a real deployment
+should pin a platform deliberately rather than discover this.
