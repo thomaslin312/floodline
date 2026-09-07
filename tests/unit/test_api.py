@@ -123,7 +123,11 @@ def test_ready_reports_each_dependency_by_name(client: TestClient) -> None:
     response = client.get("/ready")
     assert response.status_code in (200, 503)
     checks = response.json()["checks"]
-    assert set(checks) == {"database", "terrain_store"}
+    # `schema` is separate from `database` because reachable is not the same as
+    # usable: the entrypoint migrates and serves either way, so a container whose
+    # schema is behind this build has to be visibly not ready rather than quietly
+    # answering queries against tables that are not there.
+    assert set(checks) == {"database", "schema", "terrain_store"}
     for name, check in checks.items():
         assert "ok" in check and check["detail"], name
     # Not-ready must be a 503, or an orchestrator reading the status sends traffic

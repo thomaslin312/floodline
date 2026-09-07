@@ -127,6 +127,18 @@ def attach_api(
             ok, detail = False, f"database support not installed: {exc}"
         checks["database"] = {"ok": ok, "detail": detail}
 
+        # Reachable is not the same as usable. The entrypoint migrates and then serves
+        # either way, so this is what keeps that safe: a container whose schema is not
+        # at the revision this build expects stays out of the load balancer instead of
+        # answering queries against tables that are not there yet.
+        try:
+            from floodline.db.migrate import check_schema
+
+            migrated, revision = check_schema()
+        except ImportError as exc:  # the db extra is not installed
+            migrated, revision = False, f"database support not installed: {exc}"
+        checks["schema"] = {"ok": migrated, "detail": revision}
+
         root = getattr(terrain_store, "root", None)
         writable = False
         detail = "no local root; store is not filesystem-backed"

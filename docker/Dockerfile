@@ -31,6 +31,13 @@ COPY src ./src
 COPY alembic.ini README.md ./
 RUN uv sync --frozen --extra serve --extra db --extra report
 
+# The environment the project was installed into, so `python`, `uvicorn` and `alembic`
+# are themselves rather than something `uv run` has to resolve on every invocation.
+ENV PATH="/app/.venv/bin:$PATH"
+
+COPY docker/entrypoint.sh /usr/local/bin/floodline-entrypoint
+RUN chmod 0555 /usr/local/bin/floodline-entrypoint
+
 # Writable by the unprivileged user below, and a volume mount point in compose.
 RUN mkdir -p /var/lib/floodline \
     && useradd --create-home --uid 10001 floodline \
@@ -39,6 +46,11 @@ USER floodline
 
 EXPOSE 8000
 
+# The entrypoint migrates, then serves. It does not refuse to boot when the database
+# is unreachable - the model degrades honestly without one - and `/ready` reports the
+# schema revision, so an orchestrator holds traffic off a container that is not where
+# the code expects it to be.
+#
 # `asgi:app` is the merged application: the map at `/`, the service under `/api`, and
 # the probes at the root. It used to be the service alone, which is how the image came
 # to serve a 404 on the one page anyone opens.
@@ -47,5 +59,4 @@ EXPOSE 8000
 # bounded by memory rather than by cores, and the in-process concurrency limiter is
 # what actually caps it. More workers would multiply the memory ceiling without
 # multiplying the throughput.
-CMD ["uv", "run", "--no-sync", "uvicorn", "floodline.api.asgi:app", \
-     "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]
+ENTRYPOINT ["/usr/local/bin/floodline-entrypoint"]
