@@ -783,6 +783,75 @@ def fetch_curves(
     )
 
 
+@app.command("prewarm")
+def prewarm(
+    cache: Annotated[Path | None, typer.Option(help="Curve library cache directory.")] = None,
+    marks: Annotated[Path | None, typer.Option(help="Where the marks file goes.")] = None,
+    config: Annotated[Path | None, typer.Option("--config", "-c", help="TOML config.")] = None,
+) -> None:
+    """Fetch the two datasets a fresh deployment has no way to compute for itself.
+
+    Run once after the first deploy. Everything else the model needs is fetched per
+    request and cached; these two are national files that belong to no watershed, so
+    nothing ever pulls them on its own and a new container runs without them silently
+    degraded:
+
+    * The USACE curve library. Missing, damage falls back to the bundled constants and
+      the map says the currency figures are unverified.
+    * 38,230 surveyed high-water marks. Missing, every watershed reports "no marks
+      scored" and the RMSE against surveyed ground - the one validated claim this
+      project makes - is invisible to anyone who visits.
+
+    Idempotent, so a redeploy costs two conditional requests. In the container:
+    `docker compose exec api floodline prewarm`.
+    """
+    from floodline.core.damage.usace import load_usace_curves
+    from floodline.io.sources import REGISTRY, FetchContext, make_client
+    from floodline.io.usace import ensure_usace_curves
+    from floodline.settings import settings
+
+    resolved = load_config(config)
+    curve_dir = cache or settings().cache_dir
+    marks_path = marks or settings().marks_path
+
+    failures = 0
+
+    try:
+        path = ensure_usace_curves(cache_dir=curve_dir, download=True)
+        curves = load_usace_curves(path)
+        typer.echo(f"curves  {len(curves.codes)} occupancy types at {path}")
+    except Exception as exc:
+        failures += 1
+        typer.secho(f"curves  FAILED: {type(exc).__name__}: {exc}", fg=typer.colors.RED, err=True)
+
+    if marks_path.exists() and marks_path.stat().st_size > 0:
+        typer.echo(f"marks   already at {marks_path}")
+    else:
+        try:
+            # Fetch into the directory the *service* reads from, not the config's own
+            # data_raw. Those are two settings and a deployment can move one without
+            # the other, which puts the file on disk and leaves the map still saying
+            # "no marks scored" - fetched, cached, and never read.
+            with make_client(resolved.sources) as http:
+                context = FetchContext(config=resolved, dest=marks_path.parent.parent, client=http)
+                REGISTRY["usgs-hwm-national"].fetch(context)
+            if not marks_path.exists():
+                raise FileNotFoundError(
+                    f"fetched, but not at {marks_path}, which is where the service looks"
+                )
+            typer.echo(f"marks   fetched to {marks_path}")
+        except Exception as exc:
+            failures += 1
+            typer.secho(
+                f"marks   FAILED: {type(exc).__name__}: {exc}", fg=typer.colors.RED, err=True
+            )
+
+    if failures:
+        # Non-zero so a deployment script notices. The service still runs without
+        # these; it just runs without the half of itself that is validated.
+        raise typer.Exit(code=1)
+
+
 @app.command("fetch-population")
 def fetch_population(
     product: Annotated[

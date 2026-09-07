@@ -449,6 +449,31 @@ uv sync --all-extras --all-groups
 uv run pre-commit install
 ```
 
+## Deploy
+
+```bash
+cp .env.example .env      # then set POSTGRES_PASSWORD; compose refuses to start without it
+docker compose up -d --build
+docker compose exec api floodline prewarm
+```
+
+One stack: PostGIS, and a container serving the map at `/`, the service under `/api`,
+and `/health` and `/ready` at the root. Migrations run from the entrypoint, so the
+schema is applied on first boot and on every deploy after it.
+
+**`prewarm` is not optional, and it is the one step nothing does for you.** Two national
+datasets belong to no watershed, so no request ever pulls them, and a fresh container
+runs without them silently degraded:
+
+- **The surveyed high-water marks.** Without them every watershed reports *no marks
+  scored* and the RMSE against surveyed ground — the only validated claim in this
+  repository — is invisible to whoever opens the page.
+- **The USACE curve library.** Without it damage falls back to the bundled constants
+  and the map says so.
+
+It is idempotent, so a redeploy costs two conditional requests, and it exits non-zero if
+either fetch fails.
+
 ## Any watershed in the United States
 
 ```bash

@@ -55,6 +55,11 @@ services:
       FLOODLINE_HAND_CACHE_DIR: /var/lib/floodline/hand
       FLOODLINE_CACHE_DIR: /var/lib/floodline/cache
       FLOODLINE_DATA_RAW: /var/lib/floodline/raw
+      # The surveyed high-water marks, fetched once by `floodline prewarm`. This
+      # has to be set alongside DATA_RAW: it is a separate setting with its own
+      # relative default, so leaving it out puts the marks inside the image where
+      # a restart loses them.
+      FLOODLINE_MARKS_PATH: /var/lib/floodline/raw/validation/high_water_marks_national.json
       # The map's finished bundles. Without this they default to a path relative to
       # the working directory, which is inside the image rather than on the volume -
       # every restart would recompute what a visitor had already waited for.
