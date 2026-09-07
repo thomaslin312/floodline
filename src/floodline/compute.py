@@ -566,10 +566,13 @@ def gauge_for_watershed(
     actually measured, rather than a design figure from a regression.
     """
     west, south, east, north = wgs84_bounds(unit, context.config)
-    try:
-        sites = find_gauges(context, (west, south, east, north))
-    except (SourceError, httpx.HTTPError):
-        return None
+    # A failed lookup is not an absent gauge. Swallowing the error here returned None,
+    # which every caller reports as "no USGS gauge inside this watershed" - so a DNS
+    # blip told the reader their basin is ungauged and withheld exposure and damage on
+    # the strength of it. Let it propagate: SourceError already means "upstream is
+    # broken" everywhere else, and the service turns it into a 502 rather than a
+    # statement about the watershed.
+    sites = find_gauges(context, (west, south, east, north))
     if not sites:
         return None
 
