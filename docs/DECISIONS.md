@@ -2091,3 +2091,56 @@ real measurements, and it is one config flag away from being used by anyone mode
 a smaller flood. Deleting a negative result is how it gets rediscovered.
 
 Not tuned further, per the plan: the criterion was set in advance and it was not met.
+
+## 2026-09-07 — observed stage beats a modelled one, and stage is not the residual
+
+Stage reached the network through two modelled steps: transfer one gauge's discharge
+by drainage-area ratio, then convert it back to a level through a synthetic rating
+curve. A basin usually has several gauges and each of them measured a level directly.
+`gage_ht` on the annual peak plus the gauge datum altitude is an observed water-surface
+elevation at a known point on the network, and where two gauges bracket a reach the
+level between them can be interpolated with nothing modelled in between.
+
+Scored against the same marks, on eleven basins that completed:
+
+**Median RMSE 2.08 m to 1.52 m, and every one of the eleven improved.** The largest
+single gain was the basin that had been the table's embarrassment: Miller Creek-Cedar
+River fell from 11.85 m to 1.52 m, which says its old residual was never a flood model
+failure at all but one gauge's discharge being transferred across a basin it did not
+represent.
+
+Then the decomposition, which is the more useful half. Marks were split by where they
+sit relative to the gauges:
+
+| where the mark sits | pooled RMSE | marks |
+|---|---|---|
+| on a gauged reach | 1.58 m | 146 |
+| between two gauges | 1.51 m | 101 |
+| outside the gauged span | 1.96 m | 465 |
+
+**A mark sitting on a gauged reach has almost no stage error left in it, and still
+carries 1.58 m.** Whatever remains there is HAND and the DEM. Being far from any gauge
+costs 0.38 m on top of that. So stage is worth fixing - it was worth half a metre of
+median RMSE - but it is not the dominant residual, and no further work on stage will
+get this model below about a metre and a half.
+
+That reconciles with the uncertainty budget rather than contradicting it. Stage is 100%
+of the *damage interval* because a stage shift moves how many buildings are wet, which
+is what a currency total is most sensitive to. Stage is not the dominant term in
+*water-surface accuracy*. Two different questions, both now measured, and the earlier
+number was only ever an answer to the first.
+
+Two guards were needed to get here, both on input rather than method. A gauge whose
+implied depth over the model bed is negative or absurd is dropped: one record put
+1,232 m of residual into a basin. And where gauges disagree on vertical datum the
+minority is dropped rather than converted, because NAVD88 and NGVD29 differ by a few
+tens of centimetres in the United States, which is the same size as the error being
+chased, and this project carries no geoid model.
+
+Depth is what gets interpolated, not elevation. Elevation between two gauges is
+dominated by a bed profile that is not linear in channel distance, and interpolating it
+directly produced a 37 m residual on a mountain basin from two individually plausible
+gauges. Depth varies over metres where elevation varies over hundreds.
+
+Five basins did not complete, on DNS failures against the boundary service rather than
+anything in the model. The eleven that did are unanimous.

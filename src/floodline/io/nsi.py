@@ -64,6 +64,10 @@ FEET_TO_M = 0.3048
 # and identifiers that this model has no use for.
 _FIELDS = (
     "fd_id",
+    # 15-digit census block. Its first 11 digits are the tract, which is the geography
+    # NFIP claims and FEMA assistance can both be aggregated to, so carrying it here
+    # is what makes a dollar-for-dollar comparison possible without a spatial join.
+    "cbfips",
     "occtype",
     "st_damcat",
     "val_struct",
@@ -204,6 +208,10 @@ def _to_frame(features: list[dict[str, Any]]) -> gpd.GeoDataFrame:
     frame["pop_day"] = frame["pop2pmu65"] + frame["pop2pmo65"]
     frame["num_story"] = frame["num_story"].clip(lower=1.0)
     frame["occtype"] = frame["occtype"].fillna("").astype(str)
+    # A census block is an identifier, not a number: read as one it loses its leading
+    # zero and every tract in Alabama becomes a tract in nowhere.
+    frame["cbfips"] = frame["cbfips"].fillna("").astype(str).str.zfill(15)
+    frame["tract_fips"] = frame["cbfips"].str.slice(0, 11)
     return frame
 
 
