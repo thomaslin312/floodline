@@ -83,6 +83,20 @@ class DamageInterval:
 
     n_samples: int
 
+    expected_per_building: npt.NDArray[np.float64]
+    """Mean damage per building across the draws, rather than damage at the mean depth.
+
+    These are not the same number and the gap is not small. A depth-damage curve is
+    strongly non-linear, so `E[f(depth)]` and `f(E[depth])` diverge exactly where the
+    uncertainty straddles the finished floor - which, with a water-surface residual
+    around 1.5 m against floor heights a third of that, is most of the buildings that
+    matter. The point estimate reads the curve once at the modelled depth and so
+    commits to a coin flip per building; this reads it under the whole distribution
+    and lets a half-likely building carry half its loss.
+
+    Sum this for an expected-loss total. `point` remains the deterministic answer, so
+    the two can be compared rather than one silently replacing the other."""
+
     curves_verified: bool
     """Whether the curves behind the *point estimate* are transcribed from a source.
 
@@ -270,6 +284,11 @@ def monte_carlo_damage(
     totals = np.empty(mc.n_samples, dtype=np.float64)
     inundated = np.empty(mc.n_samples, dtype=np.int64)
     sampled: dict[CurveFamily, int] = dict.fromkeys(families, 0)
+    # Running sum of per-building damage across draws, for the expected-damage
+    # estimator. One accumulator rather than keeping every draw's vector: a quarter of
+    # a million buildings by a thousand draws is two gigabytes, and only the mean is
+    # wanted.
+    expected_sum = np.zeros(depths.size, dtype=np.float64)
 
     for i in range(mc.n_samples):
         family = families[int(picks[i])]
@@ -303,6 +322,7 @@ def monte_carlo_damage(
         )
         totals[i] = result.total
         inundated[i] = int((drawn > 0).sum())
+        expected_sum += result.per_building
 
     point = estimate_damage(
         depths,
@@ -325,6 +345,7 @@ def monte_carlo_damage(
     lo, hi = mc.interval
     return DamageInterval(
         point=point.total,
+        expected_per_building=expected_sum / mc.n_samples,
         median=float(np.median(totals)),
         lower=float(np.quantile(totals, lo)),
         upper=float(np.quantile(totals, hi)),

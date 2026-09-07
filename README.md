@@ -357,11 +357,32 @@ construction, and a level offset is expected. **The missing rank correlation is 
 finding.** The model can say roughly how deep the water was across a basin, and cannot
 say which neighbourhoods lost the most money.
 
-The likeliest reason is scale rather than pricing. The water-surface residual is about
-1.5 m, and typical finished-floor heights are a third of that, so an error that reads
-as acceptable on a depth map is decisive at the scale of a building's floor. Getting
-extent approximately right and per-building wet/dry wrong produces exactly this: a
-plausible map and an uninformative ledger.
+### Why, measured
+
+Four hypotheses were tested. The fourth explains it, and it is not a hydraulic problem.
+
+**NSI's median foundation height on this watershed is 0.23 m.** The water-surface
+residual has a floor near 1.5 m, which the stage decomposition attributes to HAND and
+the DEM rather than to stage. **The variable that decides whether a building is damaged
+is six times smaller than the error in the variable it is compared against**, and
+**83.5% of buildings with water on the ground sit within 0.5 m of their own floor
+level** — 51,108 of 61,211. Shifting every floor by 0.25 m changes the flooded count by
+−58% to +62%.
+
+So per-building wet/dry is close to a coin flip, a tract total is a sum of coin flips,
+and no rank correlation is the expected result rather than a surprising one.
+
+**Per-building damage is not recoverable by improving the hydraulics.** Resolving a
+0.23 m foundation needs a water surface good to roughly 0.2 m; the measured floor is
+1.5 m from terrain alone. It needs surveyed first-floor elevations, which NSI does not
+carry and no open national dataset provides.
+
+The three that failed are recorded in [DECISIONS](docs/DECISIONS.md): pricing expected
+damage instead of damage at the expected depth moved the total 6% and the ranking not
+at all; coarser aggregation turns positive only at 10 km on eleven bins, too few to
+claim; and raising HAND's drainage threshold is a real lead for *extent* — the first
+held-out sweep in this project with an interior minimum, 2.25 m to 2.03 m — but it
+does not touch the floor-height problem above.
 
 Nothing here was fed back into the model. This is validation, not calibration, and
 tuning costs to match claims would destroy the only independent test the damage half

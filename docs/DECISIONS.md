@@ -2276,3 +2276,107 @@ path that depends on six public APIs staying up is a weaker guarantee than one t
 ships its inputs, and this project deliberately ships no inputs. The honest description
 is that `reproduce` verifies the code path and the recorded values, and depends on
 upstream weather for the rest.
+
+## 2026-09-07 — four attempts on the damage numbers: one diagnosis, one lead, two dead ends
+
+Four hypotheses, tested in order of expected value. Two failed, one explains the whole
+problem, and one is the best lead this project has had.
+
+### 1. Expected damage rather than damage at the expected depth — no effect
+
+A depth-damage curve is strongly non-linear, so `E[f(depth)]` and `f(E[depth])` differ,
+and with a 1.5 m water-surface error against floor heights a third of that they should
+differ most among exactly the buildings that decide a tract's total. The Monte Carlo
+already draws a thousand perturbed depths per building, so accumulating per-building
+damage across draws costs one array.
+
+The total moved as predicted - USD 7.95 bn to 8.42 bn, 6% up, which is Jensen doing
+what Jensen does. The **ranking did not move at all**: rho against NFIP went from
++0.025 to +0.027, against Individual Assistance from -0.055 to -0.051. Non-linearity
+across the threshold was not the problem.
+
+`expected_per_building` stays on `DamageInterval`, because expected loss is the more
+defensible quantity to report even though it did not rescue the correlation, and
+because computing it costs nothing now.
+
+### 2. A coarser scale — marginal, and my first attempt was wrong
+
+The first version truncated census tract GEOIDs to build coarser units. That is not a
+geography: truncating to nine and ten digits produced identical groupings, which should
+have been the tell. Redone by binning buildings on real coordinates and locating each
+tract at the mean position of its own buildings:
+
+| bin | units | model vs NFIP | model vs IA | NFIP vs IA |
+|---|---|---|---|---|
+| 1 km | 103 | -0.085 | -0.237 | +0.836 |
+| 2 km | 65 | -0.146 | -0.300 | +0.880 |
+| 5 km | 28 | -0.068 | -0.206 | +0.904 |
+| 10 km | 11 | **+0.382** | **+0.427** | +0.964 |
+
+Positive only at 10 km, on eleven bins, which is far too few to claim. The suggestive
+reading is that the model carries basin-scale signal and no neighbourhood-scale signal;
+the honest reading is that eleven points cannot distinguish that from luck.
+
+### 3. HAND's drainage reference — the real lead
+
+HAND measures each cell to its *nearest* drainage cell. At the default threshold of
+1,000 cells that is a 0.9 km2 tributary, which during a regional flood is not where
+the water at that cell came from. Raising the threshold thins the network so HAND
+references trunk channels.
+
+| threshold | train median | test median |
+|---|---|---|
+| 250 | 2.219 | 2.245 |
+| 1,000 (default) | 2.139 | 2.245 |
+| 4,000 | 2.158 | **2.026** |
+| 16,000 | 2.098 | **2.027** |
+| 64,000 | 2.004 | 2.056 |
+
+**The held-out curve has an interior minimum**, which neither the Manning sweep nor the
+bathymetry sweep ever produced. Individual basins improve a great deal: 4.00 to 2.27,
+2.41 to 1.87, 11.85 to 9.74, 0.97 to 0.77. At 30 m, 4,000 cells is 3.6 km2 and 16,000
+is 14.4 km2, both physically sensible sizes for the channel a floodplain actually
+drowns from.
+
+**The default is unchanged anyway, and that is deliberate.** Raising it would move
+every headline number in the repository, and the one side effect that would make it a
+bad trade - a thinner network leaving headwaters with no nearby drainage, collapsing
+modelled extent - has not been measured, because the 3DEP products API returned 504 for
+the entire window in which this could have been checked. The evidence that extent
+survives is indirect: a collapse would show up as marks falling dry and RMSE rising,
+and RMSE fell on eleven basins.
+
+Next action, stated so it is not lost: run one basin at 1,000 and 4,000, compare
+flooded extent and reach coverage, and if extent holds, change the default to 4,000 -
+the smallest value in the flat region rather than the argmin, since choosing 16,000
+because the test set preferred it would be fitting to the test set.
+
+### 4. Foundation height — the diagnosis
+
+This is the one that explains the FEMA failure, and it is not a hydraulic problem.
+
+* NSI's median foundation height on this watershed is **0.23 m**. Tenth percentile
+  0.08 m, ninetieth 0.61 m.
+* **83.5% of buildings with water on the ground sit within 0.5 m of their own floor
+  level** - 51,108 of 61,211.
+* Shifting every floor by 0.25 m changes the flooded building count by -58% to +62%.
+  By 0.50 m, -78% to +75%.
+
+The water-surface residual has a floor near 1.5 m, established two entries above and
+attributable to HAND and the DEM rather than stage. The quantity that decides whether a
+building is damaged is its floor height, which is 0.23 m. **The deciding variable is
+six times smaller than the error in the variable it is compared against, and five
+buildings in six sit inside that noise band.**
+
+So per-building wet/dry is close to a coin flip, tract totals are sums of coin flips,
+and no rank correlation with FEMA is the expected result rather than a surprising one.
+It also explains why hypothesis 1 failed: averaging over a distribution does not help
+when the distribution is six times wider than the thing being resolved.
+
+**Per-building damage is not recoverable by improving the hydraulics.** Reaching a
+0.23 m foundation needs a water surface good to roughly 0.2 m, and the measured floor
+is 1.5 m from terrain alone. It needs surveyed first-floor elevations, which NSI does
+not have and which no open national dataset provides.
+
+That is the honest ceiling on this half of the model, and it should be stated wherever
+a currency figure appears.

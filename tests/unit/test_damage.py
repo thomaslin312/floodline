@@ -558,3 +558,50 @@ def test_verified_point_estimate_is_not_reported_as_unverified() -> None:
     assert result.curves_verified is True, "the point estimate's own library is verified"
     assert result.all_families_verified is False, "bundled approximations widened the band"
     assert len(result.families_sampled) > 1
+
+
+def test_expected_damage_differs_from_damage_at_the_expected_depth() -> None:
+    """Jensen's inequality, and the reason the two are both reported.
+
+    A depth-damage curve is strongly non-linear, so averaging the curve over a spread
+    of depths is not the same as reading it once at the middle of that spread. With a
+    water-surface error several times a building's floor height, most buildings sit
+    where the two answers diverge, so reporting only one of them hides a real choice.
+    """
+    import numpy as np
+
+    from floodline.config import Config
+    from floodline.damage.uncertainty import monte_carlo_damage
+
+    cfg = Config()
+    n = 300
+    # Margins straddling the floor, which is where the curve bends hardest.
+    margins = np.linspace(-0.6, 0.6, n)
+    result = monte_carlo_damage(
+        np.maximum(margins, 0.0),
+        np.full(n, 140.0),
+        np.array(["residential"] * n, dtype=object),
+        storeys=np.full(n, 1.0),
+        floor_margin_m=margins,
+        monte_carlo=cfg.monte_carlo.model_copy(update={"n_samples": 200}),
+        config=cfg,
+    )
+    assert result.expected_per_building.shape == (n,)
+    assert (result.expected_per_building >= 0).all()
+    expected_total = float(result.expected_per_building.sum())
+    assert expected_total > 0
+    # The two estimators disagree; which is larger depends on the curve's curvature
+    # over the sampled range, so only the disagreement itself is asserted.
+    assert abs(expected_total - result.point) / max(result.point, 1.0) > 1e-6
+
+    # A building far above any plausible water level expects no damage under any draw.
+    dry = monte_carlo_damage(
+        np.zeros(4),
+        np.full(4, 140.0),
+        np.array(["residential"] * 4, dtype=object),
+        storeys=np.full(4, 1.0),
+        floor_margin_m=np.full(4, -np.inf),
+        monte_carlo=cfg.monte_carlo.model_copy(update={"n_samples": 50}),
+        config=cfg,
+    )
+    assert float(dry.expected_per_building.sum()) == 0.0
