@@ -358,7 +358,19 @@ def assess_watershed(
                 damage_curves = load_usace_curves(
                     ensure_usace_curves(download=download_curves), config=config
                 )
+            except FileNotFoundError:
+                # The library was simply never fetched, which is a missing download
+                # rather than a failure. The exception carries the cache path, the
+                # remediation and the source URL, and that whole paragraph used to be
+                # interpolated into a gap that renders in the map sidebar. A gap is
+                # read by someone looking at a number, so it says what to run.
+                gaps.append(
+                    "USACE curve library not fetched, so damage uses the unverified "
+                    "bundled constants — run `floodline fetch-curves`"
+                )
             except Exception as exc:
+                # Anything else is a real failure - network, HTTP status, bad JSON -
+                # and there the exception is the only description of what went wrong.
                 gaps.append(
                     f"USACE curve library unavailable ({type(exc).__name__}: {exc}), so "
                     "damage falls back to the unverified bundled constants"

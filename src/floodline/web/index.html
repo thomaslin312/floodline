@@ -1098,18 +1098,15 @@ function showExposure(){
   /* The currency total is the one output with a failed validation behind it: against
      two independent FEMA series for Harvey it has no rank correlation, while the two
      series agree with each other. The README says so and the map has to as well, or
-     the number gets screenshotted without the caveat that lives three clicks away. */
-  let note = `<span style="color:var(--warn)">Counts and loss ratio are supported by `
-    + `validation; <b>the currency total is not</b>. It has no rank correlation with `
-    + `FEMA claims or assistance by census tract. `
+     the number gets screenshotted without the caveat that lives three clicks away.
+     One line is enough to carry that; the evidence belongs behind the link. An
+     earlier version also warned separately about unverified curve constants, which
+     said the same thing twice - if the currency total is not quotable, why it is not
+     quotable is a detail for the methodology page, and the run reports the missing
+     library as a gap below in any case. */
+  let note = `<span style="color:var(--warn)">Counts and loss ratio are validated; `
+    + `<b>the currency total is not</b>. `
     + `<a href="/methodology#accuracy" target="_blank" rel="noopener">Why</a>.</span>`;
-  if(!st.curves_verified){
-    note += "<br>";
-    // Only when the point estimate itself rests on approximated constants. Bundled
-    // families widening the interval is the normal case and is not a warning.
-    note += `<span style="color:var(--warn)">Curve constants are unverified here. `
-      + `Counts and ratios stand, the currency figures do not.</span>`;
-  }
   for(const g of (expo.gaps||[])){
     note += `${note ? "<br>" : ""}<span style="color:var(--warn)">${g}</span>`;
   }
