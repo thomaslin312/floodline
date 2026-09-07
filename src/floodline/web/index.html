@@ -1195,7 +1195,7 @@ const TOUR = [
     </svg>`,
     body: `<p>Terrain from USGS lidar, discharge from a river gauge, and every structure's
       value from the USACE National Structure Inventory. Type a place and it computes the
-      flood live — no dataset to download.</p>
+      flood live, with no dataset to download.</p>
       <p class="aside">It is a screening model, not a hydraulic one. It assumes the water
       surface parallels the drainage line, so it knows nothing about levees, culverts or
       reservoir releases. Read it as an estimate of scale, not a prediction for an address.</p>`,
@@ -1214,10 +1214,16 @@ const TOUR = [
         font-family="system-ui, sans-serif">ZIP · street address · HUC code · or click the map</text>
     </svg>`,
     body: `<p>A ZIP code, a full street address, a hydrologic unit code, or a click
-      anywhere on the globe. <b>Click picks</b> sets how much ground you get: HUC-12 is a
-      neighbourhood-sized subwatershed, HUC-8 a whole basin.</p>
-      <p class="aside">Watersheds, not boxes — flow accumulation depends on everything
-      upstream, so terrain computed over an arbitrary rectangle is wrong at its edges.</p>`,
+      anywhere on the globe.</p>
+      <p><b>Click picks</b> sets how much ground a click gives you. A HUC-12 is a
+      neighbourhood-sized subwatershed, usually 70 to 150 km², and computes in around
+      twenty seconds. A HUC-10 runs from a couple of hundred to about fifteen hundred
+      km², and is the size every accuracy figure quoted here was measured on. A HUC-8
+      is a whole river basin, several thousand km², which is a lot of terrain to route
+      and correspondingly slower.</p>
+      <p class="aside">Start small. You can always click a neighbouring unit, and a
+      HUC-12 answers most questions about a specific place faster than its parent
+      basin will.</p>`,
   },
   {
     title: "Compute the flood, then check it",
@@ -1237,12 +1243,12 @@ const TOUR = [
         font-family="system-ui, sans-serif">surveyed marks</text>
     </svg>`,
     body: `<p>Blue is modelled water depth. The dots are real high-water marks surveyed
-      after the flood, coloured by how far the model missed them — green within a metre,
-      red over three.</p>
-      <p class="aside">The <b>RMSE</b> figure is the model marking its own homework
-      against those marks — about 1.6 m on the best-validated watershed, counted on the
-      map's own coarsened grid. <code>floodline report</code> counts on the full grid
-      and gives a slightly different number.</p>`,
+      by the USGS after the flood, coloured by how far the model missed them: green
+      within a metre, red over three.</p>
+      <p class="aside">The <b>RMSE</b> figure is the model marking its own homework.
+      It is the typical gap between the water surface the model predicts and the water
+      surface someone actually measured on the ground, so it is the most direct answer
+      the page can give to whether this watershed's flood is any good.</p>`,
   },
   {
     title: "Price it, then change the flood",
@@ -1266,9 +1272,8 @@ const TOUR = [
     </svg>`,
     body: `<p><b>Value the buildings this reaches</b> adds a warm layer showing where the
       money is, and counts structures, residents and damage.</p>
-      <p>Then drag the discharge slider. It is a multiplier on the gauge's observed peak,
-      and it moves the water <em>and</em> the damage together — so you can ask what a
-      flood half again as large would cost.</p>
+      <p>Then drag the discharge slider. It scales the gauge's observed peak up or down,
+      and both layers follow, so a bigger flood is priced rather than just redrawn.</p>
       <p class="aside">Structure values are modelled replacement costs, sound across tens
       of thousands of buildings and not for any single one.</p>`,
   },
