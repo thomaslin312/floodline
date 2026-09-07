@@ -24,7 +24,7 @@ from dataclasses import dataclass
 import numpy as np
 import numpy.typing as npt
 
-from floodline.config import Config, ExposureConfig
+from floodline.core.config import Config, ExposureConfig
 
 __all__ = ["PopulationExposure", "population_affected"]
 

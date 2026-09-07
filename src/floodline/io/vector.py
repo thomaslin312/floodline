@@ -15,7 +15,7 @@ from typing import Any
 
 import geopandas as gpd
 
-from floodline.config import Config
+from floodline.core.config import Config
 from floodline.io.raster import CrsError, require_projected_crs
 
 __all__ = ["read_vector", "write_vector"]

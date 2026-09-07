@@ -10,7 +10,7 @@ from PIL import Image
 from rasterio.transform import Affine
 from shapely.geometry import Point
 
-from floodline.config import Config
+from floodline.core.config import Config
 from floodline.report.exposure_bundle import (
     DAMAGE_CEILING,
     DAMAGE_FLOOR,

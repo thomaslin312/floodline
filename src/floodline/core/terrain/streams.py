@@ -29,8 +29,8 @@ from pyproj import CRS
 from rasterio.transform import Affine
 from shapely.geometry import LineString
 
-from floodline.config import Config, TerrainConfig
-from floodline.terrain.flowdir import FLOW_NODATA, downstream_index
+from floodline.core.config import Config, TerrainConfig
+from floodline.core.terrain.flowdir import FLOW_NODATA, downstream_index
 
 __all__ = [
     "link_raster",

@@ -5,7 +5,7 @@ from typing import Any
 import httpx
 import pytest
 
-from floodline.config import Config
+from floodline.core.config import Config
 from floodline.io.sources import CFS_TO_CMS, FetchContext, find_gauges, peak_discharge
 
 RDB_SITES = """# comment

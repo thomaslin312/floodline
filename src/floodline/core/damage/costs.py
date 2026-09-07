@@ -24,7 +24,7 @@ from __future__ import annotations
 import numpy as np
 import numpy.typing as npt
 
-from floodline.config import Config, DamageConfig, ExposureConfig
+from floodline.core.config import Config, DamageConfig, ExposureConfig
 
 __all__ = ["exposed_value", "storey_exposure"]
 

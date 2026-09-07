@@ -3,13 +3,13 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from floodline.config import Config
-from floodline.hydraulics.rating import (
+from floodline.core.config import Config
+from floodline.core.hydro.rating import (
     build_rating_curves,
     discharge_by_area_ratio,
     reach_catchments,
 )
-from floodline.hydraulics.stage import stage_field_from_discharge
+from floodline.core.hydro.stage import stage_field_from_discharge
 
 
 def simple_reach(

@@ -16,9 +16,9 @@ from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
 from hypothesis.extra import numpy as hnp
 
-from floodline.terrain.fill import fill_depressions
-from floodline.terrain.flowacc import flow_accumulation
-from floodline.terrain.flowdir import FLOW_FLAT, downstream_index, flow_direction
+from floodline.core.terrain.fill import fill_depressions
+from floodline.core.terrain.flowacc import flow_accumulation
+from floodline.core.terrain.flowdir import FLOW_FLAT, downstream_index, flow_direction
 
 EPSILON = 1e-3
 

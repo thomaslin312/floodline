@@ -3,10 +3,10 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from floodline.config import Config, Connectivity
-from floodline.hydraulics.inundate import inundate
+from floodline.core.config import Config, Connectivity
+from floodline.core.hydro.inundate import inundate
+from floodline.core.terrain.route import route_terrain
 from floodline.synthetic import SyntheticCatchment
-from floodline.terrain.route import route_terrain
 
 NO_FILTER = {"require_connectivity": False, "min_depth": 0.0}
 

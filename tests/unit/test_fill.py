@@ -3,9 +3,9 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from floodline.config import Config, Connectivity
+from floodline.core.config import Config, Connectivity
+from floodline.core.terrain.fill import fill_depressions, undrained_mask
 from floodline.synthetic import SyntheticCatchment, make_synthetic_catchment
-from floodline.terrain.fill import fill_depressions, undrained_mask
 
 # --- hand-built surfaces where the right answer is known by inspection ---------
 

@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import pytest
 
-from floodline.config import DamageConfig
+from floodline.core.config import DamageConfig
 from floodline.io.overture import OVERTURE_CLASSES, fetch_overture_buildings
 
 

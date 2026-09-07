@@ -44,7 +44,7 @@ from itertools import pairwise
 import numpy as np
 import numpy.typing as npt
 
-from floodline.config import Config, HydraulicsConfig
+from floodline.core.config import Config, HydraulicsConfig
 
 __all__ = [
     "RatingCurve",

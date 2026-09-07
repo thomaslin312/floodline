@@ -14,16 +14,16 @@ import numpy as np
 import pytest
 import rasterio
 
-from floodline.config import Config
-from floodline.io.raster import read_raster, write_cog
-from floodline.synthetic import make_synthetic_catchment
-from floodline.terrain.fill import fill_depressions, undrained_mask
-from floodline.terrain.flowdir import (
+from floodline.core.config import Config
+from floodline.core.terrain.fill import fill_depressions, undrained_mask
+from floodline.core.terrain.flowdir import (
     D8_CODES,
     FLOW_NODATA,
     flow_direction,
     steps_to_outlet,
 )
+from floodline.io.raster import read_raster, write_cog
+from floodline.synthetic import make_synthetic_catchment
 
 
 def test_synth_to_conditioned_dem(tmp_path: Path) -> None:
@@ -107,11 +107,11 @@ def test_dem_to_hand_to_three_nested_extents(tmp_path: Path) -> None:
     of the cells a lower one does — and that is asserted cell by cell, not just as
     growing areas, because two extents can both grow while swapping cells.
     """
-    from floodline.hydraulics.inundate import inundate
-    from floodline.hydraulics.stage import resolve_gauge, stage_field
+    from floodline.core.hydro.inundate import inundate
+    from floodline.core.hydro.stage import resolve_gauge, stage_field
+    from floodline.core.terrain.route import route_terrain
+    from floodline.core.terrain.streams import stream_network
     from floodline.io.vector import read_vector, write_vector
-    from floodline.terrain.route import route_terrain
-    from floodline.terrain.streams import stream_network
 
     cfg = Config.model_validate(
         {
@@ -187,8 +187,8 @@ def test_dem_to_hand_to_three_nested_extents(tmp_path: Path) -> None:
 
 
 def test_depth_rasters_round_trip_through_cog(tmp_path: Path) -> None:
-    from floodline.hydraulics.inundate import inundate
-    from floodline.terrain.route import route_terrain
+    from floodline.core.hydro.inundate import inundate
+    from floodline.core.terrain.route import route_terrain
 
     cfg = Config.model_validate({"terrain": {"stream_threshold_cells": 150}})
     catchment = make_synthetic_catchment(rows=90, cols=70, n_pits=3, seed=13)

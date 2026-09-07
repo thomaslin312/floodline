@@ -25,7 +25,7 @@ from dataclasses import dataclass
 import numpy as np
 import numpy.typing as npt
 
-from floodline.config import BathymetryConfig, Config
+from floodline.core.config import BathymetryConfig, Config
 
 __all__ = ["BurnedChannel", "burn_channel", "channel_depth_m", "channel_width_m"]
 

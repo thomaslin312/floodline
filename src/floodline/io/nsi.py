@@ -52,11 +52,12 @@ import numpy as np
 import shapely
 from shapely.geometry.base import BaseGeometry
 
-from floodline.config import Config, ExposureConfig
+from floodline.core.config import Config, ExposureConfig
+from floodline.settings import settings
 
 __all__ = ["NSI_URL", "NsiFetch", "fetch_nsi_structures", "structure_footprints"]
 
-NSI_URL = "https://nsi.sec.usace.army.mil/nsiapi/structures"
+NSI_URL = settings().nsi_url
 SQFT_TO_M2 = 0.092903
 FEET_TO_M = 0.3048
 
@@ -113,7 +114,7 @@ class NsiFetch:
 def fetch_nsi_structures(
     geometry: BaseGeometry,
     *,
-    cache_dir: Path = Path("data/cache"),
+    cache_dir: Path | None = None,
     cache_key: str = "",
     client: httpx.Client | None = None,
     timeout_s: float = 300.0,
@@ -135,7 +136,7 @@ def fetch_nsi_structures(
     NsiFetch
     """
     key = cache_key or "_".join(f"{v:.4f}" for v in geometry.bounds)
-    cached = cache_dir / f"nsi-{key}.parquet"
+    cached = (cache_dir or settings().cache_dir) / f"nsi-{key}.parquet"
     if use_cache and cached.exists():
         return NsiFetch(structures=gpd.read_parquet(cached), seconds=0.0, from_cache=True)
 

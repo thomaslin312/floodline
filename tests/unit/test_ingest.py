@@ -8,7 +8,7 @@ import pytest
 import rasterio
 from rasterio.transform import from_origin
 
-from floodline.config import Config
+from floodline.core.config import Config
 from floodline.io.ingest import (
     estimate_cells,
     ingest_dem,

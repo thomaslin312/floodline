@@ -15,7 +15,7 @@ from typing import Any
 import httpx
 import pytest
 
-from floodline.config import Config
+from floodline.core.config import Config
 from floodline.io import sources as src
 from floodline.io.sources import (
     Artifact,

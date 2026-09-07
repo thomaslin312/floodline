@@ -3,11 +3,11 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
+from floodline.core.terrain.fill import fill_depressions
+from floodline.core.terrain.flats import resolve_flats
+from floodline.core.terrain.flowacc import flow_accumulation
+from floodline.core.terrain.flowdir import FLOW_FLAT, flow_direction, steps_to_outlet
 from floodline.synthetic import SyntheticCatchment, make_synthetic_catchment
-from floodline.terrain.fill import fill_depressions
-from floodline.terrain.flats import resolve_flats
-from floodline.terrain.flowacc import flow_accumulation
-from floodline.terrain.flowdir import FLOW_FLAT, flow_direction, steps_to_outlet
 
 
 def _flat_dem() -> np.ndarray:

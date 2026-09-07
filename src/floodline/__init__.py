@@ -1,6 +1,6 @@
 """floodline — flood extent, exposure and damage estimation from a DEM and a gauge."""
 
-from floodline.config import Config
+from floodline.core.config import Config
 
 __all__ = ["Config", "__version__"]
 

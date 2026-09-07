@@ -25,8 +25,8 @@ from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
 from hypothesis.extra import numpy as hnp
 
-from floodline.terrain.fill import fill_depressions
-from floodline.terrain.flowdir import (
+from floodline.core.terrain.fill import fill_depressions
+from floodline.core.terrain.flowdir import (
     D8_CODES,
     FLOW_FLAT,
     FLOW_NODATA,

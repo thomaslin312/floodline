@@ -116,7 +116,7 @@ def _uncertainty_budget() -> dict[str, Any]:
     """
     from floodline.assess import assess_watershed
     from floodline.compute import watershed_by_huc
-    from floodline.config import Config
+    from floodline.core.config import Config
 
     cases = {
         "all": {},

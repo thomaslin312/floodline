@@ -9,7 +9,7 @@ from __future__ import annotations
 import numpy as np
 import numpy.typing as npt
 
-from floodline.config import Connectivity
+from floodline.core.config import Connectivity
 
 __all__ = ["D4_OFFSETS", "D8_OFFSETS", "neighbour_offsets"]
 

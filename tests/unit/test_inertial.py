@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from floodline.hydraulics.inertial import simulate_inertial
+from floodline.core.hydro.inertial import simulate_inertial
 
 
 def test_water_conserves_mass() -> None:

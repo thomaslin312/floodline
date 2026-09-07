@@ -7,7 +7,7 @@ import pytest
 from pydantic import ValidationError
 from pyproj import CRS
 
-from floodline.config import (
+from floodline.core.config import (
     Config,
     CurveFamily,
     MonteCarloConfig,
@@ -142,7 +142,7 @@ def test_no_magic_numbers_escape_config() -> None:
 def test_the_discharge_ladder_must_contain_the_observed_discharge() -> None:
     """1.00x is the multiplier every figure is anchored to. A ladder that steps past
     it makes the headline number an interpolation between two rungs."""
-    from floodline.config import DamageConfig
+    from floodline.core.config import DamageConfig
 
     with pytest.raises(ValueError, match=r"does not divide 1\.0"):
         DamageConfig(discharge_ladder_step=0.09375)
@@ -153,7 +153,7 @@ def test_the_default_ladder_puts_every_map_reference_on_a_rung() -> None:
     import numpy as np
 
     from floodline.compute import discharge_ladder
-    from floodline.config import Config
+    from floodline.core.config import Config
 
     config = Config()
     rungs = discharge_ladder(config)

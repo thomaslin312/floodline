@@ -16,10 +16,10 @@ from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
 from hypothesis.extra import numpy as hnp
 
-from floodline.config import Config, Connectivity
-from floodline.hydraulics.inundate import inundate
-from floodline.hydraulics.stage import gauge_reading_to_datum, resolve_gauge
-from floodline.terrain._neighbours import neighbour_offsets
+from floodline.core.config import Config, Connectivity
+from floodline.core.hydro.inundate import inundate
+from floodline.core.hydro.stage import gauge_reading_to_datum, resolve_gauge
+from floodline.core.terrain._neighbours import neighbour_offsets
 
 SETTINGS = settings(
     max_examples=150,

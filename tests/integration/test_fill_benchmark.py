@@ -13,11 +13,11 @@ import numpy as np
 import pytest
 from pytest_benchmark.fixture import BenchmarkFixture
 
-from floodline.config import Config
+from floodline.core.config import Config
+from floodline.core.terrain.fill import fill_depressions
+from floodline.core.terrain.flowdir import flow_direction
+from floodline.core.terrain.route import route_terrain
 from floodline.synthetic import make_synthetic_catchment
-from floodline.terrain.fill import fill_depressions
-from floodline.terrain.flowdir import flow_direction
-from floodline.terrain.route import route_terrain
 
 pytestmark = pytest.mark.slow
 

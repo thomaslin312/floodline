@@ -23,10 +23,10 @@ import numpy as np
 import numpy.typing as npt
 import pytest
 
+from floodline.core.terrain.fill import fill_depressions
+from floodline.core.terrain.flowacc import flow_accumulation
+from floodline.core.terrain.flowdir import downstream_index, flow_direction
 from floodline.synthetic import SyntheticCatchment, make_synthetic_catchment
-from floodline.terrain.fill import fill_depressions
-from floodline.terrain.flowacc import flow_accumulation
-from floodline.terrain.flowdir import downstream_index, flow_direction
 
 pytestmark = pytest.mark.differential
 

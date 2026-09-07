@@ -48,7 +48,7 @@ import numpy as np
 import numpy.typing as npt
 from numba import njit
 
-from floodline.terrain.flowdir import (
+from floodline.core.terrain.flowdir import (
     _D8_DCOL,
     _D8_DROW,
     D8_CODES,

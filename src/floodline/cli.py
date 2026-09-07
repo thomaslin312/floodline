@@ -12,7 +12,7 @@ from typing import Annotated
 import typer
 
 from floodline import __version__
-from floodline.config import Config
+from floodline.core.config import Config
 
 app = typer.Typer(
     name="floodline",
@@ -215,8 +215,9 @@ def ingest(
         typer.Option(help="Clip to this watershed instead of the AOI box."),
     ] = None,
     watersheds_path: Annotated[
-        Path, typer.Option("--watersheds", help="Fetched WBD GeoJSON.")
-    ] = Path("data/raw/watersheds/huc10.geojson"),
+        Path | None,
+        typer.Option("--watersheds", help="Fetched WBD GeoJSON. Defaults under data_raw."),
+    ] = None,
     no_clip: Annotated[
         bool, typer.Option("--no-clip", help="Keep the full tile extent instead of the AOI.")
     ] = False,
@@ -238,6 +239,9 @@ def ingest(
 
     unit = None
     if huc is not None:
+        # Resolved here rather than as a default, so the path follows settings
+        # rather than being frozen at import time.
+        watersheds_path = watersheds_path or (resolved.paths.raw / "watersheds" / "huc10.geojson")
         if not watersheds_path.exists():
             typer.secho(
                 f"{watersheds_path} not found. Run: floodline fetch usgs-watersheds",
@@ -334,8 +338,8 @@ def condition(
     Stream burning is not implemented yet, so `--streams` is refused rather than
     silently ignored.
     """
+    from floodline.core.terrain.fill import fill_depressions
     from floodline.io.raster import read_raster, write_cog
-    from floodline.terrain.fill import fill_depressions
 
     if streams is not None:
         _not_implemented("condition --streams", 1)
@@ -362,10 +366,10 @@ def streams(
     config: ConfigOption = None,
 ) -> None:
     """Derive the stream network from a conditioned DEM."""
+    from floodline.core.terrain.route import route_terrain
+    from floodline.core.terrain.streams import stream_network
     from floodline.io.raster import read_raster, write_cog
     from floodline.io.vector import write_vector
-    from floodline.terrain.route import route_terrain
-    from floodline.terrain.streams import stream_network
 
     resolved = load_config(config)
     raster = read_raster(dem, config=resolved)
@@ -398,7 +402,7 @@ def streams(
 
 def _warn_if_stranded(chain: object) -> None:
     """Warn on stderr when any water fails to reach the edge of the data."""
-    from floodline.terrain.route import TerrainChain
+    from floodline.core.terrain.route import TerrainChain
 
     assert isinstance(chain, TerrainChain)
     if chain.accumulation.cells_draining_to_flats:
@@ -422,8 +426,8 @@ def hand(
     config: ConfigOption = None,
 ) -> None:
     """Compute height above nearest drainage."""
+    from floodline.core.terrain.route import route_terrain
     from floodline.io.raster import read_raster, write_cog
-    from floodline.terrain.route import route_terrain
 
     resolved = load_config(config)
     raster = read_raster(dem, config=resolved)
@@ -474,16 +478,16 @@ def inundate(
     """
     import numpy as np
 
-    from floodline.hydraulics.inundate import inundate as flood
-    from floodline.hydraulics.rating import (
+    from floodline.core.hydro.inundate import inundate as flood
+    from floodline.core.hydro.rating import (
         build_rating_curves,
         discharge_by_area_ratio,
         reach_catchments,
     )
-    from floodline.hydraulics.stage import stage_field_from_discharge
+    from floodline.core.hydro.stage import stage_field_from_discharge
+    from floodline.core.terrain.route import route_terrain
+    from floodline.core.terrain.streams import link_raster
     from floodline.io.raster import read_raster, write_cog
-    from floodline.terrain.route import route_terrain
-    from floodline.terrain.streams import link_raster
 
     resolved = load_config(config)
     raster = read_raster(dem, config=resolved)
@@ -572,8 +576,8 @@ def exposure(
     rather than reprojected, because a silent reprojection is how an exposure table
     ends up describing the wrong ground.
     """
-    from floodline.exposure.buildings import building_depths
-    from floodline.exposure.population import population_affected
+    from floodline.core.exposure.buildings import building_depths
+    from floodline.core.exposure.population import population_affected
     from floodline.io.raster import read_raster
     from floodline.io.vector import read_vector, write_vector
 
@@ -675,9 +679,9 @@ def damage(
     replacement cost. It does not sample storey counts, floor area, freeboard, class
     assignment or footprint completeness, so it is a lower bound on the real spread.
     """
-    from floodline.damage.curves import load_curves
-    from floodline.damage.estimate import estimate_damage
-    from floodline.damage.uncertainty import monte_carlo_damage
+    from floodline.core.damage.curves import load_curves
+    from floodline.core.damage.estimate import estimate_damage
+    from floodline.core.damage.uncertainty import monte_carlo_damage
     from floodline.io.vector import read_vector, write_vector
 
     resolved = load_config(config)
@@ -767,7 +771,8 @@ def fetch_curves(
     These are the published values, so damage totals computed with them lose the
     "unverified" warning that the bundled approximations carry.
     """
-    from floodline.damage.usace import ensure_usace_curves, load_usace_curves
+    from floodline.core.damage.usace import load_usace_curves
+    from floodline.io.usace import ensure_usace_curves
 
     path = ensure_usace_curves(cache_dir=cache, download=True)
     curves = load_usace_curves(path)

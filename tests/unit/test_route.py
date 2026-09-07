@@ -3,10 +3,10 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from floodline.config import Config
+from floodline.core.config import Config
+from floodline.core.terrain.flowdir import FLOW_FLAT, steps_to_outlet
+from floodline.core.terrain.route import route_terrain
 from floodline.synthetic import SyntheticCatchment, make_synthetic_catchment
-from floodline.terrain.flowdir import FLOW_FLAT, steps_to_outlet
-from floodline.terrain.route import route_terrain
 
 
 def test_chain_runs_end_to_end(catchment: SyntheticCatchment) -> None:

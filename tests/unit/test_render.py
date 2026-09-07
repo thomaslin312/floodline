@@ -155,7 +155,7 @@ def test_marks_reach_the_report(tmp_path: Path) -> None:
 
 
 def _ladder(damage: list[float]) -> object:
-    from floodline.damage.ladder import DamageLadder
+    from floodline.core.damage.ladder import DamageLadder
 
     n = len(damage)
     return DamageLadder(

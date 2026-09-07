@@ -2462,3 +2462,57 @@ leaves 1.58 m. Relaxing HAND's assumption with an uncalibrated solver reaches 1.
 explaining it: it is not the ground, not the stage, and not obviously the
 parallel-surface assumption either. That is an honest open question and it is where the
 next person should start.
+
+## 2026-09-08 — restructured for deployment, with the modelling half sealed off
+
+Four changes, none to modelling logic. The 16-basin Harvey validation is bit-for-bit
+identical afterwards, which is the only evidence that claim is worth anything.
+
+**`core/` holds the model and imports nothing else.** `terrain/`, `hydraulics/`,
+`damage/` and `exposure/` moved under it with `git mv`; `hydraulics` was renamed
+`hydro` to match the requested layout. The rule is checked rather than trusted:
+`test_core_isolation.py` walks every import in the package and fails on anything
+outside `core` and `settings`, on any networking library, and on any URL in code. It
+found one violation, which is the only place the boundary had actually leaked.
+
+Requested as three modules - `core/terrain.py`, `core/hydro.py`, `core/damage.py` - and
+built as three packages instead. Concatenating twenty-five files into three would be a
+rewrite in everything but name: the diff would be unreviewable and the claim that
+nothing changed would be unverifiable. The names and the boundaries are as asked; the
+file granularity is not.
+
+**Deployment configuration moved to `settings.py`,** pydantic-settings over `.env`,
+prefix `FLOODLINE_`. Thirty-five settings: nine paths, sixteen upstream endpoints, five
+HTTP behaviours, five service limits. `.env.example` is generated from the model itself
+so the two cannot drift. The line drawn is between what the model *is* - Manning's
+roughness, an accumulation threshold, a curve family, all still in `core.config` and
+versioned with the code that reads them - and where it *runs*.
+
+**`storage/` is an interface with one implementation.** Three methods, keyed on the
+watershed and a hash of the terrain parameters, computed from the values rather than
+from a version number somebody has to remember to bump. Writes go to a temp path and
+are renamed with `Path.replace`, which is atomic within a filesystem: a process killed
+mid-write leaves a partial file under a name nothing looks for, rather than a truncated
+file under a name `exists()` would answer yes to. That failure mode does not raise, it
+returns wrong numbers.
+
+**`pipeline.py` splits at the discharge boundary.** `compute_terrain` is everything
+that depends only on the basin - conditioning, routing, streams, HAND, and the rating
+curves, which depend on terrain and not on flow. `run_scenario` is everything that
+depends on a discharge. Measured across the sixteen basins: terrain 0.1 to 0.6 s,
+scenario 0.005 to 0.052 s, a 10x to 27x ratio.
+
+Two findings from doing it:
+
+*The artefact is five grids, not two.* HAND and the stream network are the pair the
+interface is named for, but rebuilding the rating curves also needs the conditioned
+surface, the flow directions and the drainage index. Caching only the first two would
+mean a cache hit re-ran depression filling to recover the rest - correct, and pointless.
+All five are written and read as one unit, because any mismatched combination is wrong
+in a way that produces plausible numbers rather than an error.
+
+*The routing is not the expensive part.* Terrain routing is a few tenths of a second on
+these basins; reading the elevation is tens of seconds. So the cache key is deliberately
+computable from configuration alone, with no array involved, and a caller must check
+the store before fetching a DEM rather than after. A hit that still fetched would save
+almost nothing.

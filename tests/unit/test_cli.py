@@ -251,8 +251,8 @@ def _conditioned_watershed(tmp_path: Path) -> tuple[Path, Path, int, int]:
     """A conditioned synthetic DEM plus a gauge cell that sits on the network."""
     import numpy as np
 
+    from floodline.core.terrain.route import route_terrain
     from floodline.io.raster import read_raster
-    from floodline.terrain.route import route_terrain
 
     raw, filled = tmp_path / "raw.tif", tmp_path / "filled.tif"
     cfg = tmp_path / "c.toml"
@@ -299,8 +299,8 @@ def test_inundate_refuses_a_gauge_off_the_network(tmp_path: Path) -> None:
     """Without a contributing area there is nothing to scale discharge from."""
     import numpy as np
 
+    from floodline.core.terrain.route import route_terrain
     from floodline.io.raster import read_raster
-    from floodline.terrain.route import route_terrain
 
     filled, cfg, _, _ = _conditioned_watershed(tmp_path)
     raster = read_raster(filled)

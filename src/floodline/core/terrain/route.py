@@ -16,14 +16,14 @@ from dataclasses import dataclass
 import numpy as np
 import numpy.typing as npt
 
-from floodline.config import Config, TerrainConfig
-from floodline.terrain.bathymetry import BurnedChannel, burn_channel
-from floodline.terrain.fill import fill_depressions
-from floodline.terrain.flats import resolve_flats
-from floodline.terrain.flowacc import FlowAccumulation, flow_accumulation
-from floodline.terrain.flowdir import FLOW_FLAT, flow_direction
-from floodline.terrain.hand import HandResult, hand
-from floodline.terrain.streams import prune_stream_mask, stream_mask
+from floodline.core.config import Config, TerrainConfig
+from floodline.core.terrain.bathymetry import BurnedChannel, burn_channel
+from floodline.core.terrain.fill import fill_depressions
+from floodline.core.terrain.flats import resolve_flats
+from floodline.core.terrain.flowacc import FlowAccumulation, flow_accumulation
+from floodline.core.terrain.flowdir import FLOW_FLAT, flow_direction
+from floodline.core.terrain.hand import HandResult, hand
+from floodline.core.terrain.streams import prune_stream_mask, stream_mask
 
 __all__ = ["TerrainChain", "route_terrain"]
 

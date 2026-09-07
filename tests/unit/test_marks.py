@@ -8,7 +8,7 @@ from pyproj import CRS
 from shapely.geometry import Polygon
 
 from floodline.compute import marks_within
-from floodline.config import Config
+from floodline.core.config import Config
 from floodline.io.ingest import Watershed
 
 

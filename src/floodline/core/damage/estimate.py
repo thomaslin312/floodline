@@ -14,9 +14,9 @@ from dataclasses import dataclass, field
 import numpy as np
 import numpy.typing as npt
 
-from floodline.config import Config, CurveFamily, DamageConfig
-from floodline.damage.costs import exposed_value, storey_exposure
-from floodline.damage.curves import CurveLookup, CurveSet, bundled_curves
+from floodline.core.config import Config, CurveFamily, DamageConfig
+from floodline.core.damage.costs import exposed_value, storey_exposure
+from floodline.core.damage.curves import CurveLookup, CurveSet, bundled_curves
 
 __all__ = ["NO_WATER", "DamageEstimate", "estimate_damage"]
 

@@ -37,7 +37,8 @@ from typing import Any
 
 import httpx
 
-from floodline.config import CaseConfig, Config, SourcesConfig
+from floodline.core.config import CaseConfig, Config, SourcesConfig
+from floodline.settings import settings
 
 __all__ = [
     "Artifact",
@@ -54,7 +55,7 @@ __all__ = [
     "write_manifest",
 ]
 
-USER_AGENT = "floodline/0.1 (+https://github.com/thomaslin312/floodline)"
+USER_AGENT = settings().user_agent
 """Some of these services reject a request with no User-Agent (WaterNSW 502s)."""
 
 CHUNK_BYTES = 1 << 20
@@ -343,16 +344,16 @@ def make_client(settings: SourcesConfig | None = None) -> httpx.Client:
 # Sources
 # --------------------------------------------------------------------------------
 
-TNM_PRODUCTS = "https://tnmaccess.nationalmap.gov/api/v1/products"
-NWIS_IV = "https://waterservices.usgs.gov/nwis/iv/"
-NWIS_SITE = "https://waterservices.usgs.gov/nwis/site/"
-STN_HWM = "https://stn.wim.usgs.gov/STNServices/HWMs/FilteredHWMs.json"
-STN_ALL_HWM = "https://stn.wim.usgs.gov/STNServices/HWMs.json"
-STN_EVENTS = "https://stn.wim.usgs.gov/STNServices/Events.json"
-NWIS_PEAK = "https://nwis.waterdata.usgs.gov/nwis/peak"
-OPENFEMA = "https://www.fema.gov/api/open/v2"
-MPC_STAC = "https://planetarycomputer.microsoft.com/api/stac/v1/search"
-WBD = "https://hydro.nationalmap.gov/arcgis/rest/services/wbd/MapServer"
+TNM_PRODUCTS = settings().tnm_products_url
+NWIS_IV = settings().nwis_instantaneous_url
+NWIS_SITE = settings().nwis_site_url
+STN_HWM = settings().stn_hwm_url
+STN_ALL_HWM = settings().stn_all_hwm_url
+STN_EVENTS = settings().stn_events_url
+NWIS_PEAK = settings().nwis_peak_url
+OPENFEMA = settings().openfema_url
+MPC_STAC = settings().planetary_computer_stac_url
+WBD = settings().wbd_url
 
 WBD_LAYER_BY_HUC_LEVEL = {2: 1, 4: 2, 6: 3, 8: 4, 10: 5, 12: 6, 14: 7, 16: 8}
 """Watershed Boundary Dataset layer index by HUC digit count."""

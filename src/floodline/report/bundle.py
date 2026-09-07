@@ -33,7 +33,7 @@ import numpy as np
 import numpy.typing as npt
 from PIL import Image
 
-from floodline.hydraulics.rating import RatingCurve
+from floodline.core.hydro.rating import RatingCurve
 
 __all__ = [
     "HAND_NODATA",

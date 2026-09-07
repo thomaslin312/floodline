@@ -7,7 +7,7 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 
-from floodline.config import Config
+from floodline.core.config import Config
 from floodline.service import create_app, evict_cache
 
 

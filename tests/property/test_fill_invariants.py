@@ -19,8 +19,8 @@ from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
 from hypothesis.extra import numpy as hnp
 
-from floodline.config import Connectivity
-from floodline.terrain.fill import fill_depressions, undrained_mask
+from floodline.core.config import Connectivity
+from floodline.core.terrain.fill import fill_depressions, undrained_mask
 
 CONNECTIVITIES = [Connectivity.EIGHT, Connectivity.FOUR]
 
@@ -193,7 +193,7 @@ def _cells_without_a_strict_descent(
     dem: npt.NDArray[np.floating], connectivity: Connectivity
 ) -> npt.NDArray[np.bool_]:
     """Return interior cells with no strictly lower neighbour."""
-    from floodline.terrain._neighbours import neighbour_offsets
+    from floodline.core.terrain._neighbours import neighbour_offsets
 
     rows, cols = dem.shape
     stuck = np.zeros((rows, cols), dtype=np.bool_)

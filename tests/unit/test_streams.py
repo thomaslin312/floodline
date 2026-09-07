@@ -3,12 +3,12 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from floodline.config import Config
+from floodline.core.config import Config
+from floodline.core.terrain.fill import fill_depressions
+from floodline.core.terrain.flowacc import flow_accumulation
+from floodline.core.terrain.flowdir import flow_direction
+from floodline.core.terrain.streams import prune_stream_mask, stream_mask, stream_network
 from floodline.synthetic import SyntheticCatchment
-from floodline.terrain.fill import fill_depressions
-from floodline.terrain.flowacc import flow_accumulation
-from floodline.terrain.flowdir import flow_direction
-from floodline.terrain.streams import prune_stream_mask, stream_mask, stream_network
 
 
 def _routed(dem: np.ndarray, cellsize: float = 1.0) -> tuple[np.ndarray, np.ndarray]:
@@ -54,7 +54,7 @@ def test_a_stream_mask_is_downstream_closed() -> None:
     dem = np.tile(np.arange(12.0, 0.0, -1.0).reshape(-1, 1), (1, 6))
     fdir, acc = _routed(dem)
     mask = stream_mask(acc, fdir, threshold=20)
-    from floodline.terrain.flowdir import downstream_index
+    from floodline.core.terrain.flowdir import downstream_index
 
     receiver = downstream_index(fdir)
     cols = dem.shape[1]

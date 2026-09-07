@@ -6,9 +6,9 @@ import pytest
 from rasterio.transform import Affine
 from shapely.geometry import box
 
-from floodline.config import BuildingDepthStat, ExposureConfig
-from floodline.exposure.buildings import building_depths
-from floodline.exposure.population import population_affected
+from floodline.core.config import BuildingDepthStat, ExposureConfig
+from floodline.core.exposure.buildings import building_depths
+from floodline.core.exposure.population import population_affected
 
 # A 10x10 grid of 1 m cells with its origin at (0, 10) so row 0 is the top.
 TRANSFORM = Affine.translation(0.0, 10.0) * Affine.scale(1.0, -1.0)

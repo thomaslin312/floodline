@@ -20,9 +20,9 @@ from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
 from hypothesis.extra import numpy as hnp
 
-from floodline.config import Connectivity
+from floodline.core.config import Connectivity
+from floodline.core.terrain.fill import fill_depressions
 from floodline.synthetic import SyntheticCatchment, make_synthetic_catchment
-from floodline.terrain.fill import fill_depressions
 
 pytestmark = pytest.mark.differential
 

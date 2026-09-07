@@ -7,7 +7,7 @@ import httpx
 import pytest
 
 from floodline.compute import VSICURL_ENV, watershed_by_huc, watershed_for_point
-from floodline.config import Config
+from floodline.core.config import Config
 from floodline.io.sources import SourceError
 
 SQUARE = {
@@ -119,7 +119,7 @@ def test_the_analysis_crs_follows_the_watershed() -> None:
 
 def test_every_continental_utm_zone_is_a_valid_analysis_crs() -> None:
     from floodline.compute import utm_crs_for
-    from floodline.config import validate_projected_crs
+    from floodline.core.config import validate_projected_crs
 
     for lon in range(-124, -66, 6):
         crs = utm_crs_for(float(lon), 40.0)

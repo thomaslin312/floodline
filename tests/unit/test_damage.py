@@ -3,11 +3,11 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from floodline.config import Config, CurveFamily, DamageConfig, MonteCarloConfig
-from floodline.damage.costs import exposed_value, storey_exposure
-from floodline.damage.curves import BUNDLED_FAMILIES, CurveSet, DamageCurve, bundled_curves
-from floodline.damage.estimate import NO_WATER, estimate_damage
-from floodline.damage.uncertainty import monte_carlo_damage
+from floodline.core.config import Config, CurveFamily, DamageConfig, MonteCarloConfig
+from floodline.core.damage.costs import exposed_value, storey_exposure
+from floodline.core.damage.curves import BUNDLED_FAMILIES, CurveSet, DamageCurve, bundled_curves
+from floodline.core.damage.estimate import NO_WATER, estimate_damage
+from floodline.core.damage.uncertainty import monte_carlo_damage
 
 CLASSES = np.array(["residential", "commercial", "residential"], dtype=object)
 AREAS = np.array([100.0, 200.0, 150.0])
@@ -482,9 +482,9 @@ def test_a_loaded_library_still_samples_against_the_bundled_families() -> None:
     """
     import numpy as np
 
-    from floodline.config import Config, CurveFamily
-    from floodline.damage.curves import bundled_curves
-    from floodline.damage.uncertainty import monte_carlo_damage
+    from floodline.core.config import Config, CurveFamily
+    from floodline.core.damage.curves import bundled_curves
+    from floodline.core.damage.uncertainty import monte_carlo_damage
 
     cfg = Config()
     supplied = bundled_curves(CurveFamily.HAZUS, config=cfg.damage)
@@ -526,9 +526,9 @@ def test_verified_point_estimate_is_not_reported_as_unverified() -> None:
     """
     import numpy as np
 
-    from floodline.config import Config, CurveFamily
-    from floodline.damage.curves import CurveSet, DamageCurve
-    from floodline.damage.uncertainty import monte_carlo_damage
+    from floodline.core.config import Config, CurveFamily
+    from floodline.core.damage.curves import CurveSet, DamageCurve
+    from floodline.core.damage.uncertainty import monte_carlo_damage
 
     cfg = Config()
     transcribed = CurveSet(
@@ -570,8 +570,8 @@ def test_expected_damage_differs_from_damage_at_the_expected_depth() -> None:
     """
     import numpy as np
 
-    from floodline.config import Config
-    from floodline.damage.uncertainty import monte_carlo_damage
+    from floodline.core.config import Config
+    from floodline.core.damage.uncertainty import monte_carlo_damage
 
     cfg = Config()
     n = 300

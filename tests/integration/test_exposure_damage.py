@@ -8,15 +8,15 @@ import pytest
 from rasterio.transform import Affine
 from shapely.geometry import box
 
-from floodline.config import Config, CurveFamily, ExposureConfig, MonteCarloConfig
-from floodline.damage.curves import BUNDLED_FAMILIES
-from floodline.damage.estimate import estimate_damage
-from floodline.damage.uncertainty import monte_carlo_damage
-from floodline.exposure.buildings import building_depths
-from floodline.exposure.population import population_affected
-from floodline.hydraulics.inundate import inundate
+from floodline.core.config import Config, CurveFamily, ExposureConfig, MonteCarloConfig
+from floodline.core.damage.curves import BUNDLED_FAMILIES
+from floodline.core.damage.estimate import estimate_damage
+from floodline.core.damage.uncertainty import monte_carlo_damage
+from floodline.core.exposure.buildings import building_depths
+from floodline.core.exposure.population import population_affected
+from floodline.core.hydro.inundate import inundate
+from floodline.core.terrain.route import route_terrain
 from floodline.synthetic import make_synthetic_catchment
-from floodline.terrain.route import route_terrain
 
 CELL = 10.0
 

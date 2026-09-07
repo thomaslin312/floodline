@@ -38,7 +38,7 @@ from floodline.compute import (
     watershed_for_point,
     wgs84_bounds,
 )
-from floodline.config import Config
+from floodline.core.config import Config
 from floodline.io.sources import FetchContext, SourceError, find_gauges, make_client
 from floodline.limits import (
     ConcurrencyLimiter,
@@ -47,6 +47,7 @@ from floodline.limits import (
     TooManyRequestsError,
 )
 from floodline.report.exposure_bundle import build_exposure_bundle
+from floodline.settings import settings
 
 __all__ = ["create_app"]
 
@@ -74,11 +75,10 @@ def _fresh(payload: dict[str, Any]) -> bool:
 
 
 WEB_ROOT = Path(__file__).parent / "web"
-ZCTA = (
-    "https://tigerweb.geo.census.gov/arcgis/rest/services/TIGERweb/"
-    "tigerWMS_Current/MapServer/2/query"
-)
-ONELINE = "https://geocoding.geo.census.gov/geocoder/locations/onelineaddress"
+# The layer path is part of the query, not of the deployment: a different TIGERweb
+# host still serves layer 2 of tigerWMS_Current. Only the base is a setting.
+ZCTA = f"{settings().tigerweb_url}/tigerWMS_Current/MapServer/2/query"
+ONELINE = settings().census_geocode_url
 
 
 def evict_cache(cache: Path, budget_mb: float) -> int:
@@ -218,7 +218,7 @@ def create_app(
         failure that looks nothing like its cause.
     """
     base = config or Config()
-    cache = cache_dir or Path("outputs/cache")
+    cache = cache_dir or settings().bundle_cache_dir
     cache.mkdir(parents=True, exist_ok=True)
     marks = marks_path or (base.paths.raw / "validation" / "high_water_marks_national.json")
     app = FastAPI(title="floodline", docs_url="/api/docs")

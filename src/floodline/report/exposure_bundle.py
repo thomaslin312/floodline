@@ -37,7 +37,7 @@ import numpy.typing as npt
 from rasterio.transform import Affine, rowcol
 
 from floodline.compute import to_web_mercator
-from floodline.config import Config
+from floodline.core.config import Config
 from floodline.report.bundle import encode_png, to_data_uri
 from floodline.report.figures import block_reduce
 

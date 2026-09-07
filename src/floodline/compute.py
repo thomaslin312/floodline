@@ -38,13 +38,15 @@ from shapely.geometry.base import BaseGeometry
 from shapely.ops import transform as shapely_transform
 from shapely.prepared import prep
 
-from floodline.config import Config
-from floodline.hydraulics.frequency import flood_frequency
-from floodline.hydraulics.rating import (
+from floodline.core.config import Config
+from floodline.core.hydro.frequency import flood_frequency
+from floodline.core.hydro.rating import (
     build_rating_curves,
     discharge_by_area_ratio,
     reach_catchments,
 )
+from floodline.core.terrain.route import route_terrain
+from floodline.core.terrain.streams import link_raster
 from floodline.io.ingest import Watershed, estimate_cells, ingest_dem
 from floodline.io.sources import (
     WBD,
@@ -65,8 +67,6 @@ from floodline.report.bundle import (
     to_data_uri,
 )
 from floodline.report.figures import block_reduce
-from floodline.terrain.route import route_terrain
-from floodline.terrain.streams import link_raster
 
 __all__ = [
     "ComputeResult",

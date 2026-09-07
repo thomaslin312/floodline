@@ -33,7 +33,7 @@ import numpy as np
 import numpy.typing as npt
 from numba import njit
 
-from floodline.terrain.flowdir import FLOW_NODATA, downstream_index
+from floodline.core.terrain.flowdir import FLOW_NODATA, downstream_index
 
 __all__ = ["HandResult", "hand"]
 

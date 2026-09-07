@@ -17,6 +17,8 @@ from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, PlainSeriali
 from pyproj import CRS
 from pyproj.exceptions import CRSError
 
+from floodline.settings import settings
+
 Positive = Annotated[float, Field(gt=0)]
 NonNegative = Annotated[float, Field(ge=0)]
 Fraction = Annotated[float, Field(ge=0.0, le=1.0)]
@@ -715,12 +717,18 @@ class CaseConfig(Frozen):
 
 
 class PathsConfig(Frozen):
-    """Where things live. Nothing under `raw` is ever committed."""
+    """Where things live. Nothing under `raw` is ever committed.
 
-    raw: Path = Field(default=Path("data/raw"))
-    interim: Path = Field(default=Path("data/interim"))
-    processed: Path = Field(default=Path("data/processed"))
-    outputs: Path = Field(default=Path("outputs"))
+    Defaults come from `floodline.settings`, so a deployment sets them once in the
+    environment rather than threading them through every call. They stay on `Config`
+    because a run should be able to record where its inputs came from alongside the
+    parameters that shaped it.
+    """
+
+    raw: Path = Field(default_factory=lambda: settings().data_raw)
+    interim: Path = Field(default_factory=lambda: settings().data_interim)
+    processed: Path = Field(default_factory=lambda: settings().data_processed)
+    outputs: Path = Field(default_factory=lambda: settings().outputs)
 
 
 class Config(Frozen):

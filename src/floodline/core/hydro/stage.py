@@ -32,9 +32,9 @@ import numpy as np
 import numpy.typing as npt
 from numba import njit
 
-from floodline.config import Config, HydraulicsConfig, StageMethod
-from floodline.hydraulics.rating import RatingCurve
-from floodline.terrain.flowdir import D8_CODES, downstream_index
+from floodline.core.config import Config, HydraulicsConfig, StageMethod
+from floodline.core.hydro.rating import RatingCurve
+from floodline.core.terrain.flowdir import D8_CODES, downstream_index
 
 __all__ = [
     "GaugeStage",

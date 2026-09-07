@@ -33,7 +33,7 @@ import numpy.typing as npt
 from rasterio.features import geometry_mask
 from rasterio.transform import Affine, rowcol
 
-from floodline.config import BuildingDepthStat, Config, ExposureConfig
+from floodline.core.config import BuildingDepthStat, Config, ExposureConfig
 
 __all__ = ["BuildingExposure", "building_depths"]
 

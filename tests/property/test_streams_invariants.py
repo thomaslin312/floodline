@@ -16,10 +16,10 @@ from hypothesis.extra import numpy as hnp
 from pyproj import CRS
 from rasterio.transform import from_origin
 
-from floodline.terrain.fill import fill_depressions
-from floodline.terrain.flowacc import flow_accumulation
-from floodline.terrain.flowdir import downstream_index, flow_direction
-from floodline.terrain.streams import prune_stream_mask, stream_mask, stream_network
+from floodline.core.terrain.fill import fill_depressions
+from floodline.core.terrain.flowacc import flow_accumulation
+from floodline.core.terrain.flowdir import downstream_index, flow_direction
+from floodline.core.terrain.streams import prune_stream_mask, stream_mask, stream_network
 
 TRANSFORM = from_origin(500_000.0, 6_800_000.0, 1.0, 1.0)
 ANALYSIS_CRS = CRS.from_epsg(6587)

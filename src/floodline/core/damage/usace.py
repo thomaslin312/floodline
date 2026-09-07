@@ -34,26 +34,18 @@ dropped.
 from __future__ import annotations
 
 import json
-import shutil
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-import httpx
-
-from floodline.config import Config, CurveFamily, DamageConfig
-from floodline.damage.curves import CurveSet, DamageCurve
+from floodline.core.config import Config, CurveFamily, DamageConfig
+from floodline.core.damage.curves import CurveSet, DamageCurve
 
 __all__ = [
-    "USACE_CURVES_URL",
     "UsaceCurves",
-    "ensure_usace_curves",
     "load_usace_curves",
 ]
 
-USACE_CURVES_URL = (
-    "https://raw.githubusercontent.com/USACE/go-consequences/main/structures/occtypes.json"
-)
 FEET_TO_M = 0.3048
 # Damage is published in percent; every curve in the file tops out at 100.
 PERCENT = 100.0
@@ -82,40 +74,6 @@ class UsaceCurves:
     def has(self, code: str) -> bool:
         """Report whether `code` has its own curve rather than the default fallback."""
         return code in self.structure.curves
-
-
-def ensure_usace_curves(
-    *,
-    cache_dir: Path = Path("data/cache"),
-    download: bool = False,
-    client: httpx.Client | None = None,
-) -> Path:
-    """Return a local path to `occtypes.json`, fetching it once if allowed.
-
-    Half a megabyte rather than half a gigabyte, but the same rule as the population
-    rasters: nothing here reaches the network unless asked.
-    """
-    target = cache_dir / "usace-occtypes.json"
-    if target.exists() and target.stat().st_size > 0:
-        return target
-    if not download:
-        raise FileNotFoundError(
-            f"USACE curve library is not cached at {target}. Run `floodline fetch-curves`, "
-            f"or pass download=True. Source: {USACE_CURVES_URL}"
-        )
-    target.parent.mkdir(parents=True, exist_ok=True)
-    partial = target.with_suffix(".json.part")
-    owned = client is None
-    active = client or httpx.Client(timeout=httpx.Timeout(30.0, read=180.0), follow_redirects=True)
-    try:
-        response = active.get(USACE_CURVES_URL)
-        response.raise_for_status()
-        partial.write_bytes(response.content)
-    finally:
-        if owned:
-            active.close()
-    shutil.move(str(partial), str(target))
-    return target
 
 
 def _mean(distribution: dict[str, Any]) -> float:

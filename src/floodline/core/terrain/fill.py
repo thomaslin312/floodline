@@ -34,8 +34,8 @@ import numpy as np
 import numpy.typing as npt
 from numba import njit
 
-from floodline.config import Config, Connectivity, TerrainConfig
-from floodline.terrain._neighbours import neighbour_offsets
+from floodline.core.config import Config, Connectivity, TerrainConfig
+from floodline.core.terrain._neighbours import neighbour_offsets
 
 __all__ = ["fill_depressions", "undrained_mask"]
 

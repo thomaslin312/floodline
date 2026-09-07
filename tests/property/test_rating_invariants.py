@@ -12,8 +12,8 @@ import numpy.typing as npt
 from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
 
-from floodline.config import Config
-from floodline.hydraulics.rating import build_rating_curves, discharge_by_area_ratio
+from floodline.core.config import Config
+from floodline.core.hydro.rating import build_rating_curves, discharge_by_area_ratio
 
 SETTINGS = settings(
     max_examples=100,

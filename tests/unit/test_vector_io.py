@@ -7,7 +7,7 @@ import pytest
 from pyproj import CRS
 from shapely.geometry import LineString
 
-from floodline.config import Config
+from floodline.core.config import Config
 from floodline.io.raster import CrsError
 from floodline.io.vector import read_vector, write_vector
 

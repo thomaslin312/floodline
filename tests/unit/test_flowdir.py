@@ -3,10 +3,9 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from floodline.config import Config
-from floodline.synthetic import SyntheticCatchment
-from floodline.terrain.fill import fill_depressions
-from floodline.terrain.flowdir import (
+from floodline.core.config import Config
+from floodline.core.terrain.fill import fill_depressions
+from floodline.core.terrain.flowdir import (
     FLOW_FLAT,
     FLOW_NODATA,
     FLOW_OUTLET,
@@ -14,6 +13,7 @@ from floodline.terrain.flowdir import (
     flow_direction,
     steps_to_outlet,
 )
+from floodline.synthetic import SyntheticCatchment
 
 # ESRI codes, for readability in the assertions below.
 E, SE, S, SW, W, NW, N, NE = 1, 2, 4, 8, 16, 32, 64, 128
@@ -212,7 +212,7 @@ def test_downstream_index_is_total_over_arbitrary_direction_grids() -> None:
 
 
 def test_off_raster_directions_do_not_break_accumulation() -> None:
-    from floodline.terrain.flowacc import flow_accumulation
+    from floodline.core.terrain.flowacc import flow_accumulation
 
     fdir = np.zeros((4, 4), dtype=np.int16)
     fdir[:, 1] = S  # a column draining off the bottom edge

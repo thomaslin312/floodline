@@ -7,7 +7,7 @@ import numpy as np
 import pytest
 from PIL import Image
 
-from floodline.hydraulics.rating import build_rating_curves
+from floodline.core.hydro.rating import build_rating_curves
 from floodline.report.bundle import (
     HAND_NODATA,
     HAND_SCALE,

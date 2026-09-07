@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from floodline.hydraulics.observed_stage import (
+from floodline.core.hydro.observed_stage import (
     GaugeStage,
     interpolate_stage,
     peak_water_surface,
@@ -112,7 +112,7 @@ def test_a_gauge_that_cannot_be_reconciled_with_the_bed_is_dropped() -> None:
     A real basin came back with a 1,232 m residual from a single record whose
     published altitude did not describe the channel the model built.
     """
-    from floodline.hydraulics.observed_stage import select_gauges
+    from floodline.core.hydro.observed_stage import select_gauges
 
     good = GaugeStage("good", 0, wse_m=103.0, bed_m=100.0, datum="NAVD88", date="", area_km2=10)
     absurd = GaugeStage("absurd", 1, wse_m=1300.0, bed_m=99.0, datum="NAVD88", date="", area_km2=12)
@@ -126,7 +126,7 @@ def test_a_gauge_that_cannot_be_reconciled_with_the_bed_is_dropped() -> None:
 
 def test_the_minority_vertical_datum_is_dropped_not_mixed() -> None:
     """NAVD88 and NGVD29 differ by the size of the error being chased."""
-    from floodline.hydraulics.observed_stage import select_gauges
+    from floodline.core.hydro.observed_stage import select_gauges
 
     gauges = [
         GaugeStage("a", 0, 103.0, 100.0, "NAVD88", "", 1),

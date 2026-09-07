@@ -59,9 +59,9 @@ from dataclasses import dataclass
 import numpy as np
 import numpy.typing as npt
 
-from floodline.config import Config, CurveFamily, DamageConfig, MonteCarloConfig
-from floodline.damage.curves import CurveLookup, CurveSet, bundled_curves
-from floodline.damage.estimate import estimate_damage
+from floodline.core.config import Config, CurveFamily, DamageConfig, MonteCarloConfig
+from floodline.core.damage.curves import CurveLookup, CurveSet, bundled_curves
+from floodline.core.damage.estimate import estimate_damage
 
 __all__ = ["DamageInterval", "monte_carlo_damage"]
 

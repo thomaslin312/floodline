@@ -9,7 +9,7 @@ from rasterio.crs import CRS as RioCRS
 from rasterio.transform import from_origin
 from rasterio.windows import Window
 
-from floodline.config import Config
+from floodline.core.config import Config
 from floodline.io.raster import (
     CrsError,
     Raster,

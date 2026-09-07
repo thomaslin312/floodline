@@ -3,10 +3,10 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
+from floodline.core.terrain.fill import fill_depressions
+from floodline.core.terrain.flowacc import flow_accumulation
+from floodline.core.terrain.flowdir import FLOW_FLAT, flow_direction
 from floodline.synthetic import SyntheticCatchment
-from floodline.terrain.fill import fill_depressions
-from floodline.terrain.flowacc import flow_accumulation
-from floodline.terrain.flowdir import FLOW_FLAT, flow_direction
 
 E, SE, S, SW, W, NW, N, NE = 1, 2, 4, 8, 16, 32, 64, 128
 
@@ -27,7 +27,7 @@ def test_accumulation_is_one_plus_the_upstream_sum() -> None:
     fdir = flow_direction(dem)
     acc = flow_accumulation(fdir).accumulation
 
-    from floodline.terrain.flowdir import downstream_index
+    from floodline.core.terrain.flowdir import downstream_index
 
     receiver = downstream_index(fdir)
     upstream_sum = np.zeros_like(acc)

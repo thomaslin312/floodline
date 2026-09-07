@@ -3,10 +3,10 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from floodline.config import CurveFamily, DamageConfig
-from floodline.damage.curves import CurveSet, DamageCurve
-from floodline.damage.estimate import NO_WATER
-from floodline.damage.ladder import damage_ladder
+from floodline.core.config import CurveFamily, DamageConfig
+from floodline.core.damage.curves import CurveSet, DamageCurve
+from floodline.core.damage.estimate import NO_WATER
+from floodline.core.damage.ladder import damage_ladder
 
 CURVE = CurveSet(
     family=CurveFamily.USACE,

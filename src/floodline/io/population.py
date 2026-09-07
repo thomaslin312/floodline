@@ -58,6 +58,7 @@ from rasterio.warp import transform_bounds
 from rasterio.windows import from_bounds
 
 from floodline.io.raster import Raster
+from floodline.settings import settings
 
 __all__ = [
     "PopulationGrid",
@@ -81,10 +82,10 @@ class PopulationProduct(StrEnum):
     GHS_POP = "ghs_pop"
 
 
-_WORLDPOP = "https://data.worldpop.org/GIS/Population"
+_WORLDPOP = settings().worldpop_url.rsplit("/GIS/Population", 1)[0] + "/GIS/Population"
 _GHS = (
-    "https://jeodpp.jrc.ec.europa.eu/ftp/jrc-opendata/GHSL/GHS_POP_GLOBE_R2023A/"
-    "GHS_POP_E{year}_GLOBE_R2023A_54009_100/V1-0/GHS_POP_E{year}_GLOBE_R2023A_54009_100_V1_0.zip"
+    settings().ghsl_url.rstrip("/") + "/GHS_POP_E{year}_GLOBE_R2023A_54009_100/V1-0/"
+    "GHS_POP_E{year}_GLOBE_R2023A_54009_100_V1_0.zip"
 )
 
 
@@ -132,7 +133,7 @@ def ensure_population_raster(
     *,
     iso3: str = "USA",
     year: int = 2020,
-    cache_dir: Path = Path("data/cache"),
+    cache_dir: Path | None = None,
     download: bool = False,
     client: Any | None = None,
 ) -> Path:
@@ -143,7 +144,9 @@ def ensure_population_raster(
     can call from a script safely.
     """
     source = population_url(product, iso3=iso3, year=year)
-    target = cache_dir / f"{product.value}-{iso3.lower()}-{year}{Path(source).suffix}"
+    target = (cache_dir or settings().cache_dir) / (
+        f"{product.value}-{iso3.lower()}-{year}{Path(source).suffix}"
+    )
     if target.exists() and target.stat().st_size > 0:
         return target
     if not download:
@@ -178,7 +181,7 @@ def read_population_window(
     iso3: str = "USA",
     year: int = 2020,
     url: str | None = None,
-    cache_dir: Path = Path("data/cache"),
+    cache_dir: Path | None = None,
     download: bool = False,
 ) -> PopulationGrid:
     """Read a population product onto the grid of `like`.

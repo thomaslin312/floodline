@@ -7,9 +7,9 @@ import numpy as np
 import numpy.typing as npt
 import pytest
 
-from floodline.config import Config
+from floodline.core.config import Config
+from floodline.core.terrain._neighbours import D8_OFFSETS
 from floodline.synthetic import SyntheticCatchment, make_synthetic_catchment
-from floodline.terrain._neighbours import D8_OFFSETS
 
 BoolGrid = npt.NDArray[np.bool_]
 FloatGrid = npt.NDArray[np.floating]

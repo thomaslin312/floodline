@@ -20,6 +20,7 @@ dependencies = [
     "typer>=0.15",
     "httpx>=0.28.1",
     "pillow>=12.3.0",
+    "pydantic-settings>=2.15.0",
 ]
 
 [project.optional-dependencies]

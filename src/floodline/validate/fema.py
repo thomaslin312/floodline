@@ -28,10 +28,12 @@ from typing import Any
 
 import httpx
 
+from floodline.settings import settings
+
 __all__ = ["TractDamage", "compare_to_fema", "fetch_ia_by_tract", "fetch_nfip_by_tract"]
 
-NFIP_URL = "https://www.fema.gov/api/open/v2/FimaNfipClaims"
-IA_URL = "https://www.fema.gov/api/open/v2/IndividualsAndHouseholdsProgramValidRegistrations"
+NFIP_URL = f"{settings().openfema_url}/FimaNfipClaims"
+IA_URL = f"{settings().openfema_url}/IndividualsAndHouseholdsProgramValidRegistrations"
 PAGE = 5000
 MAX_PAGES = 400
 
@@ -168,7 +170,7 @@ def compare_to_fema(huc: str = "1204010403", *, samples: int = 200) -> dict[str,
     """
     from floodline.assess import assess_watershed
     from floodline.compute import watershed_by_huc
-    from floodline.config import Config
+    from floodline.core.config import Config
     from floodline.reproduce import spearman
 
     with httpx.Client(follow_redirects=True) as client:

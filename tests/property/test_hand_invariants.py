@@ -19,11 +19,11 @@ from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
 from hypothesis.extra import numpy as hnp
 
-from floodline.terrain.fill import fill_depressions
-from floodline.terrain.flowacc import flow_accumulation
-from floodline.terrain.flowdir import downstream_index, flow_direction
-from floodline.terrain.hand import hand
-from floodline.terrain.streams import stream_mask
+from floodline.core.terrain.fill import fill_depressions
+from floodline.core.terrain.flowacc import flow_accumulation
+from floodline.core.terrain.flowdir import downstream_index, flow_direction
+from floodline.core.terrain.hand import hand
+from floodline.core.terrain.streams import stream_mask
 
 EPSILON = 1e-3
 

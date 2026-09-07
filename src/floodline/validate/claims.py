@@ -38,13 +38,12 @@ import geopandas as gpd
 import httpx
 from shapely.geometry.base import BaseGeometry
 
+from floodline.settings import settings
+
 __all__ = ["ClaimComparison", "NfipClaims", "compare_to_interval", "fetch_nfip_claims"]
 
-OPENFEMA_CLAIMS = "https://www.fema.gov/api/open/v2/FimaNfipClaims"
-TIGERWEB_BLOCK_GROUPS = (
-    "https://tigerweb.geo.census.gov/arcgis/rest/services/TIGERweb/"
-    "tigerWMS_ACS2023/MapServer/10/query"
-)
+OPENFEMA_CLAIMS = f"{settings().openfema_url}/FimaNfipClaims"
+TIGERWEB_BLOCK_GROUPS = f"{settings().tigerweb_url}/tigerWMS_ACS2023/MapServer/10/query"
 _PAGE = 10_000
 _MAX_PAGES = 40
 

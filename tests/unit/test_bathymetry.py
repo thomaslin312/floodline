@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import numpy as np
 
-from floodline.config import BathymetryConfig
-from floodline.terrain.bathymetry import burn_channel, channel_depth_m, channel_width_m
+from floodline.core.config import BathymetryConfig
+from floodline.core.terrain.bathymetry import burn_channel, channel_depth_m, channel_width_m
 
 
 def _on(**over: object) -> BathymetryConfig:

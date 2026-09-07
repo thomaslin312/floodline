@@ -31,7 +31,8 @@ import pyarrow.dataset as ds
 import pyarrow.fs as fs
 import shapely
 
-from floodline.config import CaseConfig, Config
+from floodline.core.config import CaseConfig, Config
+from floodline.settings import settings
 
 __all__ = ["OVERTURE_CLASSES", "BuildingFetch", "fetch_overture_buildings"]
 
@@ -106,7 +107,7 @@ def fetch_overture_buildings(
     *,
     config: Config | CaseConfig | None = None,
     release: str | None = None,
-    cache_dir: Path = Path("data/cache"),
+    cache_dir: Path | None = None,
     default_class: str = "residential",
     use_cache: bool = True,
 ) -> BuildingFetch:
@@ -135,6 +136,7 @@ def fetch_overture_buildings(
     if not (west < east and south < north):
         raise ValueError(f"bbox {bbox} is empty or inverted; expected (w, s, e, n)")
 
+    cache_dir = cache_dir or settings().cache_dir
     cached = cache_dir / f"overture-{chosen}-{_cache_key(bbox)}.parquet"
     if use_cache and cached.exists():
         frame = gpd.read_parquet(cached)

@@ -4,7 +4,7 @@ import math
 
 import pytest
 
-from floodline.hydraulics.frequency import flood_frequency
+from floodline.core.hydro.frequency import flood_frequency
 
 
 def _series(values: list[float], start: int = 1930) -> list[dict[str, object]]:

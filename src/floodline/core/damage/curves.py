@@ -33,7 +33,7 @@ from typing import Any
 import numpy as np
 import numpy.typing as npt
 
-from floodline.config import Config, CurveFamily, DamageConfig
+from floodline.core.config import Config, CurveFamily, DamageConfig
 
 __all__ = [
     "BUNDLED_FAMILIES",

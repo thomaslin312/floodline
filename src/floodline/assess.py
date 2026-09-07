@@ -37,29 +37,30 @@ from floodline.compute import (
     scorable_marks,
     wgs84_bounds,
 )
-from floodline.config import Config
-from floodline.damage.estimate import NO_WATER, DamageEstimate, estimate_damage
-from floodline.damage.ladder import DamageLadder, damage_ladder
-from floodline.damage.uncertainty import DamageInterval, monte_carlo_damage
-from floodline.damage.usace import UsaceCurves, ensure_usace_curves, load_usace_curves
-from floodline.exposure.buildings import BuildingExposure, building_depths
-from floodline.exposure.population import PopulationExposure, population_affected
-from floodline.hydraulics.frequency import HistoricalContext, flood_frequency
-from floodline.hydraulics.inundate import inundate
-from floodline.hydraulics.rating import (
+from floodline.core.config import Config
+from floodline.core.damage.estimate import NO_WATER, DamageEstimate, estimate_damage
+from floodline.core.damage.ladder import DamageLadder, damage_ladder
+from floodline.core.damage.uncertainty import DamageInterval, monte_carlo_damage
+from floodline.core.damage.usace import UsaceCurves, load_usace_curves
+from floodline.core.exposure.buildings import BuildingExposure, building_depths
+from floodline.core.exposure.population import PopulationExposure, population_affected
+from floodline.core.hydro.frequency import HistoricalContext, flood_frequency
+from floodline.core.hydro.inundate import inundate
+from floodline.core.hydro.rating import (
     build_rating_curves,
     discharge_by_area_ratio,
     reach_catchments,
 )
-from floodline.hydraulics.stage import stage_field_from_discharge
+from floodline.core.hydro.stage import stage_field_from_discharge
+from floodline.core.terrain.route import route_terrain
+from floodline.core.terrain.streams import link_raster
 from floodline.io.ingest import Watershed, ingest_dem
 from floodline.io.nsi import fetch_nsi_structures, structure_footprints
 from floodline.io.overture import fetch_overture_buildings
 from floodline.io.population import PopulationProduct, read_population_window
 from floodline.io.raster import Raster
 from floodline.io.sources import FetchContext, SourceError, find_dem_tiles, make_client
-from floodline.terrain.route import route_terrain
-from floodline.terrain.streams import link_raster
+from floodline.io.usace import ensure_usace_curves
 from floodline.validate.metrics import MarkMetrics, mark_metrics
 
 __all__ = ["Assessment", "NoDischargeError", "assess_watershed"]

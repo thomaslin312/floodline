@@ -6,8 +6,8 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from floodline.config import CurveFamily, DamageConfig
-from floodline.damage.curves import (
+from floodline.core.config import CurveFamily, DamageConfig
+from floodline.core.damage.curves import (
     BUNDLED_FAMILIES,
     CurveSet,
     DamageCurve,
@@ -258,7 +258,7 @@ def test_generic_class_joins_the_two_curve_vocabularies() -> None:
     and sampling across families compares a detailed library against a single curve
     while looking like it worked.
     """
-    from floodline.damage.curves import generic_class
+    from floodline.core.damage.curves import generic_class
 
     assert generic_class("RES1-2SWB") == "residential"
     assert generic_class("COM4") == "commercial"

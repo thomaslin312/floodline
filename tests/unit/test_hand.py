@@ -3,12 +3,12 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
+from floodline.core.terrain.fill import fill_depressions
+from floodline.core.terrain.flowacc import flow_accumulation
+from floodline.core.terrain.flowdir import flow_direction
+from floodline.core.terrain.hand import hand
+from floodline.core.terrain.streams import stream_mask
 from floodline.synthetic import SyntheticCatchment
-from floodline.terrain.fill import fill_depressions
-from floodline.terrain.flowacc import flow_accumulation
-from floodline.terrain.flowdir import flow_direction
-from floodline.terrain.hand import hand
-from floodline.terrain.streams import stream_mask
 
 
 def _chain(

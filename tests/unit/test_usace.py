@@ -6,9 +6,10 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from floodline.config import CurveFamily, DamageConfig
-from floodline.damage.curves import bundled_curves
-from floodline.damage.usace import ensure_usace_curves, load_usace_curves
+from floodline.core.config import CurveFamily, DamageConfig
+from floodline.core.damage.curves import bundled_curves
+from floodline.core.damage.usace import load_usace_curves
+from floodline.io.usace import ensure_usace_curves
 
 # Two real occupancy types, in the file's own units: feet and percent.
 FIXTURE = {

@@ -39,9 +39,9 @@ from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
 from hypothesis.extra import numpy as hnp
 
+from floodline.core.terrain.fill import fill_depressions
+from floodline.core.terrain.flowdir import FLOW_FLAT, flow_direction
 from floodline.synthetic import SyntheticCatchment, make_synthetic_catchment
-from floodline.terrain.fill import fill_depressions
-from floodline.terrain.flowdir import FLOW_FLAT, flow_direction
 
 pytestmark = pytest.mark.differential
 

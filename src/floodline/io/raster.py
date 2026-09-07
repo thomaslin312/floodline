@@ -24,7 +24,7 @@ from rasterio.shutil import copy as rio_copy
 from rasterio.transform import Affine, array_bounds
 from rasterio.windows import Window
 
-from floodline.config import Config, RasterConfig, validate_projected_crs
+from floodline.core.config import Config, RasterConfig, validate_projected_crs
 
 __all__ = [
     "CrsError",

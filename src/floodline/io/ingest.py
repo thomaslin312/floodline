@@ -48,7 +48,7 @@ from shapely.geometry import shape
 from shapely.geometry.base import BaseGeometry
 from shapely.ops import transform as shapely_transform
 
-from floodline.config import Config, TileVintage
+from floodline.core.config import Config, TileVintage
 from floodline.io.raster import CrsError, Raster
 
 __all__ = [

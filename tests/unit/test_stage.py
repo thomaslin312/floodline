@@ -3,8 +3,8 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from floodline.config import Config, HydraulicsConfig
-from floodline.hydraulics.stage import (
+from floodline.core.config import Config, HydraulicsConfig
+from floodline.core.hydro.stage import (
     GaugeStage,
     constant_stage,
     gauge_reading_to_datum,
@@ -12,8 +12,8 @@ from floodline.hydraulics.stage import (
     slope_stage,
     stage_field,
 )
+from floodline.core.terrain.route import route_terrain
 from floodline.synthetic import SyntheticCatchment
-from floodline.terrain.route import route_terrain
 
 DATUM = {"hydraulics": {"gauge_datum_offset_m": 10.0, "gauge_reading_unit": "m"}}
 
