@@ -2242,3 +2242,37 @@ half would run once the geography did.
 Recorded rather than attempted. Fetching six new sources across two new agencies is a
 project, not a step, and half-running it against substituted data would produce an
 out-of-sample number that was not out of sample.
+
+## 2026-09-07 — reproduction is a command, and the clean run is honest about failing
+
+Every published table is now a target in `floodline reproduce`, carrying the code that
+makes it and the value it last made in a committed `docs/RESULTS.json`. A moved number
+shows up in a diff.
+
+Three properties the tests pin, each of which is the difference between a useful report
+and a misleading one:
+
+* A broken upstream fails one target without hiding the state of the rest.
+* A selective run merges rather than replaces, so reproducing one target does not erase
+  the provenance of every target it did not touch.
+* **A target that failed does not overwrite the value it could not check.** Writing an
+  empty result would quietly delete the number the failure was supposed to verify,
+  which is the worst thing this tool could do.
+
+Targets recompute from source rather than reading a cached summary, because a
+reproduction that reads its own output proves nothing. That is a design choice with a
+cost, and the cost showed up immediately.
+
+**The clean-environment run did not complete.** A fresh `git clone` plus
+`uv sync --all-extras --all-groups` installs and passes the whole gate - 747 tests,
+ruff, mypy --strict - and the command runs, resolves its targets and reports correctly.
+But `uncertainty-budget` failed twice against the 3DEP products API and `fema-tracts`
+failed against OpenFEMA's rate limiter, both upstream availability rather than anything
+in this repository. The same targets reach real data from the warm local cache.
+
+That is worth stating plainly rather than papering over: **this project's results are
+reproducible in principle and were not reproduced from cold today.** A reproduction
+path that depends on six public APIs staying up is a weaker guarantee than one that
+ships its inputs, and this project deliberately ships no inputs. The honest description
+is that `reproduce` verifies the code path and the recorded values, and depends on
+upstream weather for the rest.
