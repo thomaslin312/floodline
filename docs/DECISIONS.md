@@ -2189,3 +2189,56 @@ making the model agree with a series that is itself a lower bound.
 
 The README now carries this before the architecture, because a reader deciding whether
 to trust a currency figure should meet its one real test before its module list.
+
+## 2026-09-07 — resolution helps the typical mark and hurts the tail
+
+Hunting Bayou on two real products, not one resampled twice: the 1 arc-second grid at
+30 m and the 1/3 arc-second grid at 10 m.
+
+| grid | RMSE | bias | median abs | wet | extent |
+|---|---|---|---|---|---|
+| 30 m | 0.45 m | -0.11 m | 0.48 m | 11/13 | 27.6 km2 |
+| 10 m | 0.74 m | -0.02 m | 0.36 m | 9/14 | 31.7 km2 |
+
+RMSE gets worse and the median gets better, which is not a contradiction: a finer grid
+resolves the channel, cells the coarse grid flooded now drain, two more marks fall dry,
+and a dry mark contributes a large residual. Bias falls almost to nothing. Resolution
+buys accuracy where the model is already roughly right and costs recall where it is
+not, so 30 m stays the default - the headline metric does not improve and the run is
+nine times the cells.
+
+1 m and 5 m are absent for a data reason worth recording. 3DEP publishes 39 tiles of
+1 m lidar over this basin and every range read against them failed on S3, twice, with
+extended GDAL retries. Even had they read, a 1 m grid over this unit is 196 million
+cells, and Texas publishes no HUC-14 or HUC-16 to make the unit smaller, so the
+experiment needs a different unit of analysis rather than more patience.
+
+## 2026-09-07 — Lismore is not runnable, and here is exactly what is missing
+
+The out-of-sample region was planned against whatever Lismore data was in `data/raw`.
+There is none. The tree holds Texas DEM tiles, USGS gauge records, the national
+high-water mark file, NFIP claims and a Sentinel-1 scene list that is Harvey's own
+(S1B, 30 August 2017), plus HUC-10 boundaries. Nothing Australian.
+
+What an out-of-sample run would need, precisely:
+
+* **ELVIS 1 m or 5 m DEM** over the Wilsons River catchment. Not fetchable by the
+  existing 3DEP path, which queries the TNM Products API.
+* **BoM gauge 058176**, Wilsons River at Lismore, with the February 2022 peak. The
+  gauge fetcher speaks NWIS; BoM publishes elsewhere and in a different format.
+* **The gauge-zero to AHD offset** for that station. `config.py` already carries a
+  field for it and says why: a BoM reading is relative to gauge zero, and converting
+  it needs the offset for the specific gauge.
+* **Overture building footprints** over Lismore - the one input that would work
+  unchanged, since Overture is global.
+* **ABS mesh blocks** for population, in place of the US census geography the exposure
+  path assumes.
+* **A Sentinel-1 RTC scene** over Lismore for the extent score. Planetary Computer
+  carries them; the scene list here is Harvey's.
+
+The AU curve path itself exists - `jrc_oceania` is a bundled family - so the damage
+half would run once the geography did.
+
+Recorded rather than attempted. Fetching six new sources across two new agencies is a
+project, not a step, and half-running it against substituted data would produce an
+out-of-sample number that was not out of sample.

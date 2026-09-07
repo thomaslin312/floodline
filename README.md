@@ -28,6 +28,39 @@ repository. The national picture is roughly 2 m, with a tail.
 The full brief is in [docs/SPEC.md](docs/SPEC.md); the working rules are in
 [CONTRIBUTING.md](CONTRIBUTING.md).
 
+## Three findings
+
+Read these before the architecture. Each is measured, each is reproducible with
+`floodline reproduce`, and two of the three are negative.
+
+**1. Stage is not the dominant error, and the uncertainty budget had said the opposite
+for months.** Sampling each Monte Carlo term alone, as a share of the point estimate:
+stage 100%, replacement cost 84%, curve and family together 16%, DEM 8%. The code had
+claimed curve family was the largest term; that was reasoning, never measured, and
+wrong. Separately, replacing the modelled stage with observed peak levels interpolated
+between every gauge in a basin took median RMSE from 2.08 m to 1.52 m and improved all
+eleven basins that completed. But marks sitting *on* a gauged reach, where stage error
+is essentially nil, still carry 1.58 m against 1.96 m for marks far from any gauge.
+**Stage was worth half a metre; the remaining metre and a half is HAND and the DEM, and
+no further work on stage will reach past it.**
+
+**2. Channel bathymetry does not rescue Manning's n.** The hypothesis was that lidar
+images the water surface, so channel capacity is under-counted, so the roughness sweep
+ran to a value smoother than glass because n was standing in for a missing channel. The
+channel was restored - `d = 0.381·A^0.246`, fitted from 36,308 USGS field measurements
+at 116 Texas Gulf Coast gauges - and the held-out optimum stayed pinned at the bottom of
+the grid, exactly as before. The criterion was set in advance and not met, so
+bathymetry is off by default and n stays at 0.035. The code stays too, tested and one
+flag away, because deleting a negative result is how it gets rediscovered.
+
+**3. The damage model fails its first real test.** Modelled damage per census tract has
+essentially no rank correlation with either FEMA series for Harvey - +0.025 against NFIP
+claims paid, −0.055 against Individual Assistance assessed damage - while the two FEMA
+series, which sample almost complementary populations, agree with each other at +0.818.
+The signal is real and the model does not reproduce it. **This model can say roughly how
+deep the water was over a basin; it cannot say which neighbourhoods lost the most
+money.** See [Dollars against FEMA's own record](#dollars-against-femas-own-record).
+
 ## What this method cannot do
 
 Stated first, on purpose. HAND is a screening model, not a hydraulic one.
@@ -131,6 +164,34 @@ everything flooded deeper. Resolution only helps once the stage conversion is ri
 extent, against 16 of 16 before. The old model "hit" every mark by flooding 98% of
 the watershed. This is exactly why hit rate alone is a useless metric and why CSI
 and bias are reported alongside it.
+
+### Does a finer grid help?
+
+Hunting Bayou (HUC-12 120401040701, 106 km², 14 quality-1/2 riverine marks), scored on
+two grids from two different real products rather than one resampled to both.
+
+| grid | source | cells | RMSE | bias | median abs error | marks wet | extent |
+|---|---|---|---|---|---|---|---|
+| 30 m | 1 arc-second | 218 k | **0.45 m** | −0.11 m | 0.48 m | 11 / 13 | 27.6 km² |
+| 10 m | 1/3 arc-second | 1.96 M | 0.74 m | −0.02 m | **0.36 m** | 9 / 14 | 31.7 km² |
+
+**Finer is better on the typical mark and worse on the tail.** The 10 m grid has a
+lower median absolute error and almost no bias, and a higher RMSE, which is what
+happens when a resolution resolves the channel: cells the coarse grid flooded now drain,
+two more marks fall dry, and each dry mark contributes a large residual. Nine of
+fourteen wet at 10 m against eleven of thirteen at 30 m is the same effect counted
+directly.
+
+So the honest answer is that resolution buys accuracy where the model is already
+roughly right and costs recall where it is not, and 30 m remains the default because
+the headline metric does not improve and the run is nine times the cells.
+
+**1 m and 5 m are missing, and the reason is data rather than method.** 3DEP publishes
+1 m lidar over this basin - 39 tiles - but every attempt to range-read them failed on
+S3 after two runs with extended retries. A 1 m grid over the finest hydrologic unit
+Texas publishes would also be 196 million cells, and no HUC-14 or HUC-16 exists there
+to make it smaller, so this experiment cannot be completed at 1 m on a whole basin
+without a different unit of analysis.
 
 ## Status
 
