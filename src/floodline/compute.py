@@ -630,6 +630,82 @@ def gauge_for_watershed(
     return {**best, **peak}
 
 
+def snap_gauges(
+    unit: Watershed,
+    chain: Any,
+    dem: Any,
+    context: FetchContext,
+    *,
+    snap_cells: int = 40,
+) -> list[dict[str, Any]]:
+    """Place every gauge inside the watershed on the stream network.
+
+    The plural of `gauge_for_watershed`, which keeps only the station draining the
+    largest area. A basin usually has several, each of which measured a water level,
+    and throwing all but one away is how stage came to be modelled twice over -
+    transferred by area ratio and then converted through a synthetic rating curve -
+    when parts of it were observed directly.
+
+    Sites that fall outside the polygon, or that will not snap to a channel within
+    `snap_cells`, are dropped. The rest come back with their snapped cell, their
+    contributing area measured on our own grid, and whatever the site record says
+    about datum, which the caller needs to decide if a stage is usable.
+    """
+    west, south, east, north = wgs84_bounds(unit, context.config)
+    sites = find_gauges(context, (west, south, east, north))
+    if not sites:
+        return []
+
+    forward = Transformer.from_crs(CRS.from_epsg(4326), context.config.crs.analysis, always_xy=True)
+    rows, cols = chain.streams.shape
+    placed: list[dict[str, Any]] = []
+
+    for site in sites:
+        try:
+            lon, lat = float(site["dec_long_va"]), float(site["dec_lat_va"])
+        except (KeyError, ValueError):
+            continue
+        x, y = forward.transform(lon, lat)
+        if not unit.geometry.contains(Point(x, y)):
+            continue
+        col, row = ~dem.transform * (x, y)
+        row, col = int(row), int(col)
+
+        snapped = None
+        for radius in range(snap_cells + 1):
+            found = [
+                (dr * dr + dc * dc, row + dr, col + dc)
+                for dr in range(-radius, radius + 1)
+                for dc in range(-radius, radius + 1)
+                if abs(dr) == radius or abs(dc) == radius
+                if 0 <= row + dr < rows
+                and 0 <= col + dc < cols
+                and chain.streams[row + dr, col + dc]
+            ]
+            if found:
+                snapped = min(found)
+                break
+        if snapped is None:
+            continue
+        _, grow, gcol = snapped
+        area_cells = float(chain.accumulation.accumulation[grow, gcol])
+        placed.append(
+            {
+                "site": site["site_no"],
+                "name": (site.get("station_nm") or "").strip(),
+                "lon": lon,
+                "lat": lat,
+                "row": grow,
+                "col": gcol,
+                "area_cells": area_cells,
+                "area_km2": round(area_cells * dem.cell_area_m2 / 1e6, 1),
+                "alt_va": (site.get("alt_va") or "").strip(),
+                "alt_datum_cd": (site.get("alt_datum_cd") or "").strip(),
+            }
+        )
+    return placed
+
+
 def marks_within(unit: Watershed, config: Config, path: Path) -> list[dict[str, Any]]:
     """Return the cached national high-water marks that fall inside a watershed.
 
