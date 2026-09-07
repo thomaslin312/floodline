@@ -1084,3 +1084,65 @@ def report(
 
 if __name__ == "__main__":  # pragma: no cover
     app()
+
+
+@app.command()
+def reproduce(
+    target: Annotated[
+        list[str] | None,
+        typer.Option(help="Target name; repeat for several. Omit to run all."),
+    ] = None,
+    write: Annotated[
+        bool, typer.Option(help="Record what was produced in docs/RESULTS.json.")
+    ] = False,
+) -> None:
+    """Regenerate published results and report any that have moved.
+
+    The repository's rule is that no result stands in it that was not actually
+    produced. That is only enforceable if the results can be produced again, so every
+    published table is a named target with the code that makes it and the value it
+    last made.
+
+    Targets recompute from source data - real elevation, real gauges, real claims -
+    rather than reading a cached summary, because a reproduction that reads its own
+    output proves nothing. A full run is therefore slow and needs network. Nothing is
+    written unless `--write` is passed, so a run can be inspected before it becomes
+    the new record.
+    """
+    from floodline.reproduce import TARGETS, format_report, write_results
+    from floodline.reproduce import reproduce as run_targets
+
+    known = {t.name for t in TARGETS}
+    wanted = list(target) if target else None
+    if wanted:
+        unknown = sorted(set(wanted) - known)
+        if unknown:
+            typer.echo(f"unknown target(s): {', '.join(unknown)}", err=True)
+            typer.echo(f"known: {', '.join(sorted(known))}", err=True)
+            raise typer.Exit(2)
+
+    for entry in TARGETS:
+        if wanted is None or entry.name in wanted:
+            typer.echo(f"  {entry.name:<20} {entry.describes}")
+    typer.echo("")
+
+    results = run_targets(wanted)
+    typer.echo(format_report(results))
+    if write:
+        write_results(results)
+        typer.echo("\nwrote docs/RESULTS.json")
+
+    failed = [r for r in results if r.error]
+    moved = [r for r in results if r.drift]
+    if failed:
+        typer.echo(f"\n{len(failed)} target(s) could not run.", err=True)
+        raise typer.Exit(1)
+    if moved:
+        typer.echo(
+            f"\n{len(moved)} target(s) moved. Either the code changed a published "
+            "number or the upstream data did; both are worth reading before "
+            "accepting them with --write.",
+            err=True,
+        )
+        raise typer.Exit(1)
+    typer.echo("\nevery target reproduced.")

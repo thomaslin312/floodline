@@ -1,0 +1,27 @@
+{
+ "generated": "2026-09-07T00:00:00Z",
+ "targets": {
+  "fema-tracts": {
+   "huc": "1204010403",
+   "ia_damage_total_usd": 2200938025.0,
+   "ia_registrations_total": 890082,
+   "median_ratio_model_over_ia": 186.8,
+   "median_ratio_model_over_nfip": 38.9,
+   "nfip_claims_total": 48858,
+   "nfip_paid_total_usd": 5353055107.0,
+   "rho_model_vs_ia": -0.055,
+   "rho_model_vs_nfip": 0.025,
+   "rho_nfip_vs_ia": 0.818,
+   "tracts_modelled": 250,
+   "tracts_with_both_series": 107
+  },
+  "uncertainty-budget": {
+   "all_width_pct": 122.9,
+   "cost_width_pct": 84.1,
+   "curve_width_pct": 15.5,
+   "dem_width_pct": 7.5,
+   "point_usd": 7949846905.0,
+   "stage_width_pct": 100.4
+  }
+ }
+}
