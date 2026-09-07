@@ -39,6 +39,10 @@ USER floodline
 
 EXPOSE 8000
 
+# `asgi:app` is the merged application: the map at `/`, the service under `/api`, and
+# the probes at the root. It used to be the service alone, which is how the image came
+# to serve a 404 on the one page anyone opens.
+#
 # One worker. Each request holds a whole watershed grid resident, so parallelism is
 # bounded by memory rather than by cores, and the in-process concurrency limiter is
 # what actually caps it. More workers would multiply the memory ceiling without

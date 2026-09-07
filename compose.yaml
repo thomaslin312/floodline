@@ -38,6 +38,10 @@ services:
       FLOODLINE_HAND_CACHE_DIR: /var/lib/floodline/hand
       FLOODLINE_CACHE_DIR: /var/lib/floodline/cache
       FLOODLINE_DATA_RAW: /var/lib/floodline/raw
+      # The map's finished bundles. Without this they default to a path relative to
+      # the working directory, which is inside the image rather than on the volume -
+      # every restart would recompute what a visitor had already waited for.
+      FLOODLINE_BUNDLE_CACHE_DIR: /var/lib/floodline/bundles
     ports:
       - "8000:8000"
     volumes:

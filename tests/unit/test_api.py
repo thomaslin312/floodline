@@ -148,7 +148,7 @@ def test_the_schema_rejects_what_cannot_be_a_scenario(
     client: TestClient, payload: dict[str, object], why: str
 ) -> None:
     """Rejected before any work: no DEM fetch, no upstream call, no stack trace."""
-    response = client.post("/scenario", json=payload)
+    response = client.post("/api/scenario", json=payload)
     assert response.status_code == 422, f"{why}: {response.status_code}"
     assert response.json()["detail"], why
 
@@ -164,3 +164,20 @@ def test_a_valid_request_passes_the_schema(client: TestClient) -> None:
     request = ScenarioRequest(huc="1204010403", discharge_cms=1433.0)
     assert request.resolution_m == 30.0
     assert ScenarioRequest(huc="12", discharge_cms=0.001).huc == "12"
+
+
+def test_the_deployed_app_serves_the_map_and_the_service_together() -> None:
+    """The container runs one application, and this is the shape of it.
+
+    The image used to run the service factory alone, so `GET /` answered 404 in the
+    container while working under `floodline serve` - the deployed artefact was missing
+    the only page anyone opens, and nothing failed to say so. This asserts the merge:
+    the map at the root, the service beside it, and the probes where an orchestrator
+    looks for them.
+    """
+    from floodline.api.asgi import app
+
+    paths = {getattr(route, "path", "") for route in app.routes}
+    assert {"/", "/methodology"} <= paths, "the map must be served by the deployed app"
+    assert {"/health", "/ready"} <= paths, "probes stay at the root, above the routing"
+    assert "/api/scenario" in paths, "the service must be reachable under /api"

@@ -1,10 +1,18 @@
 """The service: three endpoints, no queue.
 
+These routes are registered on the one application the container serves, alongside the
+map interface, by `attach_api`. They were a separate ASGI app until the deployment made
+the cost of that obvious: the image ran the API factory, so the map was simply absent
+from the container, and `GET /` answered 404 on the only thing anyone visits. One app,
+one port, one entrypoint. `/health` and `/ready` stay at the root, where an orchestrator
+probes without knowing anything about the routing below them; everything else lives
+under `/api`.
+
 There is no job queue here, and that is a measurement rather than a preference.
 Terrain routing runs in 0.1 to 0.6 seconds across the sixteen validation basins and a
 scenario in 5 to 52 milliseconds. Against those numbers a queue would add a broker, a
 worker process, a job table, a polling protocol and two more failure modes, in order to
-defer work that finishes before a poll interval elapses. `POST /scenario` answers
+defer work that finishes before a poll interval elapses. `POST /api/scenario` answers
 synchronously.
 
 The one genuinely slow step is fetching elevation, which is tens of seconds on a cold
@@ -47,52 +55,55 @@ from floodline.settings import settings
 from floodline.storage import LocalTerrainStore
 from floodline.storage.base import TerrainStore
 
-__all__ = ["create_api"]
+__all__ = ["API_DESCRIPTION", "API_SUMMARY", "attach_api", "create_api", "version_string"]
 
 logger = logging.getLogger("floodline.api")
 
+API_SUMMARY = "Screening-grade flood extent for any US watershed."
+API_DESCRIPTION = (
+    "Extent and depth are validated against surveyed high-water marks: median "
+    "RMSE 2.16 m across 16 basins. The damage half of the model is not "
+    "validated - it has no rank correlation with FEMA's own record by census "
+    "tract - and this API deliberately does not serve currency figures."
+)
 
-def _version() -> str:
+
+def version_string() -> str:
+    """Report the installed version, or a marker that this is an uninstalled tree."""
     try:
         return version("floodline")
     except PackageNotFoundError:  # running from a source tree without an install
         return "0.0.0+source"
 
 
-def create_api(
+def attach_api(
+    app: FastAPI,
     *,
     config: Config | None = None,
     store: TerrainStore | None = None,
+    heavy: ConcurrencyLimiter | None = None,
+    rate: RateLimiter | None = None,
 ) -> FastAPI:
-    """Build the application.
+    """Register the service routes on an existing application.
 
-    Both dependencies are injectable so the tests can supply a store on a temporary
+    Every dependency is injectable so the tests can supply a store on a temporary
     directory and a config that points nowhere, which is what makes the cache-ordering
     test possible without a network.
+
+    The limiters are injectable for a different reason: when these routes join the map
+    interface, both halves guard the same machine, and two independent budgets on one
+    process would let a caller spend each of them in turn. The caller passes its own.
     """
     base = config or Config()
     terrain_store = store or LocalTerrainStore()
-    heavy = ConcurrencyLimiter(limit=settings().max_concurrent)
-    rate = RateLimiter(per_minute=settings().rate_per_minute, burst=settings().rate_burst)
-
-    app = FastAPI(
-        title="floodline",
-        version=_version(),
-        docs_url="/api/docs",
-        summary="Screening-grade flood extent for any US watershed.",
-        description=(
-            "Extent and depth are validated against surveyed high-water marks: median "
-            "RMSE 2.16 m across 16 basins. The damage half of the model is not "
-            "validated - it has no rank correlation with FEMA's own record by census "
-            "tract - and this API deliberately does not serve currency figures."
-        ),
-    )
+    in_flight = heavy or ConcurrencyLimiter(limit=settings().max_concurrent)
+    budget = rate or RateLimiter(per_minute=settings().rate_per_minute, burst=settings().rate_burst)
 
     def guard(request: Request) -> None:
         """Refuse over-rate before doing any work, and say when to come back."""
         who = request.client.host if request.client else "unknown"
         try:
-            rate.check(who)
+            budget.check(who)
         except TooManyRequestsError as exc:
             raise HTTPException(
                 429, str(exc), headers={"Retry-After": str(max(1, int(exc.retry_after_s)))}
@@ -101,7 +112,7 @@ def create_api(
     @app.get("/health", response_model=HealthResponse, tags=["operations"])
     def health() -> HealthResponse:
         """Liveness. Answers from memory, touches nothing, cannot fail on a dependency."""
-        return HealthResponse(version=_version())
+        return HealthResponse(version=version_string())
 
     @app.get("/ready", response_model=ReadyResponse, tags=["operations"])
     def ready() -> JSONResponse:
@@ -136,7 +147,7 @@ def create_api(
         return JSONResponse(body.model_dump(), status_code=200 if everything else 503)
 
     @app.post(
-        "/scenario",
+        "/api/scenario",
         response_model=ScenarioResponse,
         tags=["model"],
         responses={
@@ -170,7 +181,7 @@ def create_api(
             ) from exc
 
         try:
-            with heavy:
+            with in_flight:
                 outcome = serve_scenario(
                     unit,
                     local,
@@ -194,6 +205,27 @@ def create_api(
         return _response(body, unit.name, outcome)
 
     return app
+
+
+def create_api(
+    *,
+    config: Config | None = None,
+    store: TerrainStore | None = None,
+) -> FastAPI:
+    """Build the service on its own, without the map interface.
+
+    What the container serves is the merged application from `floodline.service`; this
+    is the same routes with nothing else attached, which is what the API tests exercise
+    so a failure there names the service rather than the page.
+    """
+    app = FastAPI(
+        title="floodline",
+        version=version_string(),
+        docs_url="/api/docs",
+        summary=API_SUMMARY,
+        description=API_DESCRIPTION,
+    )
+    return attach_api(app, config=config, store=store)
 
 
 def _response(body: ScenarioRequest, name: str, outcome: ScenarioOutcome) -> ScenarioResponse:

@@ -29,6 +29,7 @@ from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse, JSONResponse
 from rasterio.errors import RasterioIOError
 
+from floodline.api.app import API_DESCRIPTION, API_SUMMARY, attach_api, version_string
 from floodline.assess import NoDischargeError, assess_watershed, buildings_geoparquet
 from floodline.compute import (
     WatershedNotFoundError,
@@ -221,9 +222,20 @@ def create_app(
     cache = cache_dir or settings().bundle_cache_dir
     cache.mkdir(parents=True, exist_ok=True)
     marks = marks_path or (base.paths.raw / "validation" / "high_water_marks_national.json")
-    app = FastAPI(title="floodline", docs_url="/api/docs")
+    app = FastAPI(
+        title="floodline",
+        version=version_string(),
+        docs_url="/api/docs",
+        summary=API_SUMMARY,
+        description=API_DESCRIPTION,
+    )
     heavy = ConcurrencyLimiter(limit=max_concurrent)
     rate = RateLimiter(per_minute=rate_per_minute, burst=rate_burst)
+
+    # `/health` and `/ready` at the root, `POST /api/scenario` beside the routes the
+    # page already calls. Both halves share these limiters rather than keeping one
+    # budget each, because they are guarding the same process.
+    attach_api(app, config=base, heavy=heavy, rate=rate)
 
     def client() -> httpx.Client:
         return make_client(base.sources)
