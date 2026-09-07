@@ -2144,3 +2144,48 @@ gauges. Depth varies over metres where elevation varies over hundreds.
 
 Five basins did not complete, on DNS failures against the boundary service rather than
 anything in the model. The eleven that did are unanimous.
+
+## 2026-09-07 — the damage model fails its first real test
+
+The extent half has been validated against surveyed marks since the beginning. The
+damage half never had a test at all: the NFIP comparison in the README was explicitly
+a one-sided floor, and a floor cannot be failed. Two public FEMA series for Harvey,
+aggregated to census tract against modelled damage on the same tracts, make it a test.
+
+| relationship | Spearman rho |
+|---|---|
+| NFIP paid vs FEMA IA assessed damage | **+0.818** |
+| modelled damage vs NFIP paid | **+0.025** |
+| modelled damage vs IA assessed damage | **-0.055** |
+
+The first row is what turns this from an artefact into a finding. NFIP requires a
+property to be insured and its owner to file; Individual Assistance requires uninsured
+loss and a registration. They sample almost complementary populations with different
+mechanisms and different biases, and they still rank 107 tracts the same way. There is
+a real spatial signal in Harvey's damage, and this test can see it. The model cannot.
+
+Checked before believing it. The join is exact rather than spatial - NSI publishes a
+census block and both FEMA series publish tract - and both sides are genuine 11-digit
+GEOIDs. Restricting to tracts the watershed covers well, at every threshold from 10 to
+200 modelled wet buildings, leaves rho between 0.10 and 0.16. Modelled wet-building
+count against claim count is 0.12. There is no filter under which this becomes a
+correlation.
+
+The ratios - 39x NFIP paid, 187x IA assessed at the median tract - are the least
+interesting part. Both series are lower bounds and a level offset was expected. The
+missing rank correlation is the result: the model can say roughly how deep the water
+was over a basin and cannot say which neighbourhoods lost the most money.
+
+The likeliest mechanism is scale, not pricing, and it ties to the stage decomposition
+in the entry above. The water-surface residual has a floor around 1.5 m from HAND and
+the DEM. Typical finished-floor heights are a third of that. So an error that looks
+tolerable on a depth map is decisive at the scale of an individual building's floor,
+and getting extent approximately right while getting per-building wet/dry wrong
+produces exactly what is observed: a plausible map and an uninformative ledger.
+
+Nothing was calibrated to the claims and nothing should be. Fitting costs to match
+FEMA would erase the only independent test the damage half has, and would do it by
+making the model agree with a series that is itself a lower bound.
+
+The README now carries this before the architecture, because a reader deciding whether
+to trust a currency figure should meet its one real test before its module list.

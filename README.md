@@ -258,6 +258,54 @@ LandScan would be the better product and is licensed CC BY, but every download p
 behind a registration form. The rule here is that a source needing a login is recorded
 as unavailable rather than worked around, so it is named and left out.
 
+## Dollars against FEMA's own record
+
+The extent half is validated against surveyed marks. The damage half had never been
+validated against anything, and the NFIP comparison in this file was always framed as
+a one-sided floor rather than a test. It is now a test, and the model fails it.
+
+Two independent FEMA series for Hurricane Harvey, both public and keyless, aggregated
+to census tract and compared against modelled damage aggregated to the same tracts via
+the National Structure Inventory's own census block field:
+
+- **NFIP claims** — 48,858 claims, USD 5.35 bn paid, across 1,238 tracts in Harris
+  County. Requires a property to be insured, flooded, and its owner to file.
+- **FEMA Individual Assistance** — 890,082 registrations, USD 2.20 bn of assessed
+  flood damage across 1,686 tracts. Requires uninsured loss and a registration.
+
+![Modelled damage against two FEMA series, by census tract](docs/figures/damage-vs-fema.png)
+
+| relationship | Spearman rho | tracts |
+|---|---|---|
+| NFIP paid vs IA assessed damage | **+0.818** | 107 |
+| modelled damage vs NFIP paid | **+0.025** | 107 |
+| modelled damage vs IA assessed damage | **−0.055** | 107 |
+
+**The two FEMA series agree strongly with each other and neither agrees with the
+model.** That is what makes this a result rather than an artefact of biased reference
+data. NFIP and IA measure almost complementary populations — the insured and the
+uninsured — with different mechanisms and different biases, and they still rank tracts
+the same way, so there is a real spatial signal in Harvey's damage and the test has the
+power to detect it. The model does not reproduce it. Restricting to tracts the
+watershed covers well, at any threshold from 10 to 200 modelled wet buildings, does not
+move rho above 0.16.
+
+Modelled damage is also 39× NFIP paid and 187× IA assessed at the median tract, but
+the ratios are the least interesting part: both series are lower bounds by
+construction, and a level offset is expected. **The missing rank correlation is the
+finding.** The model can say roughly how deep the water was across a basin, and cannot
+say which neighbourhoods lost the most money.
+
+The likeliest reason is scale rather than pricing. The water-surface residual is about
+1.5 m, and typical finished-floor heights are a third of that, so an error that reads
+as acceptable on a depth map is decisive at the scale of a building's floor. Getting
+extent approximately right and per-building wet/dry wrong produces exactly this: a
+plausible map and an uninformative ledger.
+
+Nothing here was fed back into the model. This is validation, not calibration, and
+tuning costs to match claims would destroy the only independent test the damage half
+has.
+
 ## Damage: what is and is not trustworthy
 
 The pipeline is real and tested. The constants are not all real.
