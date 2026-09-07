@@ -17,6 +17,7 @@ import numpy as np
 import numpy.typing as npt
 
 from floodline.config import Config, TerrainConfig
+from floodline.terrain.bathymetry import BurnedChannel, burn_channel
 from floodline.terrain.fill import fill_depressions
 from floodline.terrain.flats import resolve_flats
 from floodline.terrain.flowacc import FlowAccumulation, flow_accumulation
@@ -40,6 +41,9 @@ class TerrainChain:
     cells_raised_by_fill: int
     flat_cells_before: int
     flat_cells_after: int
+
+    channel_burn: BurnedChannel | None = None
+    """What bathymetry removed, or None when it was off. `filled` is already burned."""
 
     @property
     def drains_completely(self) -> bool:
@@ -76,6 +80,7 @@ def route_terrain(
     TerrainChain
     """
     terrain = config.terrain if isinstance(config, Config) else (config or TerrainConfig())
+    bathymetry = config.bathymetry if isinstance(config, Config) else None
 
     filled, raised = fill_depressions(dem, config=terrain, nodata=nodata, return_raised=True)
     directions = flow_direction(filled, config=terrain, nodata=nodata, cellsize=cellsize)
@@ -93,6 +98,19 @@ def route_terrain(
         directions,
         config=terrain,
     )
+    # Burn the channel before HAND, not after. HAND is measured to the drainage cell,
+    # so lowering the bed afterwards would leave every height referenced to a bed that
+    # no longer exists. Off unless configured, in which case this is a no-op.
+    burned = burn_channel(
+        filled,
+        accumulated.accumulation,
+        channels,
+        cell_area_m2=abs(cellsize[0] * cellsize[1]),
+        cellsize_m=float(min(abs(cellsize[0]), abs(cellsize[1]))),
+        config=bathymetry,
+    )
+    filled = burned.dem
+
     heights = hand(filled, directions, channels, nodata=nodata)
 
     return TerrainChain(
@@ -104,4 +122,5 @@ def route_terrain(
         cells_raised_by_fill=raised,
         flat_cells_before=flat_before,
         flat_cells_after=flat_after,
+        channel_burn=burned if burned.n_cells else None,
     )

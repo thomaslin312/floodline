@@ -2021,3 +2021,35 @@ a warning.
 
 Found by watching the demo rather than by a test, which is the second time this session
 that the only way to see a wrong answer was to look at one.
+
+## 2026-09-07 — the channel a lidar DEM cannot see
+
+Airborne lidar does not penetrate water. A 3DEP DEM records the water surface on the
+day of the flight, so every channel in it is a lid and the cross-section underneath is
+missing. HAND is measured from that lid and the synthetic rating curve is built on it,
+so in-channel conveyance is under-counted and flow that belonged between the banks is
+pushed overbank. That is the standing hypothesis for why the Manning's n sweep wanted
+a roughness smoother than glass: n was compensating for a channel that was not there.
+
+`terrain/bathymetry.py` burns an estimated bed back in, between stream extraction and
+HAND, which is the only window where drainage area is known and HAND has not yet been
+measured. It does not re-run the fill, because a burn that deepens monotonically
+downstream cannot create a depression along a channel that already drained.
+
+The coefficients are fitted, not quoted. `d = 0.381 * A^0.246` comes from the 90th
+percentile of mean depth - channel area over channel width - across **36,308 USGS
+field measurements at 116 Texas Gulf Coast gauges** spanning 13 to 117,000 km2,
+regressed on published drainage area, R2 = 0.63. The 90th percentile stands in for
+bankfull: measurements are taken across the flow range, the median is a low-flow
+channel and the maximum is an overbank one. The exponent landing a little under the
+0.3-0.4 that published downstream hydraulic geometry reports is a check that the fit
+is not nonsense, not a claim to reproduce any particular published curve.
+
+Two honest weaknesses. The width relation, `w = 4.774 * A^0.321`, rests on 20 gauges
+rather than 116, because the measurement API rate-limited the second pass; it only
+decides how many cells wide the burn runs, which at 30 m affects the largest rivers
+alone, so it was not worth another day of polling. And the whole relation is regional:
+right across many reaches, wrong on any particular one, which is the same bargain the
+rest of this model makes.
+
+Off by default until the sweep says otherwise.

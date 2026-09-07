@@ -199,6 +199,62 @@ class RasterConfig(Frozen):
     )
 
 
+class BathymetryConfig(Frozen):
+    """Estimated channel bed below the surface a lidar DEM can see.
+
+    Airborne lidar does not penetrate water: it images the water surface on the day of
+    the flight, so a DEM's channel is a lid over the real one and the cross-section is
+    missing whatever was flowing at the time. The rating curve therefore under-counts
+    in-channel conveyance and pushes flow overbank that should have stayed in it.
+
+    Burning an estimated bed back in is the standard correction. Depth comes from
+    downstream hydraulic geometry, `d = coefficient * A^exponent` with A the upstream
+    drainage area in km2, which is a regional relation and not a survey: it is right on
+    average over many reaches and wrong on any particular one.
+    """
+
+    enabled: bool = Field(
+        default=False,
+        description="Whether to burn an estimated channel bed before computing HAND. "
+        "Off by default: see docs/DECISIONS.md for the sweep that decided it.",
+    )
+    depth_coefficient_m: Positive = Field(
+        default=0.381,
+        description="Coefficient of the bankfull depth relation d = c * A^e, A in km2. "
+        "Fitted, not quoted: the 90th percentile of mean depth (channel area over "
+        "channel width) over 36,308 USGS field measurements at 116 Texas Gulf Coast "
+        "gauges spanning 13 to 117,000 km2, regressed on published drainage area. "
+        "R2 = 0.63. The 90th percentile stands in for bankfull because measurements "
+        "are made across the flow range and the high ones are the near-bank ones; the "
+        "median would be a low-flow channel and the maximum an overbank one.",
+    )
+    depth_exponent: Positive = Field(
+        default=0.246,
+        description="Exponent of the same relation. Published downstream hydraulic "
+        "geometry puts depth exponents near 0.3 to 0.4 on drainage area; this sits a "
+        "little below that range, which is what flat wide Gulf Coast streams should "
+        "look like, and is a check that the fit is not nonsense rather than a claim "
+        "that it reproduces any particular published curve.",
+    )
+    width_coefficient_m: Positive = Field(
+        default=4.774,
+        description="Coefficient of the bankfull width relation w = c * A^e, A in km2. "
+        "Same method as the depth relation but a much smaller sample - 20 gauges, R2 = "
+        "0.66 - because the measurement API rate-limited the second pass and it was "
+        "not worth another day of polling for a term that only decides how many cells "
+        "wide the burn runs. At 30 m that is the largest rivers alone.",
+    )
+    width_exponent: Positive = Field(
+        default=0.321,
+        description="Exponent of the width relation, from the same 20-gauge fit.",
+    )
+    max_depth_m: Positive = Field(
+        default=8.0,
+        description="Ceiling on the burned depth. A power law has no upper bound and a "
+        "very large drainage area would otherwise cut a canyon into the DEM.",
+    )
+
+
 class TerrainConfig(Frozen):
     """Terrain conditioning and flow routing."""
 
@@ -673,6 +729,7 @@ class Config(Frozen):
     crs: CrsConfig = Field(default_factory=CrsConfig)
     raster: RasterConfig = Field(default_factory=RasterConfig)
     terrain: TerrainConfig = Field(default_factory=TerrainConfig)
+    bathymetry: BathymetryConfig = Field(default_factory=BathymetryConfig)
     hydraulics: HydraulicsConfig = Field(default_factory=HydraulicsConfig)
     exposure: ExposureConfig = Field(default_factory=ExposureConfig)
     damage: DamageConfig = Field(default_factory=DamageConfig)
