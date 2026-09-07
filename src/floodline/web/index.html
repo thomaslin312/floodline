@@ -100,7 +100,11 @@
   .brand b{font-family:var(--display);font-weight:700;font-size:15.5px;letter-spacing:-.02em}
   .brand span{font-family:var(--mono);font-size:9px;letter-spacing:.15em;text-transform:uppercase;
     color:var(--ink-3);margin-left:auto}
-  .brand #helpbtn{margin-left:9px}
+  .brand #helpbtn{margin-left:7px}
+  #methodlink{margin-left:auto;font-family:var(--mono);font-size:9px;letter-spacing:.12em;
+    text-transform:uppercase;color:var(--ink-3);text-decoration:none;padding:3px 8px;
+    border-radius:var(--pill);border:1px solid var(--hair);white-space:nowrap}
+  #methodlink:hover{color:var(--accent);border-color:var(--accent-3);background:var(--accent-2)}
   .searchrow{display:flex;gap:8px}
   input[type=text]{flex:1;min-width:0;padding:9px 12px;border:1px solid var(--hair);
     border-radius:var(--r-sm);background:var(--solid);color:var(--ink);font-family:var(--body);
@@ -307,7 +311,8 @@
       <path d="M1 14c1.75 0 1.75-1.7 3.5-1.7S6.25 14 8 14s1.75-1.7 3.5-1.7S13.25 14 15 14" opacity=".45"/>
     </svg>
     <b>floodline</b><span>any US watershed</span>
-    <button id="helpbtn" title="How this works" aria-label="How this works">?</button>
+    <a id="methodlink" href="/methodology" title="Data sources, processing and uncertainty">Method</a>
+    <button id="helpbtn" title="Replay the introduction" aria-label="Replay the introduction">?</button>
   </div>
   <div class="searchrow">
     <input type="text" id="q" placeholder="ZIP, address, or HUC code" autocomplete="off">
@@ -355,7 +360,7 @@
 
     <div id="exposure" hidden>
       <div class="eyebrow" style="margin-top:14px">Exposure and damage</div>
-      <button class="wide quiet" id="expo-run">Value the buildings this reaches</button>
+      <button class="wide quiet" id="expo-run" hidden>Try valuing the buildings again</button>
       <div class="qnote" id="expo-note"></div>
       <dl class="grid" id="expo-stats" hidden></dl>
     </div>
@@ -535,6 +540,7 @@ function clearModel(){
   $("model").hidden = true; $("hwmkey").hidden = true;
   expo = null;
   $("exposure").hidden = true; $("expo-stats").hidden = true; $("expo-note").innerHTML = "";
+  $("expo-run").hidden = true;
   $("dmgkey").hidden = true;
   whenReady(syncDamage);
   $("fitnote").hidden = true; $("fit").hidden = true;
@@ -620,6 +626,11 @@ async function run(){
     const s=bundle.seconds||{};
     status(bundle.cached ? "Loaded from cache."
       : `Done in ${((performance.now()-t0)/1000).toFixed(1)}s · ${bundle.tiles_read} elevation tiles · terrain ${(s.terrain||0).toFixed(1)}s`);
+    /* Exposure and damage are part of the answer, not an upsell, so they run here
+       rather than waiting behind a second button. It is the slower half - the
+       structure inventory dominates - which is why depth is drawn first and this
+       fills in behind it, and why an ungauged basin skips it entirely. */
+    if(bundle.gauged) runExposure();
   }catch(e){ clearInterval(tick); progress(1); status("Compute failed: "+e.message,"bad"); }
   finally{ busy=false; $("run").disabled=false; }
 }
@@ -1064,7 +1075,6 @@ function ladderAt(mult){
 function showExposure(){
   const st = expo.stats || {};
   const u = expo.currency || "USD";
-  const q = st.quantiles ? `${Math.round(st.quantiles[0]*100)}–${Math.round(st.quantiles[1]*100)}%` : "";
   $("expo-stats").hidden = false;
   const mult = +$("qs").value/100;
   const at = ladderAt(mult);
@@ -1080,33 +1090,20 @@ function showExposure(){
     ["Loss ratio", ratio != null ? (ratio*100).toFixed(1)+"%" : "—", ""],
   ].map(([k,v,c])=>`<div><dt>${k}</dt><dd class="${c}">${v}</dd></div>`).join("");
 
-  const shifted = at && Math.abs(mult - 1) > 0.005;
-  let note = shifted ? `At <b>${mult.toFixed(2)}×</b> the observed discharge. ` : "";
-  note += `${q} interval ${money(st.damage_low,u)} to ${money(st.damage_high,u)}`
-    + ` on <b>${st.curve_family || "?"}</b> curves`
-    + `, over ${money(st.exposed_value,u)} exposed.`;
-  if(now.contents){
-    note += ` Structure ${money(now.structure,u)} plus contents ${money(now.contents,u)}.`;
-  }
-  if(shifted){
-    note += `<br><span style="color:var(--ink-3)">The interval is computed at the`
-      + ` observed discharge only. A Monte Carlo at every rung of the ladder costs a`
-      + ` quarter of an hour and says the same thing stretched.</span>`;
-  }
-  if(st.day_population != null){
-    note += `<br>${Math.round(st.night_population).toLocaleString()} residents overnight,`
-      + ` ${Math.round(st.day_population).toLocaleString()} present by day, in the structures flooded.`;
-  }
+  /* The prose that used to sit here restated the grid above it in sentences, and the
+     caveats it carried now live on the methodology page and in the introduction. What
+     is left is only what is conditional and cannot be inferred from the numbers: a
+     warning when the currency figures are not quotable, and whatever the run itself
+     reported as a gap. Silence is the normal case. */
+  let note = "";
   if(!st.curves_verified){
-    note += `<br><span style="color:var(--warn)">Curve constants are unverified here — `
-      + `counts and ratios stand, the currency figures do not.</span>`;
-  }
-  if(st.inventory === "nsi"){
-    note += `<br><span style="color:var(--ink-3)">Values are NSI's modelled replacement `
-      + `costs, not appraisals: sound across tens of thousands of buildings, not for any one.</span>`;
+    // Only when the point estimate itself rests on approximated constants. Bundled
+    // families widening the interval is the normal case and is not a warning.
+    note += `<span style="color:var(--warn)">Curve constants are unverified here. `
+      + `Counts and ratios stand, the currency figures do not.</span>`;
   }
   for(const g of (expo.gaps||[])){
-    note += `<br><span style="color:var(--warn)">${g}</span>`;
+    note += `${note ? "<br>" : ""}<span style="color:var(--warn)">${g}</span>`;
   }
   $("expo-note").innerHTML = note;
   paintDamage();
@@ -1127,25 +1124,23 @@ function showExposure(){
    skipped, because a control that vanished would leave the reader wondering whether
    the feature exists at all. */
 function gateExposure(){
-  const btn = $("expo-run"), note = $("expo-note");
-  const ok = !!bundle.gauged;
-  btn.disabled = !ok;
-  btn.setAttribute("aria-disabled", String(!ok));
-  btn.title = ok ? "" : "Needs an observed discharge; this basin has no USGS gauge.";
-  if(ok){ note.innerHTML = ""; return; }
+  const note = $("expo-note");
+  $("expo-run").hidden = true;
+  if(bundle.gauged){ note.innerHTML = ""; return true; }
   note.innerHTML = `<b style="color:var(--warn)">No gauge in this basin.</b> The depth `
     + `above comes from an assumed severe-flood scenario, not a measurement, so there `
     + `is no observed discharge to price. Exposure and damage are withheld rather than `
-    + `computed from an assumption — a building count and a dollar total read as `
+    + `computed from an assumption: a building count and a dollar total read as `
     + `measurements whatever the caption says. The depth map, the marks and the `
     + `discharge slider all still work.`;
+  return false;
 }
 
 let expoBusy = false;
 async function runExposure(){
   if(!unit || expoBusy) return;
   expoBusy = true;
-  const btn = $("expo-run"); btn.disabled = true;
+  const btn = $("expo-run"); btn.disabled = true; btn.hidden = true;
   const t0 = performance.now();
   const tick = setInterval(()=>{
     $("expo-note").innerHTML = `<span class="spin"></span>Reading the structure inventory `
@@ -1165,11 +1160,12 @@ async function runExposure(){
   }catch(e){
     clearInterval(tick);
     $("expo-note").innerHTML = `<span style="color:var(--bad)">Exposure failed: ${e.message}</span>`;
+    // Offer the retry only here. It is the one state a reader can do something about,
+    // and a button that is always present invites a second run of work already done.
+    btn.hidden = !(bundle && bundle.gauged);
   }finally{
     expoBusy = false;
-    // Not `btn.disabled = false`: on a basin with no gauge the button was disabled
-    // before the run and must stay that way. Re-derive it from the bundle instead.
-    if(bundle && bundle.gauged) btn.disabled = false;
+    btn.disabled = false;
   }
 }
 

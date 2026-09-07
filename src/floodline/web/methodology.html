@@ -1,0 +1,404 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How floodline works</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=Public+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+  /* Same tokens as the map, so this reads as the same product rather than a
+     documentation site bolted onto one. */
+  :root{
+    color-scheme:light;
+    --bg:#e9edee; --solid:#ffffff; --panel:#f5f8f8;
+    --hair:#0a1c2214; --line:#ccd6d8;
+    --ink:#07161b; --ink-2:#3a4f57; --ink-3:#788d94;
+    --accent:#0a7d8c; --on-accent:#ffffff; --accent-2:#0a7d8c14; --accent-3:#0a7d8c33;
+    --good:#3c8659; --warn:#a3722a; --bad:#b04d38;
+    --water:#4a8fc0;
+    --display:"Archivo",system-ui,sans-serif; --body:"Public Sans",system-ui,sans-serif;
+    --mono:"IBM Plex Mono",ui-monospace,Menlo,monospace;
+    --r:13px; --r-sm:9px; --pill:999px;
+  }
+  @media (prefers-color-scheme:dark){:root{
+    color-scheme:dark;
+    --bg:#061216; --solid:#0f242c; --panel:#0c1f26;
+    --hair:#ffffff18; --line:#1e3239;
+    --ink:#e7f1f3; --ink-2:#a3b9bf; --ink-3:#6f858c;
+    --accent:#3ecad8; --on-accent:#042127; --accent-2:#3ecad81c; --accent-3:#3ecad840;
+    --good:#5cba7e; --warn:#ddaa5c; --bad:#e3866a;
+    --water:#3d7ca8;
+  }}
+
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--body);
+    font-size:15px;line-height:1.62;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:820px;margin:0 auto;padding:34px 22px 90px}
+
+  header{display:flex;align-items:center;justify-content:space-between;gap:14px;
+    padding-bottom:20px;border-bottom:1px solid var(--line);margin-bottom:32px}
+  .brand{display:flex;align-items:center;gap:9px}
+  .mark{width:17px;height:17px;fill:none;stroke:var(--accent);stroke-width:1.6;
+    stroke-linecap:round;stroke-linejoin:round;flex:0 0 auto}
+  .brand b{font-family:var(--display);font-weight:700;font-size:16px;letter-spacing:-.02em}
+  .back{font-family:var(--mono);font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;
+    color:var(--accent);text-decoration:none;padding:6px 12px;border-radius:var(--pill);
+    background:var(--accent-2);box-shadow:inset 0 0 0 1px var(--accent-3);white-space:nowrap}
+  .back:hover{filter:brightness(1.06)}
+
+  h1{font-family:var(--display);font-weight:700;font-size:clamp(27px,5.5vw,38px);
+    letter-spacing:-.035em;line-height:1.08;margin:0;text-wrap:balance}
+  .lede{font-size:16.5px;color:var(--ink-2);max-width:60ch;margin:12px 0 0}
+
+  h2{font-family:var(--display);font-weight:600;font-size:21px;letter-spacing:-.02em;
+    margin:46px 0 4px;text-wrap:balance;scroll-margin-top:20px}
+  h3{font-family:var(--display);font-weight:600;font-size:14.5px;letter-spacing:-.005em;
+    margin:22px 0 2px}
+  p{margin:9px 0;max-width:68ch}
+  a{color:var(--accent)}
+  code{font-family:var(--mono);font-size:.85em;background:var(--accent-2);
+    color:var(--accent);padding:1.5px 5px;border-radius:5px}
+  hr{height:1px;background:var(--line);border:0;margin:40px 0 0}
+
+  /* contents */
+  nav.toc{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);
+    padding:14px 16px;margin-top:26px}
+  nav.toc div{font-family:var(--mono);font-size:9.5px;letter-spacing:.14em;
+    text-transform:uppercase;color:var(--ink-3);margin-bottom:8px}
+  nav.toc ol{margin:0;padding-left:19px;columns:2;column-gap:26px}
+  nav.toc li{font-size:13.5px;padding:2px 0;break-inside:avoid}
+  @media (max-width:520px){ nav.toc ol{columns:1} }
+
+  /* limits, stated before anything else */
+  ul.limits{list-style:none;margin:14px 0 0;padding:0;max-width:70ch}
+  ul.limits li{padding:10px 0 10px 16px;border-left:2px solid var(--line);
+    margin-bottom:7px;color:var(--ink-2);font-size:14px}
+  ul.limits li:first-child{border-left-color:var(--warn);color:var(--ink)}
+  ul.limits b{color:var(--ink);font-weight:600}
+
+  /* numbered stages */
+  .stage{display:grid;grid-template-columns:30px 1fr;gap:0 15px;padding:17px 0;
+    border-top:1px solid var(--hair)}
+  .stage:first-of-type{border-top:1px solid var(--line)}
+  .dot{font-family:var(--mono);font-size:10.5px;color:var(--accent);padding-top:4px}
+  .stage h3{margin:0 0 2px}
+  .stage p{margin:3px 0 0;font-size:14px;color:var(--ink-2)}
+  .mods{display:flex;flex-wrap:wrap;gap:4px;margin-top:9px}
+  .mod{font-family:var(--mono);font-size:10px;color:var(--ink-3);padding:2.5px 6px;
+    border-radius:5px;background:var(--solid);box-shadow:inset 0 0 0 1px var(--line)}
+
+  /* tables */
+  .tw{overflow-x:auto;margin-top:15px;border:1px solid var(--line);border-radius:var(--r)}
+  table{border-collapse:collapse;width:100%;font-size:13px;min-width:500px;background:var(--panel)}
+  th{font-family:var(--mono);font-size:9px;letter-spacing:.13em;text-transform:uppercase;
+    color:var(--ink-3);text-align:left;font-weight:400;padding:10px 13px;
+    border-bottom:1px solid var(--line);white-space:nowrap}
+  td{padding:9px 13px;border-bottom:1px solid var(--hair);color:var(--ink-2);vertical-align:top}
+  tr:last-child td{border-bottom:0}
+  td:first-child{color:var(--ink);font-weight:500}
+  td.m,th.m{font-family:var(--mono);font-size:11.5px;font-variant-numeric:tabular-nums;
+    white-space:nowrap}
+  .yes{color:var(--good);font-weight:600}
+  .no{color:var(--warn);font-weight:600}
+
+  .note{background:#a3722a14;border-left:2px solid var(--warn);
+    border-radius:0 var(--r-sm) var(--r-sm) 0;padding:12px 15px;margin-top:15px;
+    font-size:13.5px;color:var(--ink-2);max-width:70ch}
+  @media (prefers-color-scheme:dark){ .note{background:#ddaa5c1c} }
+  .note b{color:var(--ink)}
+
+  figure{margin:20px 0 0}
+  .fig{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);
+    padding:12px 10px 6px;overflow-x:auto}
+  .fig svg{display:block;width:100%;min-width:480px;height:auto}
+  figcaption{font-size:12.5px;color:var(--ink-3);margin-top:8px;max-width:68ch}
+
+  footer{margin-top:52px;padding-top:18px;border-top:1px solid var(--line);
+    font-size:12px;color:var(--ink-3)}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <div class="brand">
+    <svg class="mark" viewBox="0 0 16 16" aria-hidden="true">
+      <path d="M3.6 6.8 8 1.8l4.4 5"/>
+      <path d="M1 10.6c1.75 0 1.75-1.7 3.5-1.7s1.75 1.7 3.5 1.7 1.75-1.7 3.5-1.7 1.75 1.7 3.5 1.7"/>
+      <path d="M1 14c1.75 0 1.75-1.7 3.5-1.7S6.25 14 8 14s1.75-1.7 3.5-1.7S13.25 14 15 14" opacity=".45"/>
+    </svg>
+    <b>floodline</b>
+  </div>
+  <a class="back" href="/">Back to the map</a>
+</header>
+
+<h1>How floodline works</h1>
+<p class="lede">Where the data comes from, what happens to it, and how far the answer
+can be trusted. The limits come first, which is the order the model itself reports in.</p>
+
+<nav class="toc">
+  <div>Contents</div>
+  <ol>
+    <li><a href="#limits">What it cannot tell you</a></li>
+    <li><a href="#idea">The core idea</a></li>
+    <li><a href="#pipeline">The pipeline</a></li>
+    <li><a href="#sources">Where the data comes from</a></li>
+    <li><a href="#monte-carlo">The Monte Carlo</a></li>
+    <li><a href="#accuracy">How accurate it is</a></li>
+  </ol>
+</nav>
+
+<h2 id="limits">What it cannot tell you</h2>
+<ul class="limits">
+  <li><b>It is a screening model, not a hydraulic one.</b> It assumes the water surface
+  parallels the drainage line. There is no backwater, no levee, no culvert, no
+  reservoir release, and no flow routed across a catchment divide.</li>
+  <li><b>It does not model storm surge.</b> Coastal flooding is a different mechanism
+  and none of it is here, which is why coastal survey marks are excluded from every
+  accuracy figure rather than counted as misses.</li>
+  <li><b>Structure values are modelled, not appraised.</b> The National Structure
+  Inventory derives replacement cost from occupancy type, floor area and regional
+  construction costs. Sound summed over tens of thousands of buildings; not sound for
+  any one address.</li>
+  <li><b>The uncertainty band is a lower bound.</b> It covers four named errors. It does
+  not cover storey counts, floor area, class assignment, inventory completeness, the
+  contents-curve library, or the structural assumption above.</li>
+  <li><b>An ungauged basin gets no damage figure at all.</b> The depth map still runs,
+  from an assumed severe-flood scenario that is labelled as such, but a building count
+  and a currency total read as measurements however they are captioned, so they are
+  withheld rather than produced from an assumption.</li>
+</ul>
+
+<h2 id="idea">The core idea</h2>
+<p>Everything rests on one surface: <b>HAND</b>, the height of every cell above the
+drainage line it flows to. Once each cell knows how far it sits above its own reach,
+a flood becomes a comparison rather than a simulation. A cell is wet when the water
+level in its reach exceeds its HAND, and the depth is the difference.</p>
+
+<figure>
+  <div class="fig">
+    <svg viewBox="0 0 700 300" xmlns="http://www.w3.org/2000/svg" role="img"
+         aria-label="Valley cross-section showing the drainage line, a water surface set by the reach stage, HAND measured at a dry hillside point, and a building whose finished floor sits above ground level.">
+      <path d="M0,120 L70,142 L140,166 L205,194 L280,226 L328,244 L338,244 L390,222
+               L465,194 L535,166 L600,142 L700,130 L700,272 L0,272 Z"
+            fill="var(--hair)" stroke="none"/>
+      <path d="M0,120 L70,142 L140,166 L205,194 L280,226 L328,244 L338,244 L390,222
+               L465,194 L535,166 L600,142 L700,130"
+            fill="none" stroke="var(--ink-3)" stroke-width="1.6"/>
+      <path d="M205,194 L280,226 L328,244 L338,244 L390,222 L465,194 Z"
+            fill="var(--water)" opacity="0.5"/>
+      <line x1="205" y1="194" x2="465" y2="194" stroke="var(--water)" stroke-width="2"/>
+      <line x1="140" y1="244" x2="575" y2="244" stroke="var(--ink-3)" stroke-width="1"
+            stroke-dasharray="3 4" opacity="0.8"/>
+      <circle cx="333" cy="244" r="3.2" fill="var(--accent)"/>
+      <line x1="333" y1="197" x2="333" y2="242" stroke="var(--accent)" stroke-width="1.4"/>
+      <circle cx="535" cy="166" r="3.2" fill="var(--ink)"/>
+      <line x1="535" y1="169" x2="535" y2="242" stroke="var(--ink)" stroke-width="1.4"/>
+      <rect x="266" y="176" width="37" height="50" fill="var(--solid)"
+            stroke="var(--ink)" stroke-width="1.4"/>
+      <line x1="266" y1="215" x2="303" y2="215" stroke="var(--ink)" stroke-width="1"
+            stroke-dasharray="2 3"/>
+      <g stroke="var(--ink-3)" stroke-width="1" fill="none" opacity="0.6">
+        <path d="M150,48 L150,215 L264,215"/>
+        <path d="M390,48 L390,192"/>
+        <path d="M600,48 L600,184 L537,184"/>
+      </g>
+      <g font-family="IBM Plex Mono, ui-monospace, monospace" font-size="10"
+         fill="var(--ink-2)">
+        <text x="150" y="28" text-anchor="middle" fill="var(--ink)">finished floor</text>
+        <text x="150" y="41" text-anchor="middle">ground + foundation height</text>
+        <text x="390" y="28" text-anchor="middle" fill="var(--ink)">water surface</text>
+        <text x="390" y="41" text-anchor="middle">stage, from the reach's rating curve</text>
+        <text x="600" y="28" text-anchor="middle" fill="var(--ink)">HAND</text>
+        <text x="600" y="41" text-anchor="middle">height above nearest drainage</text>
+        <text x="341" y="190">stage</text>
+        <text x="146" y="259">drainage datum</text>
+      </g>
+      <g font-family="IBM Plex Mono, ui-monospace, monospace" font-size="10"
+         fill="var(--ink-2)">
+        <rect x="140" y="280" width="13" height="9" fill="var(--water)" opacity="0.5"/>
+        <text x="160" y="288">wet: stage exceeds HAND</text>
+        <rect x="370" y="280" width="13" height="9" fill="var(--hair)"
+              stroke="var(--ink-3)" stroke-width="1"/>
+        <text x="390" y="288">dry: HAND exceeds stage</text>
+      </g>
+    </svg>
+  </div>
+  <figcaption>Depth at a cell is <code>stage[reach] − HAND</code>. Damage is driven by
+  depth above the <em>finished floor</em>, which subtracts the structure's foundation
+  height again, so a building can stand in water and still take no structural damage.
+  Getting that distinction wrong once charged 205,754 dry buildings.</figcaption>
+</figure>
+
+<h2 id="pipeline">The pipeline</h2>
+<p>Numbered because it is a real dependency chain. Flow direction is meaningless on an
+unconditioned surface, HAND is meaningless without a stream network, and damage is
+meaningless without a stage.</p>
+
+<div class="stage">
+  <div class="dot">01</div>
+  <div>
+    <h3>Ingest</h3>
+    <p>The watershed boundary comes from the USGS Watershed Boundary Dataset at any
+    hydrologic unit level. Elevation comes from 3DEP cloud-optimised GeoTIFFs, read
+    over <code>/vsicurl/</code> so only the tiles covering that unit are fetched.
+    Everything is reprojected to a local CRS in true metres, chosen per watershed. A
+    geographic CRS raises rather than silently distorting every area in the run.</p>
+    <div class="mods"><span class="mod">io/sources.py</span><span class="mod">io/ingest.py</span><span class="mod">io/raster.py</span></div>
+  </div>
+</div>
+
+<div class="stage">
+  <div class="dot">02</div>
+  <div>
+    <h3>Condition the terrain, then route it</h3>
+    <p>Depressions are filled by priority flood with an epsilon gradient, then flats are
+    resolved explicitly so every cell has somewhere to go. Without that step a quarter
+    of one synthetic catchment drained into a flat and never reached an outlet. Then D8
+    flow direction, flow accumulation in Kahn topological order, stream extraction on an
+    accumulation threshold, and finally HAND.</p>
+    <div class="mods"><span class="mod">terrain/fill.py</span><span class="mod">flats.py</span><span class="mod">flowdir.py</span><span class="mod">flowacc.py</span><span class="mod">streams.py</span><span class="mod">hand.py</span></div>
+  </div>
+</div>
+
+<div class="stage">
+  <div class="dot">03</div>
+  <div>
+    <h3>Turn a discharge into a water level</h3>
+    <p>Discharge comes from a USGS gauge inside the unit. Where surveyed marks exist and
+    agree on a year, the model uses that flood's peak rather than the largest on record,
+    so the residual measures model error and not the gap between two events. That flow is
+    transferred to every reach by drainage-area ratio, and each reach converts it to a
+    stage through its own synthetic rating curve, built from channel geometry by
+    Manning's equation. A Log-Pearson III fit places the flow in the gauge's own record.</p>
+    <div class="mods"><span class="mod">hydraulics/rating.py</span><span class="mod">stage.py</span><span class="mod">inundate.py</span><span class="mod">frequency.py</span></div>
+  </div>
+</div>
+
+<div class="stage">
+  <div class="dot">04</div>
+  <div>
+    <h3>Find what the water reaches</h3>
+    <p>Structures come from the USACE National Structure Inventory: replacement value,
+    contents value, occupancy type, storey count, foundation height and day and night
+    population, per building. Footprints are clipped to the watershed polygon rather
+    than its bounding box, a correction that removed 243,586 buildings from one
+    denominator. A population raster gives people in flooded cells independently of the
+    structure count, and the two disagree by about a third, which is itself the finding.</p>
+    <div class="mods"><span class="mod">exposure/buildings.py</span><span class="mod">population.py</span><span class="mod">io/nsi.py</span><span class="mod">io/overture.py</span></div>
+  </div>
+</div>
+
+<div class="stage">
+  <div class="dot">05</div>
+  <div>
+    <h3>Price the damage</h3>
+    <p>Depth-damage curves come from the USACE <code>go-consequences</code> library: 42
+    HAZUS occupancy types, separate structure and contents functions, each with a
+    published per-depth spread. They join to the inventory on occupancy code, which is
+    the reason to prefer that pair over any other. Damage is a fraction of replacement
+    value read at depth above finished floor, then summed. The whole thing is recomputed
+    at every rung of the discharge ladder, so moving the slider prices a different flood
+    rather than redrawing the same one.</p>
+    <div class="mods"><span class="mod">damage/curves.py</span><span class="mod">usace.py</span><span class="mod">estimate.py</span><span class="mod">ladder.py</span></div>
+  </div>
+</div>
+
+<h2 id="sources">Where the data comes from</h2>
+<p>Every source was probed rather than assumed, and the ones that do not work shaped the
+design as much as the ones that do.</p>
+
+<div class="tw">
+  <table>
+    <thead><tr><th>Source</th><th>What it gives</th><th>Status</th></tr></thead>
+    <tbody>
+      <tr><td>USGS 3DEP</td><td>Lidar elevation, read by range request</td><td class="yes">Used</td></tr>
+      <tr><td>USGS NWIS</td><td>Discharge and the annual peak record</td><td class="yes">Used</td></tr>
+      <tr><td>USGS STN</td><td>38,230 surveyed high-water marks, 258 events</td><td class="yes">Used</td></tr>
+      <tr><td>USGS WBD</td><td>Watershed boundaries at every level</td><td class="yes">Used</td></tr>
+      <tr><td>USACE NSI</td><td>Per-structure values and attributes</td><td class="yes">Used</td></tr>
+      <tr><td>USACE go-consequences</td><td>Depth-damage curves, MIT licensed</td><td class="yes">Used</td></tr>
+      <tr><td>Overture Maps</td><td>Building footprints, anonymous S3</td><td class="yes">Used</td></tr>
+      <tr><td>WorldPop</td><td>100 m population; ignores range requests, so fetched once</td><td class="yes">Used</td></tr>
+      <tr><td>LandScan</td><td>Better population product, behind a registration form</td><td class="no">Gated</td></tr>
+      <tr><td>Census ACS</td><td>Block-group population, needs an API key</td><td class="no">Keyed</td></tr>
+      <tr><td>Sentinel-1</td><td>Observed flood extent, needs credentials</td><td class="no">Gated</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<div class="note">Nothing is bundled with the code. Every input is fetched on demand and
+cached locally, which is why no result here can be one that was not actually produced.
+A source that needs a login is recorded as unavailable rather than worked around, and
+the missing Sentinel-1 extent is why no critical success index is reported anywhere.</div>
+
+<h2 id="monte-carlo">The Monte Carlo</h2>
+<p>A single damage total is a point estimate dressed as a fact. Every run therefore
+draws the whole calculation a thousand times, perturbing four inputs together, and
+reports the 5th to 95th percentile of the result.</p>
+
+<h3>What is perturbed, and how</h3>
+<div class="tw">
+  <table>
+    <thead><tr><th>Term</th><th>How it is drawn</th><th class="m">Share of the band</th></tr></thead>
+    <tbody>
+      <tr><td>Gauge stage</td><td>Normal, one shift per draw, applied to every reach</td><td class="m">100%</td></tr>
+      <tr><td>Replacement cost</td><td>Log-normal, one scalar per draw, so a draw cannot make rebuilding free</td><td class="m">84%</td></tr>
+      <tr><td>Curve choice</td><td>A published family per draw, plus each curve's own spread</td><td class="m">16%</td></tr>
+      <tr><td>DEM error</td><td>Normal, per building and independent, since lidar error decorrelates over tens of metres</td><td class="m">8%</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<p>The share column is each term sampled alone, as a percentage of the point estimate,
+against 123% for all four together. <b>Stage and cost dominate because they change how
+many buildings are wet; the curve only changes what each wet building costs, and DEM
+error largely averages out across a basin.</b> This corrects a claim carried in the code
+for months, that curve family was the largest term. It was reasoning, and it was wrong.</p>
+
+<p>Curve choice is worth a note of its own. Published depth-damage families disagree
+with each other by roughly 2.3× at one metre above the floor, which is far more than
+any of them disagrees with itself. Loading a single detailed library used to switch
+that term off entirely, so the band came out tighter for having better curves. It now
+leads the sampling at 60% and the others share the rest.</p>
+
+<div class="note">The interval is reported at the observed discharge. Running a full
+Monte Carlo at every rung of the discharge ladder takes about a quarter of an hour and
+returns the same shape stretched, so the ladder carries point estimates only.</div>
+
+<h2 id="accuracy">How accurate it is</h2>
+<p>Scored against USGS surveyed high-water marks in every watershed in the country that
+holds at least eight good ones: <b>16 basins, 1,287 marks, median RMSE 2.16 m</b>,
+ranging from 0.97 m to 11.85 m. Three of the sixteen come in under 1.5 m.</p>
+
+<p>Bias has no consistent sign, with a median of +0.11 m spanning −2.08 to +8.34, so
+there is no global offset to correct. The model is roughly unbiased across the country
+and unreliable in any one place, which is the honest shape of a screening method.</p>
+
+<div class="note"><b>It leaves 53% of surveyed riverine marks dry.</b> Those are places
+water demonstrably reached. And marks are a one-sided sample, because nobody surveys a
+mark where the water never came, so this bounds the misses and says nothing at all
+about ground the model floods that stayed dry.</div>
+
+<p>Against the alternatives it is still clearly worth doing. On the reference watershed
+a constant stage taken from the gauge gives an RMSE of 7.86 m and floods 98% of the
+basin; a constant fitted to the marks gives 4.13 m; per-reach rating curves give 1.17 m
+while flooding 24%. A model that wets everything cannot be wrong about a wet mark,
+which is why extent is always reported next to error.</p>
+
+<p>Damage has no independent ground truth at all. National flood insurance claims are
+compared as an explicit one-sided floor, never as a validation: a claim requires a
+property to be insured, flooded, and its owner to file, so the model sitting several
+times above the claim count is the expected direction rather than a result.</p>
+
+<footer>
+  Every figure on this page was produced by the model on the current revision. Nothing
+  here is quoted from literature. Method, code and limits: MIT licensed.
+</footer>
+
+</div>
+</body>
+</html>

@@ -1982,3 +1982,42 @@ reason about it physically would be reasoning about the wrong thing.
 
 Rejected: fitting n per basin automatically. It would make every basin's headline
 number a fit to its own ground truth, which is not a validation any more.
+
+## 2026-09-07 — exposure runs by default, and the panel stops narrating the grid
+
+Three changes to what the map says and when.
+
+**Exposure and damage now run as part of computing a watershed**, rather than waiting
+behind a second button. They are part of the answer, not an upsell. Depth still draws
+first and the valuation fills in behind it, because the structure inventory is the
+slow half; an ungauged basin skips it entirely, which the existing gate already
+handled. The button survives only as a retry, shown when the automatic run failed,
+because that is the one state a reader can act on.
+
+**The prose under the exposure stats is gone.** It restated the grid immediately above
+it in sentences: the interval, the residents, the structure and contents split. What
+is left is only what is conditional and cannot be read off the numbers - a warning
+when the currency figures are not quotable, and whatever the run reported as a gap.
+The caveats it carried about NSI replacement costs now live in the introduction and on
+the methodology page, which is where a reader who wants them will look.
+
+**`/methodology` is a page now**, linked from the header. Data origins, the seven
+pipeline stages, the Monte Carlo and its measured term budget, and the accuracy
+distribution across sixteen basins. A page rather than a modal because it is long,
+because it is worth linking to, and because someone reading it is not mid-task.
+
+## 2026-09-07 — a verified point estimate stopped being reported as unverified
+
+Sampling across curve families broke `curves_verified`, which was
+`all(s.verified for s in sets.values())`. Once a loaded library is sampled against the
+bundled approximations that conjunction is always False, so a USACE-priced total came
+back flagged "counts and ratios stand, the currency figures do not" - when the currency
+figure was the one thing that did stand.
+
+Two facts had been sharing one flag. `curves_verified` now describes the library behind
+the point estimate, and `all_families_verified` describes the spread around it. The map
+warns on the first only; approximations widening an interval is the normal case and not
+a warning.
+
+Found by watching the demo rather than by a test, which is the second time this session
+that the only way to see a wrong answer was to look at one.
