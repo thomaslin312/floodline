@@ -1146,3 +1146,58 @@ def reproduce(
         )
         raise typer.Exit(1)
     typer.echo("\nevery target reproduced.")
+
+
+@app.command()
+def warm(
+    huc: Annotated[list[str] | None, typer.Option(help="HUC code; repeat for several.")] = None,
+    resolution: Annotated[float, typer.Option(help="Cell size in metres.")] = 30.0,
+    cache: Annotated[Path, typer.Option(help="Where computed watersheds are kept.")] = Path(
+        "outputs/cache"
+    ),
+    exposure: Annotated[bool, typer.Option(help="Also value the buildings.")] = True,
+    config: ConfigOption = None,
+) -> None:
+    """Compute watersheds ahead of time, so a demo does not wait on anyone else.
+
+    Every request served cold depends on USGS, USACE and FEMA being up at that moment.
+    Over the course of building this, all three have been down or rate-limiting at
+    different times, and a first impression should not be a timeout someone else
+    caused. Run this before showing the map.
+
+    Drives the service's own routes rather than rebuilding their payloads. An earlier
+    version assembled the cache files itself and got the format wrong within an hour;
+    going through the routes means a warmed entry is byte-identical to a served one
+    because it *is* a served one.
+    """
+    from fastapi.testclient import TestClient
+
+    from floodline.service import create_app
+
+    resolved = load_config(config)
+    cache.mkdir(parents=True, exist_ok=True)
+    codes = list(huc) if huc else ["1204010403"]
+
+    # No rate limit against ourselves: this is the operator, not a visitor.
+    application = create_app(config=resolved, cache_dir=cache, rate_per_minute=10_000)
+    with TestClient(application) as http:
+        for code in codes:
+            typer.echo(f"{code}: computing at {resolution:g} m...")
+            response = http.get(f"/api/compute/{code}", params={"resolution": resolution})
+            if response.status_code != 200:
+                typer.echo(
+                    f"  depth failed: {response.status_code} {response.text[:120]}", err=True
+                )
+                continue
+            typer.echo(f"  depth cached ({response.json().get('name', code)})")
+            if not exposure:
+                continue
+            response = http.get(f"/api/exposure/{code}", params={"resolution": resolution})
+            if response.status_code != 200:
+                typer.echo(
+                    f"  exposure failed: {response.status_code} {response.text[:120]}", err=True
+                )
+                continue
+            stats = response.json().get("stats", {})
+            typer.echo(f"  exposure cached ({stats.get('structures', 0):,} structures)")
+    typer.echo("\nwarmed. The server will serve these from disk.")
