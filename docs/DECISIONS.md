@@ -1948,3 +1948,37 @@ wet building costs. Both descriptions now carry the measured table.
 
 Turning it on widened the reported band by 1.7% of the point estimate. Worth having
 because the term should not be silently zero, not because it moved the answer.
+
+## 2026-09-07 — Manning's n calibrates to a value that is not a roughness
+
+Swept n over 0.008 to 0.110 across the 16 scored watersheds, eight choosing and eight
+held out. Held-out median RMSE at the chosen n = 0.020 is 2.04 m against 2.25 m at the
+0.035 default — a real 9% improvement on basins that had no say in the choice.
+
+The default stays at 0.035 anyway, for two reasons.
+
+The aggregate curve does not turn over inside the physical range. It keeps improving
+below 0.020 to a plateau around 0.008, which is smoother than glass-lined pipe. A
+parameter whose optimum runs past physical plausibility is not being measured; it is
+absorbing someone else's error.
+
+And the per-basin optima scatter across the entire range — seven basins want 0.020 or
+less, three want 0.110, and the split lines up exactly with which way each basin is
+already wrong. The ones that over-flood (95% of their marks wet) want low n, which
+raises conveyance and lowers stage; the ones that under-flood (4-14% wet) want high n.
+n is standing in for a per-basin discharge or geometry error, and one global value
+cannot satisfy both groups.
+
+The likely real cause is channel capacity: a lidar DEM images the water surface, not
+the bed, so the synthetic cross-section under-counts the channel and pushes flow
+overbank that should have stayed in it. Lowering n compensates by raising conveyance.
+That is a geometry fix — bankfull depth from hydraulic geometry, say — and it belongs
+in the rating curve rather than in a roughness constant.
+
+Rejected: shipping n = 0.020 for the 9% gain. It is defensible as a number and
+indefensible as a label. The field would then read "Manning's roughness" and hold a
+bias correction fitted to sixteen mostly-Midwestern basins, and the next person to
+reason about it physically would be reasoning about the wrong thing.
+
+Rejected: fitting n per basin automatically. It would make every basin's headline
+number a fit to its own ground truth, which is not a validation any more.

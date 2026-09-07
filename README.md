@@ -95,11 +95,17 @@ selection.
 
 ### The reference basin, and why it flatters the method
 
-Whiteoak Bayou–Buffalo Bayou (HUC 1204010403, 491 km² at 10 m, 16 quality-1/2 marks,
-Harvey peak 1,433 m³/s at gauge 08074500) is where the method was developed, and at
-1.38 m it sits in the best decile of the table above. It is kept here because the
-comparison against the alternatives is the useful part, not because the number is
-representative — it is not.
+Whiteoak Bayou–Buffalo Bayou (HUC 1204010403, 491 km² at 10 m, Harvey peak
+1,433 m³/s at gauge 08074500) is where the method was developed, and it sits in the
+best decile of the table above. It is kept here because the comparison against the
+alternatives is the useful part, not because the number is representative — it is not.
+
+The three rows below are the original like-for-like experiment on all 16 quality-1/2
+marks in the unit. One of those 16 is labelled Coastal by USGS and is no longer scored
+anywhere else in this repository; the table keeps it so the three methods are still
+compared on identical ground truth. **On the current 15-mark scored set the per-reach
+model gives RMSE 1.17 m, bias +0.40 m, 47% within 1 m, extent 117.4 km² (24%)** — the
+excluded mark was an outlier, so the current figure is better than the one below.
 
 | | mean residual | RMSE | within 1 m | modelled extent |
 |---|---|---|---|---|
@@ -280,11 +286,29 @@ approximations, marked `verified=False`, kept only for cross-family comparison. 
 without `--inventory nsi` and you get those, with a warning.
 
 **What the Monte Carlo covers:** gauge stage error, DEM vertical error, curve-family
-choice, and replacement cost. **What it does not:** storey counts, floor area,
-finished-floor freeboard, building class assignment, footprint-database completeness,
-and HAND's structural assumption. The interval is a lower bound on the real
-uncertainty — an honest account of four known errors, not of everything that could be
-wrong.
+choice, and replacement cost. Measured on Whiteoak Bayou, each term sampled alone as a
+share of the point estimate:
+
+| term | interval width |
+|---|---|
+| stage | 100% |
+| replacement cost | 84% |
+| curve + family | 16% |
+| DEM | 8% |
+| all together | 123% |
+
+Stage and cost dominate because they change *how many* buildings are wet; the curve
+only changes what each wet building costs, and DEM error largely averages out across a
+basin. This corrects a claim carried in the code since the Monte Carlo was written,
+that curve family was the largest term — reasoning that was never measured, and wrong
+about the aggregate.
+
+**What it does not cover:** storey counts, floor area, finished-floor freeboard,
+building class assignment, footprint-database completeness, HAND's structural
+assumption, and the contents curves, which only USACE publishes here — a draw that
+prices structure against JRC still prices contents against USACE. The interval is a
+lower bound on the real uncertainty: an honest account of four known errors, not of
+everything that could be wrong.
 
 ## Install
 
