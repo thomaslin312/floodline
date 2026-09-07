@@ -5,25 +5,40 @@
 #
 # The one slow step is fetching elevation, tens of seconds on a cold basin. That is
 # handled by ordering - the cache is consulted before any fetch - not by deferral.
+#
+# Credentials come from `.env`, which is not committed. The `:?` forms below fail the
+# stack with a named variable rather than starting a database on a password that is
+# published in this file and identical on every deployment that ever copied it.
+# `.env.example` says what to put there.
 
 name: floodline
 
 services:
   db:
     image: postgis/postgis:16-3.4
+    restart: unless-stopped
     environment:
-      POSTGRES_USER: floodline
-      POSTGRES_PASSWORD: floodline
-      POSTGRES_DB: floodline
-    ports:
-      - "5432:5432"
+      POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-floodline}
+    # No published port. The API reaches this over the compose network by service
+    # name; publishing 5432 put the database on every interface of the host for the
+    # convenience of a psql session, which is a poor trade for a service holding a
+    # quarter of a million rows per basin. `docker compose exec db psql` still works.
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
       # pg_isready answers before PostGIS is loadable, so the check asks for the
       # extension a spatial query actually needs. A database that is up without
       # PostGIS accepts connections and fails every query, which is worse than down.
-      test: ["CMD-SHELL", "pg_isready -U floodline -d floodline && psql -U floodline -d floodline -c 'SELECT postgis_version()' >/dev/null"]
+      # `$$` escapes the interpolation: the shell inside the container expands these,
+      # not compose, so the credentials stay out of the rendered configuration.
+      test:
+        - CMD-SHELL
+        - >-
+          pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}
+          && psql -U $${POSTGRES_USER} -d $${POSTGRES_DB}
+          -c 'SELECT postgis_version()' >/dev/null
       interval: 5s
       timeout: 5s
       retries: 20
@@ -33,8 +48,10 @@ services:
     build:
       context: .
       dockerfile: docker/Dockerfile
+    restart: unless-stopped
     environment:
-      FLOODLINE_DATABASE_URL: postgresql+psycopg://floodline:floodline@db:5432/floodline
+      FLOODLINE_DATABASE_URL: >-
+        postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-floodline}
       FLOODLINE_HAND_CACHE_DIR: /var/lib/floodline/hand
       FLOODLINE_CACHE_DIR: /var/lib/floodline/cache
       FLOODLINE_DATA_RAW: /var/lib/floodline/raw
@@ -48,6 +65,22 @@ services:
       # The terrain cache is the point of the whole split; losing it on every restart
       # would mean paying for elevation again on every deploy.
       - floodline-data:/var/lib/floodline
+    # Memory is the binding constraint here, not CPU: depression filling is global, so
+    # a request holds its whole watershed grid resident, and that is why the image runs
+    # one worker and the service caps itself at two computations in flight.
+    #
+    # The number is measured rather than guessed. Peak container memory over two real
+    # runs of the same basin - 308.4 MiB at 1.10M cells, 809.7 MiB at 9.94M - fits
+    # 245.8 MiB of fixed overhead plus 59.5 bytes per cell. At the service's own
+    # max_cells ceiling of 40M, with its concurrency cap of 2, that is
+    # 245.8 + 2 x 2270 = 4.67 GiB. 6 GiB leaves headroom for allocator fragmentation
+    # and the transient copies inside the fill.
+    #
+    # The point of the limit is that the container refuses work rather than being
+    # OOM-killed: past the cap the concurrency limiter returns 503 with a Retry-After,
+    # which a caller can act on, where the kernel's killer takes the whole process and
+    # every request already in it.
+    mem_limit: 6g
     depends_on:
       db:
         condition: service_healthy

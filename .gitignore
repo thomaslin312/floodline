@@ -33,3 +33,8 @@ outputs/
 .DS_Store
 .idea/
 .vscode/
+
+# Deployment credentials. compose reads this for POSTGRES_USER and
+# POSTGRES_PASSWORD, and the application reads it for FLOODLINE_ settings.
+# .env.example is the committed template; this file never is.
+.env
