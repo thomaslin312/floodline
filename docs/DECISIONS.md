@@ -2380,3 +2380,85 @@ not have and which no open national dataset provides.
 
 That is the honest ceiling on this half of the model, and it should be stated wherever
 a currency figure appears.
+
+## 2026-09-07 — three more attempts: the ground is fine, the threshold cheats, 2D is unproven
+
+### NSI ground elevation — no gain, hypothesis dead
+
+The idea was that our 30 m DEM's ground at a building might be a large part of the
+depth error, and that NSI's own per-structure `ground_elv` could replace it for free.
+
+Compared across **258,439 buildings** on Whiteoak Bayou, our conditioned DEM against
+NSI's published ground elevation:
+
+| | |
+|---|---|
+| median difference | -0.09 m |
+| RMSE | **0.23 m** |
+| interquartile range | 0.15 m |
+| agree within 0.25 m | 87.1% |
+| agree within 1 m | 99.4% |
+
+There is nothing to win. The terrain sample at buildings is already good to a quarter
+of a metre, which is the same size as the foundation heights it is compared against and
+a sixth of the mark residual. **The ground is not where the 1.5 m lives.**
+
+That is worth knowing for a second reason: HAND is ground minus drainage elevation, so
+if the ground term is accurate the HAND error is in the *drainage reference*, not in the
+elevation at the cell.
+
+### Raising HAND's drainage threshold — rejected, it buys RMSE with extent
+
+The mark RMSE improved, and the previous entry recorded the verification still owed:
+does a thinner network collapse modelled extent? It does.
+
+| threshold | stream cells | reaches | extent | share of basin |
+|---|---|---|---|---|
+| 1,000 (default) | 12,811 | 284 | 112.9 km2 | 23.0% |
+| 4,000 | 6,031 | 58 | 75.7 km2 | 15.4% |
+| 16,000 | 3,052 | 17 | 48.0 km2 | 9.8% |
+
+A third of the flooded area gone at 4,000 and 57% at 16,000, with the basin represented
+by seventeen reaches. The validated per-reach configuration puts Harvey at 117 km2 on
+this watershed, so 48 km2 is a large under-prediction, and the mark RMSE improved
+anyway because the marks it still wets are the ones it was already getting right.
+
+**This is the README's own warning inverted.** A model that floods everything cannot be
+wrong about a wet mark; a model that floods almost nothing is not wrong about the few
+it still reaches. Extent has to be reported beside error, and here extent says no.
+Default stays at 1,000.
+
+### The 2D solver — works, is fast, and does not demonstrate a gain
+
+Whiteoak Bayou, 886 by 1,246 cells, 12,604 steps in **50 seconds**, mass conserved to
+0.000%. Feasibility is settled: a local-inertial solver over a screening-sized basin is
+seconds, not hours.
+
+Against the same marks and the same terrain, HAND's stage field versus the solver's
+depths, driven by the gauge discharge spread over the channel network for six hours:
+
+| | RMSE | bias | median abs error | marks wet | extent |
+|---|---|---|---|---|---|
+| HAND | 1.29 m | +0.10 m | 0.62 m | 12 / 15 | 112.9 km2 |
+| 2D | 1.10 m | -0.59 m | **0.62 m** | 10 / 15 | 79.1 km2 |
+
+RMSE falls 15%, and the **median absolute error is identical to the centimetre**. The
+typical mark is predicted exactly as well by both; the difference is in the tail, and it
+comes with a -0.59 m bias and a third less extent. That is not a demonstration that
+HAND's parallel-surface assumption is the dominant error - it is the same trade the
+threshold sweep made.
+
+Read as a lower bound rather than a verdict. The forcing is crude: a uniform inflow over
+channel cells for six hours, not a hydrograph, with no calibration and no boundary
+condition at the outlet. A properly forced 2D model would plausibly do better. What this
+run does establish is that the experiment is cheap enough to do properly whenever
+someone wants to.
+
+### What the three together say
+
+Ground is accurate to 0.23 m. Stage at a gauged reach is essentially exact and still
+leaves 1.58 m. Relaxing HAND's assumption with an uncalibrated solver reaches 1.10 m.
+**The 1.5 m floor is still not attributed**, and this session narrowed it rather than
+explaining it: it is not the ground, not the stage, and not obviously the
+parallel-surface assumption either. That is an honest open question and it is where the
+next person should start.
