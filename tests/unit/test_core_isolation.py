@@ -65,3 +65,57 @@ def test_core_holds_no_hardcoded_urls() -> None:
             if "http://" in line or "https://" in line:
                 offenders.append(f"{path.relative_to('src')}:{number}: {stripped[:70]}")
     assert not offenders, "core carries a URL:\n  " + "\n  ".join(offenders)
+
+
+SRC = pathlib.Path("src/floodline")
+
+
+def test_every_http_client_carries_a_timeout() -> None:
+    """An httpx client built without a timeout waits forever by default.
+
+    Upstream degradation was the most common failure in this project's development:
+    the elevation API, the boundary service, the object store and FEMA's endpoint were
+    each unreachable or rate-limiting at some point in one week. A request that hangs
+    holds a worker slot until something else gives up, which turns one slow agency into
+    an outage here.
+
+    Checked structurally rather than by convention, because the failure is invisible in
+    review: the call that hangs looks exactly like the call that does not.
+    """
+    offenders: list[str] = []
+    for path in sorted(SRC.rglob("*.py")):
+        if "migrations" in path.parts:
+            continue
+        tree = ast.parse(path.read_text())
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            target = node.func
+            is_client = (
+                isinstance(target, ast.Attribute)
+                and target.attr == "Client"
+                and isinstance(target.value, ast.Name)
+                and target.value.id == "httpx"
+            )
+            if not is_client:
+                continue
+            if not any(keyword.arg == "timeout" for keyword in node.keywords):
+                offenders.append(f"{path.relative_to('src')}:{node.lineno}")
+    assert not offenders, (
+        "httpx.Client built without a timeout, which waits forever:\n  "
+        + "\n  ".join(offenders)
+        + "\nUse floodline.io.sources.make_client, which always sets one."
+    )
+
+
+def test_gdal_range_reads_are_bounded() -> None:
+    """The elevation read is the one upstream call that does not go through httpx.
+
+    GDAL's defaults are unbounded too, and a black-holed tile host would otherwise
+    hang the whole request inside rasterio where no Python timeout reaches it.
+    """
+    from floodline.compute import VSICURL_ENV
+
+    for key in ("GDAL_HTTP_TIMEOUT", "GDAL_HTTP_CONNECTTIMEOUT", "GDAL_HTTP_MAX_RETRY"):
+        assert key in VSICURL_ENV, f"{key} is unset, so a stalled tile read has no bound"
+        assert int(VSICURL_ENV[key]) > 0  # type: ignore[arg-type]

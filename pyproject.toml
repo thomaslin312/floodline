@@ -29,6 +29,12 @@ serve = [
     "fastapi>=0.141.1",
     "uvicorn>=0.52.4",
 ]
+db = [
+    "alembic>=1.13",
+    "geoalchemy2>=0.15",
+    "psycopg[binary]>=3.2",
+    "sqlalchemy>=2.0",
+]
 
 [project.scripts]
 floodline = "floodline.cli:app"
@@ -63,6 +69,14 @@ packages = ["src/floodline"]
 line-length = 100
 src = ["src", "tests"]
 target-version = "py312"
+# Alembic writes these, and rewriting them by hand to satisfy a linter would mean the
+# file no longer matches what autogenerate produces - which is the one property that
+# makes a migration reviewable against the models it came from.
+extend-exclude = ["src/floodline/db/migrations/versions"]
+# Honour the exclusion even when a caller passes the file explicitly, which is
+# what pre-commit does. Without this the exclusion silently applies only to
+# directory walks and every commit fails on generated code.
+force-exclude = true
 
 [tool.ruff.lint]
 select = [
@@ -102,6 +116,9 @@ mypy_path = "src"
 packages = ["floodline"]
 warn_unreachable = true
 disallow_any_generics = true
+# Same reason as the ruff exclusion: these are generated, and annotating them by hand
+# would break the correspondence with what autogenerate emits.
+exclude = ["src/floodline/db/migrations/versions/"]
 
 [[tool.mypy.overrides]]
 module = ["numba.*", "rasterio.*", "rioxarray.*", "contextily.*", "pyogrio.*", "pyarrow.*"]

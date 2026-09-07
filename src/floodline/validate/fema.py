@@ -28,6 +28,7 @@ from typing import Any
 
 import httpx
 
+from floodline.io.sources import make_client
 from floodline.settings import settings
 
 __all__ = ["TractDamage", "compare_to_fema", "fetch_ia_by_tract", "fetch_nfip_by_tract"]
@@ -173,7 +174,9 @@ def compare_to_fema(huc: str = "1204010403", *, samples: int = 200) -> dict[str,
     from floodline.core.config import Config
     from floodline.reproduce import spearman
 
-    with httpx.Client(follow_redirects=True) as client:
+    # A client without a timeout waits forever, and OpenFEMA has rate-limited
+    # mid-run before now.
+    with make_client(read_timeout_s=180.0) as client:
         nfip = fetch_nfip_by_tract(client)
         ia = fetch_ia_by_tract(client)
 

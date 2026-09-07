@@ -190,6 +190,30 @@ class Settings(BaseSettings):
     bundle_cache_budget_mb: float = Field(
         default=2048.0, gt=0, description="Disk the served bundles may occupy before eviction."
     )
+    request_timeout_s: float = Field(
+        default=180.0,
+        gt=0,
+        description="Ceiling on one synchronous /scenario request. A cache miss must "
+        "fetch a DEM, which is the slow part; past this the caller is told to retry "
+        "rather than left holding a socket open.",
+    )
+
+    # ---- database ----------------------------------------------------------------
+    database_url: str = Field(
+        default="postgresql+psycopg://floodline:floodline@localhost:5432/floodline",
+        description="PostGIS connection string. The compose stack sets this to the db "
+        "service; a developer without one can leave it and the API will report itself "
+        "not ready rather than failing at the first query.",
+    )
+    db_pool_size: int = Field(
+        default=5, ge=1, description="Connections held open. Small: requests are seconds, not ms."
+    )
+    db_connect_timeout_s: int = Field(
+        default=5,
+        ge=1,
+        description="Refuse quickly when the database is down. A readiness probe that "
+        "hangs is worse than one that fails.",
+    )
 
 
 @lru_cache(maxsize=1)

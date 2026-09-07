@@ -1,0 +1,61 @@
+# Two services. There is no Redis and no worker, and that is a measurement rather than
+# a preference: terrain routing takes 0.1 to 0.6 s across the sixteen validation basins
+# and a scenario 5 to 52 ms. A queue would add a broker, a worker, a job table and a
+# polling protocol in order to defer work that finishes before a poll interval elapses.
+#
+# The one slow step is fetching elevation, tens of seconds on a cold basin. That is
+# handled by ordering - the cache is consulted before any fetch - not by deferral.
+
+name: floodline
+
+services:
+  db:
+    image: postgis/postgis:16-3.4
+    environment:
+      POSTGRES_USER: floodline
+      POSTGRES_PASSWORD: floodline
+      POSTGRES_DB: floodline
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      # pg_isready answers before PostGIS is loadable, so the check asks for the
+      # extension a spatial query actually needs. A database that is up without
+      # PostGIS accepts connections and fails every query, which is worse than down.
+      test: ["CMD-SHELL", "pg_isready -U floodline -d floodline && psql -U floodline -d floodline -c 'SELECT postgis_version()' >/dev/null"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+
+  api:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    environment:
+      FLOODLINE_DATABASE_URL: postgresql+psycopg://floodline:floodline@db:5432/floodline
+      FLOODLINE_HAND_CACHE_DIR: /var/lib/floodline/hand
+      FLOODLINE_CACHE_DIR: /var/lib/floodline/cache
+      FLOODLINE_DATA_RAW: /var/lib/floodline/raw
+    ports:
+      - "8000:8000"
+    volumes:
+      # The terrain cache is the point of the whole split; losing it on every restart
+      # would mean paying for elevation again on every deploy.
+      - floodline-data:/var/lib/floodline
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      # Liveness, not readiness: this must not fail because the database blinked, or
+      # the orchestrator restarts a container that is doing its job.
+      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://localhost:8000/health').read()"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+volumes:
+  pgdata:
+  floodline-data:

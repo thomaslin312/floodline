@@ -97,6 +97,10 @@ VSICURL_ENV: dict[str, object] = {
     "GDAL_HTTP_MAX_RETRY": 5,
     "GDAL_HTTP_RETRY_DELAY": 1,
     "GDAL_HTTP_TIMEOUT": 60,
+    # GDAL_HTTP_TIMEOUT bounds the transfer; without this a host that accepts the
+    # packet and never answers hangs on the handshake instead, which looks the same
+    # from outside and is not covered by the line above.
+    "GDAL_HTTP_CONNECTTIMEOUT": 20,
     # Read whole 512x512 blocks once and keep them: the warp revisits neighbouring
     # blocks constantly, and a cache miss here is a network round trip.
     "VSI_CACHE": True,

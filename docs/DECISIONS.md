@@ -2516,3 +2516,61 @@ these basins; reading the elevation is tens of seconds. So the cache key is deli
 computable from configuration alone, with no array involved, and a caller must check
 the store before fetching a DEM rather than after. A hit that still fetched would save
 almost nothing.
+
+## 2026-09-08 — a service with no queue, because the measurements said so
+
+The plan had a job queue: Redis, RQ, a worker process, `POST /jobs` and polling. The
+timings from the pipeline split removed the reason for it. Terrain routing is 0.1 to
+0.6 s across the sixteen validation basins and a scenario is 5 to 52 ms. A queue would
+have added a broker, a worker, a job table, a polling protocol and two more things that
+can be down, in order to defer work that finishes before a poll interval elapses.
+
+`POST /scenario` is synchronous. Measured through the running container: **7.22 s cold,
+0.087 s warm**, same basin, identical results either way.
+
+The one genuinely slow step is fetching elevation, and it is handled by ordering rather
+than deferral. `params_hash` is computed from configuration alone, so the store is
+asked before any client exists to fetch with - a cache hit cannot reach the network
+even by accident, because there is nothing to reach it with. That is asserted rather
+than documented: `test_a_cache_hit_makes_no_network_calls` passes a client that raises
+on any request, and its partner test checks a *miss* does reach upstream, so a store
+that always claimed a hit could not pass both.
+
+Liveness and readiness are separate and answer differently. `/health` touches nothing;
+a liveness probe that checks the database restarts a healthy container whenever the
+database blinks, turning one outage into two. `/ready` checks each dependency and names
+it, and returns 503 when unhappy so an orchestrator reads the status rather than the
+body.
+
+**Timeouts are structural, not conventional.** Upstream degradation was this project's
+most common failure - the elevation API, the boundary service, the object store and
+FEMA's endpoint were each unreachable or rate-limiting at some point in one week - and
+an httpx client built without a timeout waits forever. One offender was found: the FEMA
+comparison built a bare client. Every client now comes from `make_client`, and a test
+walks the AST for any `httpx.Client(...)` without a `timeout` argument. GDAL is checked
+too, since the elevation read is the one upstream call that does not go through httpx
+and its defaults are unbounded as well; `GDAL_HTTP_CONNECTTIMEOUT` was missing, so a
+black-holed host would have hung on the handshake inside rasterio where no Python
+timeout reaches.
+
+**The SQL path is checked against the one the results were produced with.** The question
+worth asking of a spatial index is not whether it is fast but whether it is complete: an
+index that silently misses rows returns a smaller number, and a smaller count of flooded
+buildings looks exactly like a better model. GeoPandas in the analysis CRS against
+PostGIS `ST_Intersects` in EPSG:4326, on real NSI data:
+
+| basin | GeoPandas | PostGIS |
+|---|---|---|
+| Whiteoak Bayou–Buffalo Bayou | 258,527 | 258,527 |
+| Little Whiteoak Bayou | 80,104 | 80,104 |
+| City of Philadelphia–Schuylkill | 104,780 | 104,780 |
+
+Three of three exact. The planner used the GiST index on the largest and chose a
+sequential scan on the two smaller ones, which is correct behaviour rather than a
+missing index - the `huc` filter already narrows those to a small enough fraction.
+
+One thing not verified: the compose stack was never brought up as a unit. The
+`postgis/postgis:16-3.4` pull stalled with no progress for over twenty minutes, so the
+API container was run against a locally-initialised PostGIS 3.6 instead. The image
+builds, the container serves, the endpoints answer, and the database half is real - but
+`docker compose up` end to end is unproven and should be the first thing anyone checks.

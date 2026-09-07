@@ -46,6 +46,7 @@ __all__ = [
     "ScenarioResult",
     "TerrainResult",
     "compute_terrain",
+    "params_hash",
     "run_scenario",
     "terrain_params",
 ]

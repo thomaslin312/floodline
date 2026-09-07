@@ -1,0 +1,12 @@
+# Everything that would make the build context gigabytes or the image non-reproducible.
+data/
+outputs/
+.venv/
+.git/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+**/__pycache__/
+**/*.pyc
+docs/figures/
+*.bundle

@@ -330,12 +330,28 @@ def get_json(context: FetchContext, url: str, params: dict[str, Any] | None = No
         raise SourceError(f"{url} did not return JSON ({exc})") from exc
 
 
-def make_client(settings: SourcesConfig | None = None) -> httpx.Client:
-    """Return an HTTP client configured the way every source expects."""
+def make_client(
+    settings: SourcesConfig | None = None, *, read_timeout_s: float | None = None
+) -> httpx.Client:
+    """Return an HTTP client configured the way every source expects.
+
+    Every client in this package comes from here, and every one carries a timeout.
+    That is not a style preference: upstream degradation was the single most common
+    failure during development, and an httpx client built without a timeout waits
+    forever by default. A request that hangs holds a worker slot until something else
+    gives up, which turns one slow agency into an outage.
+
+    `read_timeout_s` raises the read budget for the few callers that legitimately need
+    longer - a population raster is hundreds of megabytes - without letting the connect
+    timeout drift with it.
+    """
     resolved = settings or SourcesConfig()
     return httpx.Client(
         headers={"User-Agent": USER_AGENT},
-        timeout=httpx.Timeout(resolved.connect_timeout_s, read=resolved.read_timeout_s),
+        timeout=httpx.Timeout(
+            resolved.connect_timeout_s,
+            read=read_timeout_s if read_timeout_s is not None else resolved.read_timeout_s,
+        ),
         follow_redirects=True,
     )
 
