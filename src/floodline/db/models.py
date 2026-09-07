@@ -107,6 +107,12 @@ class Building(Base):
 
     Values are NSI's modelled replacement costs, not appraisals. That caveat belongs
     with the data wherever it goes, and the column comments carry it into the schema.
+
+    The columns are NSI's own raw fields, in NSI's own units - feet for foundation
+    height, square feet for area, population split under and over 65. Everything the
+    pipeline actually reads is derived from them on the way out, by the same function
+    that derives it when the structures come from the API instead. Storing the derived
+    values as well would put the same quantity in two places and let them drift.
     """
 
     __tablename__ = "buildings"
@@ -126,16 +132,36 @@ class Building(Base):
     occtype: Mapped[str | None] = mapped_column(String(32), index=True)
     """HAZUS occupancy code, which joins to the USACE curve library."""
 
+    st_damcat: Mapped[str | None] = mapped_column(String(32))
+    """NSI's damage category - RES, COM, IND. Coarser than `occtype` and carried for
+    the aggregations that group by it."""
+
     val_struct: Mapped[float | None] = mapped_column(Float)
     val_cont: Mapped[float | None] = mapped_column(Float)
+    val_vehic: Mapped[float | None] = mapped_column(Float)
+    """Carried and never priced: the USACE library has structure and contents
+    functions and no vehicle function, so a figure here would be invented."""
+
     sqft: Mapped[float | None] = mapped_column(Float)
+    ftprntsqft: Mapped[float | None] = mapped_column(Float)
+    """Footprint area, squared around the point to give the depth statistic ground to
+    work over. NSI publishes a point, not an outline."""
+
     num_story: Mapped[float | None] = mapped_column(Float)
     found_ht: Mapped[float | None] = mapped_column(Float)
     """Foundation height in feet, as published. The measured cause of the damage
     model's failed validation: a 0.23 m median against a 1.5 m water-surface error."""
 
-    pop_night: Mapped[float | None] = mapped_column(Float)
-    pop_day: Mapped[float | None] = mapped_column(Float)
+    found_type: Mapped[str | None] = mapped_column(String(32))
+    ground_elv: Mapped[float | None] = mapped_column(Float)
+    med_yr_blt: Mapped[str | None] = mapped_column(String(16))
+
+    pop2amu65: Mapped[float | None] = mapped_column(Float)
+    pop2amo65: Mapped[float | None] = mapped_column(Float)
+    pop2pmu65: Mapped[float | None] = mapped_column(Float)
+    pop2pmo65: Mapped[float | None] = mapped_column(Float)
+    """Night and day population, split under and over 65. Summed into the night and
+    day totals on read, rather than stored twice."""
 
     geom: Mapped[object] = mapped_column(
         Geometry(geometry_type="POINT", srid=STORAGE_SRID, spatial_index=False),

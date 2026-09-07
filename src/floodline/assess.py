@@ -54,6 +54,7 @@ from floodline.core.hydro.rating import (
 from floodline.core.hydro.stage import stage_field_from_discharge
 from floodline.core.terrain.route import route_terrain
 from floodline.core.terrain.streams import link_raster
+from floodline.inventory import structures_inside
 from floodline.io.ingest import Watershed, ingest_dem
 from floodline.io.nsi import fetch_nsi_structures, structure_footprints
 from floodline.io.overture import fetch_overture_buildings
@@ -309,10 +310,13 @@ def assess_watershed(
                 # Houston sample by 1.4x.
                 shape = shapely.from_geojson(json.dumps(geometry_wgs84(unit, config)))
                 nsi = fetch_nsi_structures(shape, cache_key=unit.huc)
-                if not len(nsi.structures):
+                selected, index_note = structures_inside(unit.huc, shape, nsi.structures)
+                if index_note:
+                    gaps.append(index_note)
+                if not len(selected):
                     gaps.append("NSI returned no structures inside this watershed")
                 else:
-                    boxes = structure_footprints(nsi.structures.to_crs(config.crs.analysis))
+                    boxes = structure_footprints(selected.to_crs(config.crs.analysis))
                     boxes["building_class"] = boxes["occtype"]
                     boxes["num_floors"] = boxes["num_story"]
                     exposure = building_depths(

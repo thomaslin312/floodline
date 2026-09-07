@@ -43,3 +43,24 @@ def test_every_geometry_is_stored_in_one_crs() -> None:
 def test_the_metadata_holds_exactly_the_three_tables() -> None:
     """A table nobody planned is a table nobody migrates."""
     assert set(Base.metadata.tables) == {"basin_cache", "buildings", "admin_units"}
+
+
+def test_the_buildings_table_can_hold_every_field_the_inventory_carries() -> None:
+    """The database has to round-trip a structure, not most of one.
+
+    Everything the pipeline reads is derived from NSI's raw fields, so a field that is
+    fetched but not stored comes back as a hole - and a hole in `ftprntsqft` or
+    `found_ht` does not raise, it quietly changes a damage total. Deriving on read is
+    only safe while the raw fields are all here.
+    """
+    from floodline.io.nsi import NSI_FIELDS
+
+    stored = {column.name for column in Building.__table__.columns}
+    missing = set(NSI_FIELDS) - stored
+    assert not missing, f"buildings cannot store {sorted(missing)}"
+
+
+def test_the_derived_population_columns_are_not_stored_twice() -> None:
+    """One quantity in two places is one quantity that can disagree with itself."""
+    stored = {column.name for column in Building.__table__.columns}
+    assert not stored & {"pop_night", "pop_day"}, "night and day totals are derived on read"

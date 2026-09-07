@@ -55,7 +55,14 @@ from shapely.geometry.base import BaseGeometry
 from floodline.core.config import Config, ExposureConfig
 from floodline.settings import settings
 
-__all__ = ["NSI_URL", "NsiFetch", "fetch_nsi_structures", "structure_footprints"]
+__all__ = [
+    "NSI_FIELDS",
+    "NSI_URL",
+    "NsiFetch",
+    "derive_nsi_columns",
+    "fetch_nsi_structures",
+    "structure_footprints",
+]
 
 NSI_URL = settings().nsi_url
 SQFT_TO_M2 = 0.092903
@@ -63,7 +70,7 @@ FEET_TO_M = 0.3048
 
 # Fields kept from the ~40 NSI publishes. The rest are FIRM zones, damage categories
 # and identifiers that this model has no use for.
-_FIELDS = (
+NSI_FIELDS = (
     "fd_id",
     # 15-digit census block. Its first 11 digits are the tract, which is the geography
     # NFIP claims and FEMA assistance can both be aggregated to, so carrying it here
@@ -86,6 +93,8 @@ _FIELDS = (
     "pop2pmu65",
     "pop2pmo65",
 )
+"""The raw NSI properties carried through the pipeline, and the columns the database
+stores. Everything else the code reads is derived from these by `derive_nsi_columns`."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -168,16 +177,26 @@ def fetch_nsi_structures(
 
 def _to_frame(features: list[dict[str, Any]]) -> gpd.GeoDataFrame:
     """Turn an NSI FeatureCollection into a typed frame in SI units."""
-    columns: dict[str, list[Any]] = {name: [] for name in _FIELDS}
+    columns: dict[str, list[Any]] = {name: [] for name in NSI_FIELDS}
     points = []
     for feature in features:
         properties = feature.get("properties", {})
-        for name in _FIELDS:
+        for name in NSI_FIELDS:
             columns[name].append(properties.get(name))
         lon, lat = feature["geometry"]["coordinates"]
         points.append(shapely.Point(lon, lat))
 
-    frame = gpd.GeoDataFrame(columns, geometry=points, crs="EPSG:4326")
+    return derive_nsi_columns(gpd.GeoDataFrame(columns, geometry=points, crs="EPSG:4326"))
+
+
+def derive_nsi_columns(frame: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
+    """Add the SI and identifier columns the pipeline reads, from NSI's raw fields.
+
+    Split out from the parse because structures also arrive from the database, where
+    only the raw fields are stored. Deriving in one place is what makes the two routes
+    return the same frame rather than two frames that agree until one of them is
+    changed.
+    """
     if not len(frame):
         # Give an empty result the same columns, so callers need no special case.
         for name in ("footprint_m2", "floor_area_m2", "found_ht_m", "pop_night", "pop_day"):

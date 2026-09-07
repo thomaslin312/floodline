@@ -23,6 +23,7 @@ from __future__ import annotations
 
 from functools import lru_cache
 from pathlib import Path
+from typing import Literal
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -213,6 +214,15 @@ class Settings(BaseSettings):
         ge=1,
         description="Refuse quickly when the database is down. A readiness probe that "
         "hangs is worse than one that fails.",
+    )
+    building_index: Literal["postgis", "geopandas"] = Field(
+        default="postgis",
+        description="Where the structure intersection runs. PostGIS is the deployed "
+        "path: an index scan over a GiST index rather than a quarter of a million rows "
+        "held resident to discard most. `geopandas` keeps the in-process predicate "
+        "runnable, which is what makes the equivalence between them a measurement "
+        "rather than a citation. A deployment with no database falls back to it and "
+        "says so in the run's gaps.",
     )
 
 
