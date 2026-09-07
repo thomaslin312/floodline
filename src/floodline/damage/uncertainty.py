@@ -82,7 +82,24 @@ class DamageInterval:
     """Inundated building count per draw, so the count has an interval too."""
 
     n_samples: int
+
     curves_verified: bool
+    """Whether the curves behind the *point estimate* are transcribed from a source.
+
+    Not `all(...)` over the sampled families. Once a loaded library is sampled against
+    the bundled approximations, that conjunction is always False, and it reported a
+    verified USACE point estimate as unquotable currency. The point estimate is priced
+    against one library and this describes that library; `all_families_verified` covers
+    the spread around it.
+    """
+
+    all_families_verified: bool
+    """Whether every family that contributed a draw is transcribed.
+
+    False whenever bundled approximations widen the interval, which is the normal case.
+    It qualifies the width of the band, not the number in the middle.
+    """
+
     families_sampled: dict[CurveFamily, int]
     count_interval_conditional: bool
     """True when no signed margin was supplied, so only already-wet buildings were
@@ -315,7 +332,14 @@ def monte_carlo_damage(
         samples=totals,
         building_counts=inundated,
         n_samples=mc.n_samples,
-        curves_verified=all(s.verified for s in sets.values()),
+        curves_verified=(
+            curves.verified
+            if curves is not None
+            else sets[damage_config.curve_family].verified
+            if damage_config.curve_family in sets
+            else all(s.verified for s in sets.values())
+        ),
+        all_families_verified=all(s.verified for s in sets.values()),
         families_sampled=sampled,
         count_interval_conditional=conditional,
     )

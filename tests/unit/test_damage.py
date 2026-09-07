@@ -514,3 +514,47 @@ def test_a_loaded_library_still_samples_against_the_bundled_families() -> None:
     ), "the supplied library leads"
     # The point estimate is still priced against the loaded library alone.
     assert on.point == off.point
+
+
+def test_verified_point_estimate_is_not_reported_as_unverified() -> None:
+    """Sampling across families must not relabel a transcribed point estimate.
+
+    curves_verified was all(...) over every sampled family. Once a loaded library is
+    sampled against the bundled approximations that conjunction is always False, so a
+    USACE-priced total came back flagged "currency figures do not stand" when the
+    currency figure was the one thing that did.
+    """
+    import numpy as np
+
+    from floodline.config import Config, CurveFamily
+    from floodline.damage.curves import CurveSet, DamageCurve
+    from floodline.damage.uncertainty import monte_carlo_damage
+
+    cfg = Config()
+    transcribed = CurveSet(
+        family=CurveFamily.HAZUS,
+        curves={
+            "residential": DamageCurve(
+                family=CurveFamily.HAZUS,
+                building_class="residential",
+                depths_m=(0.0, 1.0, 3.0),
+                fractions=(0.0, 0.3, 0.7),
+                provenance="transcribed for this test",
+                verified=True,
+            )
+        },
+        default_class="residential",
+    )
+    n = 200
+    result = monte_carlo_damage(
+        np.full(n, 1.0),
+        np.full(n, 140.0),
+        np.array(["residential"] * n, dtype=object),
+        storeys=np.full(n, 1.0),
+        monte_carlo=cfg.monte_carlo.model_copy(update={"n_samples": 60}),
+        config=cfg,
+        curves=transcribed,
+    )
+    assert result.curves_verified is True, "the point estimate's own library is verified"
+    assert result.all_families_verified is False, "bundled approximations widened the band"
+    assert len(result.families_sampled) > 1

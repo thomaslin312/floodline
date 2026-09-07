@@ -116,6 +116,11 @@ def _exposure_stats(result: Any, config: Config) -> dict[str, Any]:
         "exposed_value": damage.exposed_value_total if damage is not None else None,
         "loss_ratio": damage.loss_ratio if damage is not None else None,
         "curves_verified": bool(interval.curves_verified) if interval is not None else False,
+        # Separate from the above: the point estimate can be priced against a
+        # transcribed library while the band around it is widened by approximations.
+        "all_families_verified": (
+            bool(interval.all_families_verified) if interval is not None else False
+        ),
         "curve_family": damage.family.value if damage is not None else None,
         "by_class": (
             dict(sorted(damage.by_class.items(), key=lambda kv: -kv[1])[:8])
@@ -174,6 +179,15 @@ def create_app(
     @app.get("/")
     def index() -> FileResponse:
         return FileResponse(WEB_ROOT / "index.html")
+
+    @app.get("/methodology")
+    def methodology() -> FileResponse:
+        """Where the numbers come from, for a reader who wants that before trusting them.
+
+        A page rather than a modal: it is long, it is linkable, and someone reading it
+        is not mid-task on the map.
+        """
+        return FileResponse(WEB_ROOT / "methodology.html")
 
     @app.get("/api/geocode")
     def geocode(q: str = Query(min_length=3, max_length=200)) -> dict[str, Any]:
