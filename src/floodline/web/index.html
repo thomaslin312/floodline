@@ -356,7 +356,6 @@
     <button class="wide quiet" id="fit" hidden>Find the discharge the marks imply</button>
     <div class="qnote" id="fitnote" hidden></div>
     <dl class="grid" id="stats"></dl>
-    <div class="qnote" id="gridnote" hidden></div>
 
     <div id="exposure" hidden>
       <div class="eyebrow" style="margin-top:14px">Exposure and damage</div>
@@ -905,17 +904,15 @@ function updatePanel(wet, maxd, mult){
      block-reduced from the analysis grid so the browser can hold it. HAND reduces by
      mean, and a block straddling the water's edge averages to a single value that is
      either wet or dry, so partly-wet blocks are lost: on Whiteoak Bayou the map reads
-     105 km2 where the full grid gives 112. Same model, coarser ruler. The report
-     command counts on the analysis grid and is the number to quote. */
-  const note = $("gridnote"), r = bundle.reduction || 1;
-  note.hidden = r <= 1;
-  if (r > 1) {
-    const eff = r * (bundle.stats.resolution_m || 10);
-    note.innerHTML = `Counted on the ${eff} m display grid, reduced ${r}\u00d7 from the `
-      + `${bundle.stats.resolution_m || 10} m analysis grid so the page can hold it. `
-      + `Extent and RMSE are a few per cent off the full-resolution figures; `
-      + `<code>floodline report</code> counts on the analysis grid.`;
-  }
+     105 km2 where the full grid gives 112. Same model, coarser ruler, and `floodline
+     report` counts on the analysis grid.
+
+     That used to be four lines of prose under the figures. It explained the grid the
+     reader is not looking at, to justify a few per cent on numbers already labelled
+     as screening-grade, and it sat directly above the one caveat that does change
+     what a figure means - the currency total. Crowding a real warning with a
+     technical footnote is how the real warning stops being read. The resolution is
+     in the table above as a number; the rest belongs here. */
 }
 
 /* Invert the model against the marks: sweep the discharge range and report the
