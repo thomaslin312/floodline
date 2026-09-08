@@ -4,10 +4,13 @@ import { Wordmark } from "./Wordmark";
 
 /**
  * Four steps, because a reader who has to be told five things about a map will read
- * none of them. Each names a thing on screen and what it means, and the first states
- * the model's limit before its capability - the same order the README uses, for the
- * same reason: someone should know what this cannot tell them before they look at a
- * number it produced.
+ * none of them. Each names a thing on screen and what it means, and stops there.
+ *
+ * It used to carry a caveat under every step - what the model cannot tell you, what
+ * RMSE means, what a replacement cost is and is not. Those are all still true and all
+ * still stated: on the methodology page, which is one click away and is where someone
+ * who wants them will look. A tour that argues with itself at every step is one nobody
+ * finishes, and an unfinished tour teaches none of it.
  */
 interface Step {
   title: string;
@@ -61,11 +64,6 @@ const TOUR: Step[] = [
           from the USACE National Structure Inventory. Type a place and it computes the flood live,
           with no dataset to download.
         </p>
-        <p className="aside">
-          It is a screening model, not a hydraulic one. It assumes the water surface parallels the
-          drainage line, so it knows nothing about levees, culverts or reservoir releases. Read it
-          as an estimate of scale, not a prediction for an address.
-        </p>
       </>
     ),
   },
@@ -106,10 +104,6 @@ const TOUR: Step[] = [
           size every accuracy figure quoted here was measured on. A HUC-8 is a whole river basin,
           several thousand km², which is a lot of terrain to route and correspondingly slower.
         </p>
-        <p className="aside">
-          Start small. You can always click a neighbouring unit, and a HUC-12 answers most questions
-          about a specific place faster than its parent basin will.
-        </p>
       </>
     ),
   },
@@ -146,12 +140,6 @@ const TOUR: Step[] = [
           after the flood, coloured by how far the model missed them: green within a metre, red over
           three.
         </p>
-        <p className="aside">
-          The <b>RMSE</b> figure is the model marking its own homework. It is the typical gap
-          between the water surface the model predicts and the water surface someone actually
-          measured on the ground, so it is the most direct answer the page can give to whether this
-          watershed&rsquo;s flood is any good.
-        </p>
       </>
     ),
   },
@@ -184,16 +172,12 @@ const TOUR: Step[] = [
     body: (
       <>
         <p>
-          <b>Value the buildings this reaches</b> adds a warm layer showing where the money is, and
-          counts structures, residents and damage.
+          Damage follows the flood on its own. A warm layer builds over the water showing where the
+          value is, with structures, residents and a total beside it.
         </p>
         <p>
-          Then drag the discharge slider. It scales the gauge&rsquo;s observed peak up or down, and
-          both layers follow, so a bigger flood is priced rather than just redrawn.
-        </p>
-        <p className="aside">
-          Structure values are modelled replacement costs, sound across tens of thousands of
-          buildings and not for any single one.
+          Then drag the discharge slider. It scales the gauge&rsquo;s peak up or down and both
+          layers follow, so a bigger flood is priced rather than redrawn.
         </p>
       </>
     ),

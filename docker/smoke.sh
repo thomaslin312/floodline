@@ -24,6 +24,8 @@ failures=0
 
 pass() { printf '  ok    %s\n' "$1"; }
 fail() { printf '  FAIL  %s\n' "$1" >&2; failures=$((failures + 1)); }
+# Not a pass and not a failure: something this deployment legitimately does not have.
+warn() { printf '  note  %s\n' "$1"; }
 
 # Truncate the body first. curl leaves the previous file in place when it cannot
 # connect, so without this a failing check quotes the last response that worked - the

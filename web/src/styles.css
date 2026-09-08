@@ -233,7 +233,6 @@
     margin:10px 0 6px;line-height:1.25;text-wrap:balance}
   .tour p{margin:0;color:var(--ink-2);font-size:14px;line-height:1.55;max-width:52ch}
   .tour p + p{margin-top:9px}
-  .tour .aside{color:var(--ink-3);font-size:12.5px}
   .tour figure{margin:0 0 4px;padding:14px;border-radius:var(--r-sm);
     background:var(--hair-2);border:1px solid var(--hair)}
   /* Only the illustration stretches. The brand mark next to it is 16px and was
