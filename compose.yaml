@@ -39,6 +39,15 @@ services:
     # name; publishing 5432 put the database on every interface of the host for the
     # convenience of a psql session, which is a poor trade for a service holding a
     # quarter of a million rows per basin. `docker compose exec db psql` still works.
+    # json-file with no options is unbounded, and this machine is expected to run
+    # for months. Uvicorn logs a line per request, so the ceiling is set by traffic
+    # rather than by anything in the image - 30 MB per service, which is enough to
+    # investigate an incident and not enough to be the incident.
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -78,6 +87,15 @@ services:
       # the working directory, which is inside the image rather than on the volume -
       # every restart would recompute what a visitor had already waited for.
       FLOODLINE_BUNDLE_CACHE_DIR: /var/lib/floodline/bundles
+    # json-file with no options is unbounded, and this machine is expected to run
+    # for months. Uvicorn logs a line per request, so the ceiling is set by traffic
+    # rather than by anything in the image - 30 MB per service, which is enough to
+    # investigate an incident and not enough to be the incident.
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     ports:
       - "8000:8000"
     volumes:

@@ -21,6 +21,7 @@ import numpy as np
 import rasterio
 from rasterio.transform import Affine
 
+from floodline.cache import evict_to_budget
 from floodline.settings import settings
 from floodline.storage.base import TerrainArtifact, TerrainStore
 
@@ -129,3 +130,15 @@ class LocalTerrainStore(TerrainStore):
             partial.replace(path)
         finally:
             partial.unlink(missing_ok=True)
+
+        # Housekeeping after the write, not on a timer somebody has to start. Every
+        # watershed anyone looks at leaves 4.5 MB here at 30 m and nine times that at
+        # 10 m, and the service offers all of them, so unbounded means a disk that
+        # fills at whatever rate visitors click.
+        assert self.root is not None
+        evict_to_budget(
+            self.root,
+            settings().terrain_cache_budget_mb,
+            pattern="*.tif",
+            what="terrain artefact",
+        )

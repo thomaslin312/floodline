@@ -210,6 +210,21 @@ class Settings(BaseSettings):
     bundle_cache_budget_mb: float = Field(
         default=2048.0, gt=0, description="Disk the served bundles may occupy before eviction."
     )
+    terrain_cache_budget_mb: float = Field(
+        default=8192.0,
+        gt=0,
+        description="Disk the cached terrain artefacts may occupy before the oldest "
+        "are evicted. Roughly 4.5 MB per watershed at 30 m and nine times that at "
+        "10 m, and this service offers every watershed in the country, so unbounded "
+        "means a disk that fills at whatever rate visitors click.",
+    )
+    inventory_cache_budget_mb: float = Field(
+        default=8192.0,
+        gt=0,
+        description="Disk the cached structure inventory may occupy before the oldest "
+        "are evicted. About 16 MB per watershed. Evicting one costs a refetch from "
+        "NSI, which is minutes, so this wants to be generous.",
+    )
     request_timeout_s: float = Field(
         default=180.0,
         gt=0,

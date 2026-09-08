@@ -52,6 +52,7 @@ import numpy as np
 import shapely
 from shapely.geometry.base import BaseGeometry
 
+from floodline.cache import evict_to_budget
 from floodline.core.config import Config, ExposureConfig
 from floodline.settings import settings
 
@@ -172,6 +173,14 @@ def fetch_nsi_structures(
     if use_cache:
         cached.parent.mkdir(parents=True, exist_ok=True)
         frame.to_parquet(cached)
+        # About 16 MB per watershed, and nothing evicted these before. Evicting one
+        # costs a refetch from NSI, which is minutes, so the budget is generous.
+        evict_to_budget(
+            cached.parent,
+            settings().inventory_cache_budget_mb,
+            pattern="nsi-*.parquet",
+            what="cached inventory",
+        )
     return NsiFetch(structures=frame, seconds=time.perf_counter() - started, from_cache=False)
 
 
