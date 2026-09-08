@@ -74,10 +74,16 @@ PY
 # factory, so `GET /` was a 404 while `floodline serve` was fine.
 : >/tmp/smoke.body
 code=$(curl -s -o /tmp/smoke.body -w '%{http_code}' -m 15 "$BASE/" || true)
-if [ "$code" = "200" ] && grep -q "<title>floodline</title>" /tmp/smoke.body; then
+# The app shell, not the wording on it. This used to grep for the exact title and
+# failed the moment the brand was capitalised - an assertion about copy, dressed as
+# one about deployment. What has to be true is that the document mounts and names a
+# bundle this build actually serves.
+if [ "$code" = "200" ] \
+   && grep -q '<div id="root">' /tmp/smoke.body \
+   && grep -qE 'src="/assets/index-[A-Za-z0-9_-]+\.js"' /tmp/smoke.body; then
   pass "GET / serves the map ($(wc -c < /tmp/smoke.body | tr -d ' ') bytes)"
 else
-  fail "GET / returned $code without the map"
+  fail "GET / returned $code without the app shell"
 fi
 
 for path in /methodology /api/docs; do

@@ -231,7 +231,7 @@ def create_api(
     so a failure there names the service rather than the page.
     """
     app = FastAPI(
-        title="floodline",
+        title="Floodline",
         version=version_string(),
         docs_url="/api/docs",
         summary=API_SUMMARY,

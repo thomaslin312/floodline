@@ -230,7 +230,7 @@ def create_app(
     cache.mkdir(parents=True, exist_ok=True)
     marks = marks_path or (base.paths.raw / "validation" / "high_water_marks_national.json")
     app = FastAPI(
-        title="floodline",
+        title="Floodline",
         version=version_string(),
         docs_url="/api/docs",
         summary=API_SUMMARY,

@@ -1,8 +1,8 @@
-# floodline
+# Floodline
 
 Flood extent, exposure and damage estimation from a DEM and a gauge reading.
 
-Given a lidar DEM, a stream network and a discharge at a river gauge, floodline
+Given a lidar DEM, a stream network and a discharge at a river gauge, Floodline
 produces an inundation extent and depth raster (HAND method), intersects it with
 building footprints and population grids, and estimates people affected and direct
 economic damage using depth–damage curves, with a Monte Carlo uncertainty band.
@@ -78,7 +78,7 @@ Stated first, on purpose. HAND is a screening model, not a hydraulic one.
   high-water marks — 1,287 of them across 16 watersheds — with SAR as a secondary
   check.
 - **Population grids disagree with each other by tens of percent** in small towns.
-  floodline reports Census block groups, WorldPop and HRSL rather than picking one —
+  Floodline reports Census block groups, WorldPop and HRSL rather than picking one —
   but they agree far better across a metro the size of Houston than they would in a
   small town, so this comparison is weaker here than it would have been at Lismore.
   That is the main thing given up by choosing Harvey as the primary case.
@@ -274,7 +274,7 @@ anything. So 1 m is demonstrated to run and not demonstrated to help.
 
 **What phase 4 still lacks is a reference for extent, not code.** `floodline validate` computes
 CSI, hit rate, false alarm ratio and bias against an observed wet mask you supply, and
-is verified against a hand-computed CSI. floodline has no observed extent of its own:
+is verified against a hand-computed CSI. Floodline has no observed extent of its own:
 the Sentinel-1 route needs credentials, so no CSI is reported for Harvey. Validation
 that *is* reported runs against 1,287 surveyed high-water marks in 16 watersheds.
 The resolution and

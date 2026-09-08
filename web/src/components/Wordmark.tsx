@@ -10,7 +10,7 @@ export function Wordmark({ children }: { children?: React.ReactNode }) {
           opacity=".45"
         />
       </svg>
-      <b>floodline</b>
+      <b>Floodline</b>
       {children}
     </div>
   );
