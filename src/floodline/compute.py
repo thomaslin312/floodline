@@ -827,6 +827,30 @@ def discharge_ladder(
     return np.asarray(np.linspace(0.0, float(damage.discharge_ladder_max), steps))
 
 
+def with_low_end_detail(ladder: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
+    """Add geometric rungs below the ladder's first step, for the damage curve only.
+
+    Damage against discharge is steepest at the bottom and the panel interpolates
+    between rungs, so a single segment from zero to the first rung draws a straight
+    line across the whole rise. Worse, it makes the *share* of damage coming from
+    structures in the channel constant along that segment - interpolating both
+    quantities from the origin preserves their ratio - so the one signal that says the
+    low end is unreportable is exactly the signal the coarse ladder flattens.
+
+    Four rungs at a half, quarter, eighth and sixteenth of the first step. Geometric
+    rather than linear because that is how the curve bends, and four because the cost
+    is a gather per rung over a quarter of a million structures and the map's own stage
+    table is untouched: this ladder is the damage one.
+    """
+    if len(ladder) < 2:
+        return ladder
+    first = float(ladder[1])
+    if first <= 0.0:
+        return ladder
+    extra = np.asarray([first / 16.0, first / 8.0, first / 4.0, first / 2.0])
+    return np.unique(np.concatenate([ladder, extra]))
+
+
 def to_web_mercator(
     array: npt.NDArray[np.floating],
     transform: rasterio.Affine,

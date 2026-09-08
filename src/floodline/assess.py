@@ -36,6 +36,7 @@ from floodline.compute import (
     marks_within,
     scorable_marks,
     wgs84_bounds,
+    with_low_end_detail,
 )
 from floodline.core.config import Config
 from floodline.core.damage.estimate import NO_WATER, DamageEstimate, estimate_damage
@@ -253,7 +254,10 @@ def assess_watershed(
             discharge_cms, area_cells, links, chain.accumulation.accumulation, config=config
         )
         stages = stage_field_from_discharge(reach_of, curves, flows)
-        ladder_steps = discharge_ladder(config, multipliers)
+        # The damage ladder only. The map's stage table keeps the uniform ladder it
+        # indexes by arithmetic; this one is searched, so it can afford detail where
+        # the curve actually bends.
+        ladder_steps = with_low_end_detail(discharge_ladder(config, multipliers))
         flood = inundate(
             chain.hand.hand,
             stages.stage_m,

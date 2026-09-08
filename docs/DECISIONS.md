@@ -2735,3 +2735,55 @@ prune -af` returned all of it, and on this Docker version returned it to macOS a
 So a deploy step on the target machine should end with `docker image prune -f && docker
 builder prune -f`. A redeploy otherwise leaves the previous image's layers and its
 build cache behind, every time, for months.
+
+## 2026-09-08 — the low end of the damage curve was an artefact, and is now withheld
+
+Asked why 8 m3/s produced tens of millions of dollars. It should have produced nothing,
+and chasing it found something worth keeping.
+
+Not a coding bug. Every gate does what it documents: the ladder only prices a building
+once `stage - HAND` is positive, and the USACE curves are legitimately non-zero below
+the floorboards because water sits in a crawlspace before it reaches them. The premise
+is what fails. At 7.2 m3/s the model charged 6,201 buildings USD 176M, and those
+buildings have a median HAND of **0.00 m** — the model has placed them in the channel.
+
+The cause is one the repository already documents from the other direction. Lidar
+images the water surface, so the bayou is not incised in the terrain: the derived
+channel is flat and one 30 m cell wide, and 6,021 of 258,527 structures land on a
+drainage cell. Any stage at all wets them. That is finding #2 in the README, met again
+in a regime where it matters more than it did for Manning's n.
+
+Measured across the ladder, the share of damage coming from those structures:
+
+| discharge | damage | from structures in the channel |
+|---:|---:|---:|
+| 4.5 m3/s | 166M | 96% |
+| 14.3 m3/s | 207M | 80% |
+| 71.6 m3/s | 483M | 50% |
+| 143 m3/s | 870M | 41% |
+| 1,433 m3/s | 7.95bn | **18%** |
+
+So the currency total is withheld while that share exceeds a half, and shown with the
+counts otherwise. Withheld rather than printed with a caveat: a number on screen gets
+screenshotted without the caveat, and this project already refuses to price an ungauged
+basin on exactly that reasoning. Counts, extent and depth are unaffected — they are the
+model's answer and they are the validated half.
+
+**What this deliberately does not do** is change what is priced. Excluding channel
+structures outright would move the headline by 18% and the sixteen-basin validation
+with it; that is a modelling change needing its own re-validation, and bathymetry -
+already implemented and off by default - is the real fix. This is a reporting rule.
+
+Two things fell out of building it:
+
+The ladder step went from 0.1 to 0.05, and the damage ladder alone gained four
+geometric rungs below its first step. The panel interpolates between rungs, and one
+segment from zero to the first rung drew a straight line across the entire rise. Worse:
+interpolating damage and its in-channel component from the origin *preserves their
+ratio*, so the share held flat at its first-rung value and the withholding never fired
+at the discharges that needed it. The map's stage table keeps the uniform ladder it
+indexes by arithmetic; only the damage ladder, which is searched, gained the detail.
+
+And the 18% at the observed peak is worth stating plainly rather than filing away. It
+is not the low end alone: a fifth of the headline damage on Whiteoak Bayou comes from
+buildings the model cannot distinguish from the stream it derived.

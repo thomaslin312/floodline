@@ -1062,8 +1062,17 @@ function ladderAt(mult){
   const span = xs[i+1] - xs[i];
   const t = span > 0 ? (clamped - xs[i]) / span : 0;
   const lerp = (a) => a[i] + (a[i+1] - a[i]) * t;
+  /* Below roughly bankfull the model is only wetting the channel it derived, and
+     every building it charges is one it placed there - lidar images the water
+     surface, so the channel has no depth and is one cell wide. The counts and the
+     depths still mean something; the currency total does not, so it is withheld
+     rather than printed small. */
+  const damage = lerp(L.damage);
+  const channel = L.in_channel ? lerp(L.in_channel) : 0;
+  const share = damage > 0 ? channel / damage : 0;
+  const reportable = share <= (L.max_in_channel_share != null ? L.max_in_channel_share : 1);
   return {
-    multiplier: clamped,
+    multiplier: clamped, reportable, inChannelShare: share,
     damage: lerp(L.damage), structure: lerp(L.structure), contents: lerp(L.contents),
     inundated: Math.round(lerp(L.inundated)), residents: lerp(L.residents),
   };
@@ -1078,13 +1087,22 @@ function showExposure(){
   const now = at || {damage: st.damage, inundated: st.inundated,
                      residents: st.night_population, structure: null, contents: null};
   const ratio = st.exposed_value ? now.damage / st.exposed_value : null;
+  /* Withheld, not zero and not small print. Below roughly bankfull the model is only
+     wetting the channel it derived, so every building it charges is one it placed
+     there: lidar images the water surface, the channel has no depth in the terrain and
+     is one cell wide, and on a dense urban bayou that swallows the buildings along the
+     bank. On Whiteoak Bayou that is 92% of the damage at a hundredth of the peak
+     against 18% at the peak itself. The extent and the counts are still the model's
+     answer; a dollar total built from that is a measurement of a flood that is not
+     happening. */
+  const priced = now.reportable !== false;
   $("expo-stats").innerHTML = [
     ["Structures", (st.structures||0).toLocaleString(), ""],
     ["Inundated", `${Math.round(now.inundated||0).toLocaleString()}`, ""],
     ["Interval", `${(st.inundated_low||0).toLocaleString()}–${(st.inundated_high||0).toLocaleString()}`, ""],
     ["Residents", now.residents != null ? Math.round(now.residents).toLocaleString() : "—", ""],
-    ["Damage", money(now.damage, u), ""],
-    ["Loss ratio", ratio != null ? (ratio*100).toFixed(1)+"%" : "—", ""],
+    ["Damage", priced ? money(now.damage, u) : "—", priced ? "" : "na"],
+    ["Loss ratio", priced && ratio != null ? (ratio*100).toFixed(1)+"%" : "—", priced ? "" : "na"],
   ].map(([k,v,c])=>`<div><dt>${k}</dt><dd class="${c}">${v}</dd></div>`).join("");
 
   /* The prose that used to sit here restated the grid above it in sentences, and the
@@ -1101,9 +1119,15 @@ function showExposure(){
      said the same thing twice - if the currency total is not quotable, why it is not
      quotable is a detail for the methodology page, and the run reports the missing
      library as a gap below in any case. */
-  let note = `<span style="color:var(--warn)">Counts and loss ratio are validated; `
-    + `<b>the currency total is not</b>. `
-    + `<a href="/methodology#accuracy" target="_blank" rel="noopener">Why</a>.</span>`;
+  let note = priced
+    ? `<span style="color:var(--warn)">Counts and loss ratio are validated; `
+      + `<b>the currency total is not</b>. `
+      + `<a href="/methodology#accuracy" target="_blank" rel="noopener">Why</a>.</span>`
+    : `<span style="color:var(--warn)"><b>Damage withheld at this discharge.</b> `
+      + `${(now.inChannelShare*100).toFixed(0)}% of it would come from structures the `
+      + `model places in the channel itself, where any flow at all puts water on them. `
+      + `Extent, depth and counts still stand. `
+      + `<a href="/methodology#accuracy" target="_blank" rel="noopener">Why</a>.</span>`;
   for(const g of (expo.gaps||[])){
     note += `${note ? "<br>" : ""}<span style="color:var(--warn)">${g}</span>`;
   }

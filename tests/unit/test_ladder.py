@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from dataclasses import replace
+
 import numpy as np
 import pytest
 
@@ -101,11 +103,42 @@ def test_residents_track_the_buildings_that_flood() -> None:
 
 
 def test_interpolating_between_rungs_lands_between_them() -> None:
+    """These fixtures sit at HAND 0, so `at()` withholds the currency total - every
+    structure in them is one the model would place in the channel. The interpolation
+    itself is what this covers, so it reads the rungs directly."""
     got = _ladder()
-    mid = got.at(0.75)
     lo = got.damage[MULTS.tolist().index(0.5)]
     hi = got.damage[MULTS.tolist().index(1.0)]
-    assert lo <= mid["damage"] <= hi
+    xs = np.asarray(got.multipliers)
+    mid = float(np.interp(0.75, xs, np.asarray(got.damage)))
+    assert lo <= mid <= hi
+
+
+def test_the_ladder_attributes_damage_to_the_structure_in_the_channel() -> None:
+    """One of the three fixtures stands at HAND 0 - the model cannot separate it from
+    the channel it derived, so any stage at all puts water on it. Its damage is still
+    computed and still counted, but counted apart."""
+    got = _ladder()
+    one = MULTS.tolist().index(1.0)
+    assert 0.0 < got.in_channel[one] < got.damage[one], "one of three, not all of it"
+    assert got.at(1.0)["in_channel_share"] == pytest.approx(got.in_channel[one] / got.damage[one])
+
+    # The share falls as the flood grows, because the buildings out of the channel are
+    # the ones a bigger flood reaches. That is the whole shape of the problem: the
+    # channel dominates the answer exactly where the answer is smallest.
+    low = got.at(1.0)["in_channel_share"]
+    high = got.at(3.0)["in_channel_share"]
+    assert isinstance(low, float) and isinstance(high, float)
+    assert high < low
+
+
+def test_a_stricter_threshold_withholds_the_same_ladder() -> None:
+    """The rule is a setting, not a constant: a deployment that trusts its terrain
+    less can demand a smaller channel share before it will print a dollar figure."""
+    got = _ladder()
+    strict = replace(got, max_in_channel_share=0.1)
+    assert strict.at(1.0)["damage"] is None
+    assert strict.at(1.0)["inundated"] is not None, "counts are still the model's answer"
 
 
 def test_asking_beyond_the_ladder_clamps_rather_than_extrapolating() -> None:

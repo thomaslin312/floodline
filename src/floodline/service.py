@@ -170,6 +170,8 @@ def _exposure_stats(result: Any, config: Config) -> dict[str, Any]:
                 "structure": list(result.ladder.structure),
                 "contents": list(result.ladder.contents),
                 "inundated": list(result.ladder.inundated),
+                "in_channel": list(result.ladder.in_channel),
+                "max_in_channel_share": result.ladder.max_in_channel_share,
                 "residents": list(result.ladder.residents),
             }
             if result.ladder is not None

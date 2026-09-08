@@ -517,14 +517,35 @@ class DamageConfig(Frozen):
     )
     default_class: str = Field(default="residential")
     discharge_ladder_step: Positive = Field(
-        default=0.1,
+        default=0.05,
         description="Spacing of the discharge multiplier ladder, from 0 to "
         "discharge_ladder_max. Must divide 1.0 exactly, so the observed discharge is a "
         "rung rather than a point interpolated between two: it is the one multiplier "
-        "every number in the model is anchored to.",
+        "every number in the model is anchored to. Halved from 0.1 because the panel "
+        "interpolates between rungs and damage against discharge is steepest at the "
+        "bottom, where a single segment from zero to the first rung was drawing a "
+        "straight line across the whole rise.",
     )
     discharge_ladder_max: Positive = Field(
         default=3.0, description="Top of the multiplier ladder the slider spans."
+    )
+    unpriceable_hand_m: Fraction = Field(
+        default=0.0,
+        description="A structure whose height above nearest drainage is at or below "
+        "this is standing on a drainage cell: the model cannot separate it from the "
+        "channel it derived. Lidar images the water surface, so the channel has no "
+        "depth in the terrain and is one cell wide, and on a dense urban bayou that "
+        "swallows the buildings along the bank. Their damage is still computed - they "
+        "may well flood - but it is counted separately, because at low discharge it is "
+        "the whole answer and it is an artefact of where they were placed.",
+    )
+    max_in_channel_share: Fraction = Field(
+        default=0.5,
+        description="Withhold the currency total when more than this share of it comes "
+        "from structures on drainage cells. Below roughly bankfull the model is only "
+        "wetting its own channel, every charged building is one it placed there, and a "
+        "dollar figure computed from that reads as a measurement of a flood that is "
+        "not happening. Counts and depths are still reported.",
     )
     map_reference_multipliers: tuple[Fraction | Positive, ...] = Field(
         default=(0.5, 1.0, 2.0, 3.0),

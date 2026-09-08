@@ -165,6 +165,7 @@ def _ladder(damage: list[float]) -> object:
         structure=tuple(d * 0.6 for d in damage),
         contents=tuple(d * 0.4 for d in damage),
         inundated=tuple(int(d / 1e5) for d in damage),
+        in_channel=tuple(0.0 for _ in damage),
         residents=tuple(d / 1e4 for d in damage),
     )
 

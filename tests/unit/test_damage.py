@@ -605,3 +605,77 @@ def test_expected_damage_differs_from_damage_at_the_expected_depth() -> None:
         config=cfg,
     )
     assert float(dry.expected_per_building.sum()) == 0.0
+
+
+def test_the_ladder_separates_damage_from_structures_in_the_channel() -> None:
+    """Lidar images the water surface, so the derived channel has no depth and is one
+    cell wide. Structures whose HAND is zero are standing in it as far as the model is
+    concerned, and any stage at all puts water on them. Their damage is computed - they
+    may well flood - but counted apart, because at low discharge it is the whole answer.
+    """
+    import numpy as np
+
+    from floodline.core.damage.ladder import damage_ladder
+
+    # Two structures: one on the drainage cell, one two metres above it.
+    hand = np.array([0.0, 2.0])
+    reach = np.array([0, 0])
+    stage = np.array([[0.0, 0.5, 3.0]])  # one reach, three rungs
+    ladder = damage_ladder(
+        hand,
+        reach,
+        foundation_m=np.array([0.0, 0.0]),
+        floor_area_m2=np.array([100.0, 100.0]),
+        building_class=np.array(["residential", "residential"], dtype=object),
+        storeys=np.array([1.0, 1.0]),
+        stage_by_multiplier=stage,
+        multipliers=np.array([0.0, 0.5, 1.0]),
+        base_discharge_cms=100.0,
+    )
+    assert ladder.in_channel[0] == 0.0, "no water, no damage anywhere"
+    # At the middle rung only the channel structure is wet, so all of it is in-channel.
+    assert ladder.damage[1] > 0
+    assert ladder.in_channel[1] == pytest.approx(ladder.damage[1])
+    # At the top rung both are wet, so the share falls.
+    assert ladder.in_channel[2] < ladder.damage[2]
+
+
+def test_a_currency_total_dominated_by_the_channel_is_withheld() -> None:
+    """`at()` returns None for the money rather than a small number.
+
+    A figure printed with a caveat gets screenshotted without it; a figure withheld
+    cannot be. Counts and residents are unaffected - those are the model's answer.
+    """
+    from floodline.core.damage.ladder import DamageLadder
+
+    ladder = DamageLadder(
+        multipliers=(0.0, 1.0),
+        discharge_cms=(0.0, 100.0),
+        damage=(0.0, 1000.0),
+        structure=(0.0, 800.0),
+        contents=(0.0, 200.0),
+        inundated=(0, 5),
+        in_channel=(0.0, 900.0),  # 90% of it from the channel
+        residents=(0.0, 12.0),
+        max_in_channel_share=0.5,
+    )
+    withheld = ladder.at(1.0)
+    assert withheld["damage"] is None
+    assert withheld["structure"] is None
+    assert withheld["reportable"] is False
+    assert withheld["in_channel_share"] == pytest.approx(0.9)
+    assert withheld["inundated"] == pytest.approx(5.0), "counts survive"
+    assert withheld["residents"] == pytest.approx(12.0)
+
+    honest = DamageLadder(
+        multipliers=(0.0, 1.0),
+        discharge_cms=(0.0, 100.0),
+        damage=(0.0, 1000.0),
+        structure=(0.0, 800.0),
+        contents=(0.0, 200.0),
+        inundated=(0, 5),
+        in_channel=(0.0, 100.0),  # 10%
+        residents=(0.0, 12.0),
+        max_in_channel_share=0.5,
+    )
+    assert honest.at(1.0)["damage"] == pytest.approx(1000.0)

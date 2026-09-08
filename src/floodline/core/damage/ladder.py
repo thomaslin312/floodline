@@ -46,24 +46,43 @@ class DamageLadder:
     structure: tuple[float, ...]
     contents: tuple[float, ...]
     inundated: tuple[int, ...]
+    in_channel: tuple[float, ...]
+    """Damage at each rung from structures standing on a drainage cell. The model
+    cannot place these relative to the channel it derived - lidar images the water
+    surface, so the channel has no depth and is one cell wide - so any stage at all
+    puts water on them. At the observed peak on Whiteoak Bayou this is 18% of the
+    total; at a hundredth of it, 92%, which is what makes the low end unreportable
+    rather than merely uncertain."""
+
     residents: tuple[float, ...]
     """Overnight residents in structures above finished floor at each multiplier."""
+
+    max_in_channel_share: float = 0.5
+    """Above this share, `at()` reports the currency total as None."""
 
     per_building: dict[float, npt.NDArray[np.float64]] = field(default_factory=dict)
     """Damage per structure at a few reference multipliers, for the map layer. Kept
     only at the multipliers asked for: the full ladder over a quarter of a million
     structures would be 68 MB of float, to draw a picture 600 pixels wide."""
 
-    def at(self, multiplier: float) -> dict[str, float]:
+    def at(self, multiplier: float) -> dict[str, float | bool | None]:
         """Interpolate the ladder, which is what a slider between rungs needs."""
         xs = np.asarray(self.multipliers, dtype=np.float64)
         clamped = float(np.clip(multiplier, xs[0], xs[-1]))
+        total = float(np.interp(clamped, xs, self.damage))
+        channel = float(np.interp(clamped, xs, self.in_channel))
+        share = channel / total if total > 0 else 0.0
+        # Counts and depths survive; the currency total does not. A number withheld is
+        # recoverable by whoever wants it, and a number printed is quoted.
+        reportable = share <= self.max_in_channel_share
         return {
             "multiplier": clamped,
             "discharge_cms": float(np.interp(clamped, xs, self.discharge_cms)),
-            "damage": float(np.interp(clamped, xs, self.damage)),
-            "structure": float(np.interp(clamped, xs, self.structure)),
-            "contents": float(np.interp(clamped, xs, self.contents)),
+            "damage": total if reportable else None,
+            "structure": float(np.interp(clamped, xs, self.structure)) if reportable else None,
+            "contents": float(np.interp(clamped, xs, self.contents)) if reportable else None,
+            "in_channel_share": share,
+            "reportable": reportable,
             "inundated": float(np.interp(clamped, xs, np.asarray(self.inundated, float))),
             "residents": float(np.interp(clamped, xs, self.residents)),
         }
@@ -128,6 +147,10 @@ def damage_ladder(
     wanted = {int(np.argmin(np.abs(multipliers - m))): float(m) for m in reference_multipliers}
     per_building: dict[float, npt.NDArray[np.float64]] = {}
     totals, structure, contents, counts, people = [], [], [], [], []
+    # Structures the model placed on a drainage cell. Fixed for the basin, so it is
+    # computed once rather than per rung.
+    in_channel = np.isfinite(hand_m) & (hand_m <= damage_config.unpriceable_hand_m)
+    channel_totals: list[float] = []
     for step in range(n_steps):
         stage = stage_by_multiplier[safe_reach, step]
         # The curves are defined below floor level because water can sit in a
@@ -164,6 +187,7 @@ def damage_ladder(
         structure.append(result.total - result.contents_total)
         counts.append(int(wet.sum()))
         people.append(float(residents[wet].sum()) if residents is not None else 0.0)
+        channel_totals.append(float(result.per_building[in_channel].sum()))
 
     return DamageLadder(
         multipliers=tuple(float(m) for m in multipliers),
@@ -172,6 +196,8 @@ def damage_ladder(
         structure=tuple(structure),
         contents=tuple(contents),
         inundated=tuple(counts),
+        in_channel=tuple(channel_totals),
         residents=tuple(people),
+        max_in_channel_share=float(damage_config.max_in_channel_share),
         per_building=per_building,
     )
