@@ -62,6 +62,28 @@ else
   esac
 fi
 
+# --- is this machine behind NAT, and is that NAT yours? ----------------------
+# The check above compares the A record against the *egress* address, which can match
+# while inbound connections still fail. If the machine's own interface address is
+# private, something between it and the internet is translating, and port 80 has to be
+# forwarded through that thing. On a home router you can do that. On a campus or
+# office network you generally cannot, and asking is the whole task.
+private_if=""
+for addr in $(ifconfig 2>/dev/null | awk '/inet /{print $2}'); do
+  case "$addr" in
+    127.*|169.254.*) continue ;;
+    10.*|172.1[6-9].*|172.2[0-9].*|172.3[01].*|192.168.*) private_if="$addr"; break ;;
+  esac
+done
+if [ -n "$private_if" ] && [ -n "$public" ] && [ "$private_if" != "$public" ]; then
+  warn "this machine is $private_if behind NAT, reached from outside as $public."
+  warn "Ports 80 and 443 must be forwarded to $private_if by whatever owns that NAT."
+  warn "If that is not a router you administer, a tunnel is the realistic route in:"
+  warn "it dials out, so it needs no inbound port and no firewall change."
+elif [ -n "$public" ]; then
+  pass "this machine holds its public address directly; no forwarding needed"
+fi
+
 # --- are the ports free on this machine? -------------------------------------
 # Caddy cannot bind what something else already holds, and the failure surfaces as a
 # container that will not start rather than as a certificate problem.
