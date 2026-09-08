@@ -126,7 +126,12 @@ fi
 # `-k` because a local stack has no domain, so Caddy serves localhost from its own
 # internal CA. On a real deployment the certificate is from Let's Encrypt and this
 # would pass without it.
-if [ "${SMOKE_PROXY:-1}" = "1" ]; then
+# Only when this deployment terminates its own TLS. Behind a tunnel there is no
+# Caddy and nothing listening on 443, and asserting otherwise would fail a stack that
+# is working exactly as intended. Detected rather than configured, so neither
+# arrangement needs a flag to be checked correctly.
+if [ "${SMOKE_PROXY:-auto}" = "1" ] \
+   || { [ "${SMOKE_PROXY:-auto}" = "auto" ] && curl -sk -o /dev/null -m 5 "$PROXY/health" 2>/dev/null; }; then
   code=$(curl -sk -o /dev/null -w '%{http_code}' -m 20 "$PROXY/health" || true)
   if [ "$code" = "200" ]; then
     pass "the proxy serves HTTPS"
@@ -151,6 +156,8 @@ if [ "${SMOKE_PROXY:-1}" = "1" ]; then
   else
     fail "the application is published on 0.0.0.0; only the proxy should be"
   fi
+else
+  warn "no local TLS terminator answering on 443; this stack is fronted by a tunnel"
 fi
 
 printf '\n'

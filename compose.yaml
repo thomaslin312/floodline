@@ -142,6 +142,12 @@ services:
       start_period: 15s
 
   proxy:
+    # Only for a deployment that can accept inbound connections. This machine cannot -
+    # it is behind a NAT nobody here administers - so the tunnel below is the route in
+    # and Caddy would be a second proxy doing a job Cloudflare already does at its
+    # edge. Kept, because a deployment that *can* forward 80 and 443 wants it and
+    # should not have to reconstruct it: `docker compose --profile caddy up -d`.
+    profiles: ["caddy"]
     build:
       context: .
       dockerfile: docker/Dockerfile.proxy
@@ -186,6 +192,35 @@ services:
       timeout: 5s
       retries: 3
       start_period: 10s
+
+  tunnel:
+    # The way in on a network that accepts no inbound connections. cloudflared dials
+    # *out* to Cloudflare and holds the connection open, so there is no port to
+    # forward, no firewall exception to ask for, and no certificate to renew - TLS is
+    # terminated at Cloudflare's edge. It also survives this machine's public address
+    # changing, which on a campus network it will.
+    #
+    # The hostname-to-service mapping lives in the Cloudflare dashboard, not here:
+    # floodline.app -> http://api:8000, where `api` is the service name on this
+    # network. The token is all the container needs to know.
+    #
+    # Behind a profile because how a deployment is reached is a deployment's own
+    # choice, and compose interpolates this whole file whatever is running: a
+    # required TUNNEL_TOKEN broke every `docker compose exec` on a machine that had
+    # not set one, including the smoke script's. Turn it on for good in `.env` with
+    # COMPOSE_PROFILES=tunnel, and plain `docker compose up -d` includes it.
+    profiles: ["tunnel"]
+    image: cloudflare/cloudflared:2025.8.1
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run --token ${TUNNEL_TOKEN:-}
+    depends_on:
+      api:
+        condition: service_healthy
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
 
 volumes:
   pgdata:

@@ -464,11 +464,27 @@ CI rebuilds it and fails if the committed output has drifted from the source.
 ## Deploy
 
 ```bash
-cp .env.example .env      # set POSTGRES_PASSWORD, PUBLIC_DOMAIN and ACME_EMAIL
-./docker/preflight.sh your.domain      # before the first start, not after
+cp .env.example .env      # set POSTGRES_PASSWORD, then see below
 docker compose up -d --build
 docker compose exec api floodline prewarm
+docker image prune -f && docker builder prune -f
 ```
+
+**How it is reached is a profile, set with `COMPOSE_PROFILES` in `.env`.** Neither is on
+by default, because a development checkout wants neither.
+
+`COMPOSE_PROFILES=tunnel` runs Cloudflare Tunnel. `cloudflared` dials out and holds the
+connection open, so the machine needs no inbound port, no forwarded ports and no
+certificate of its own — TLS is terminated at Cloudflare's edge. Set `TUNNEL_TOKEN` from
+Zero Trust → Networks → Tunnels → Configure, and set the tunnel's Public Hostname to
+`floodline.app → http://api:8000`. This is the route for a machine behind a NAT nobody
+local administers, which is most of them.
+
+`COMPOSE_PROFILES=caddy` terminates TLS here instead, with an automatically renewed
+Let's Encrypt certificate. It needs `PUBLIC_DOMAIN` and `ACME_EMAIL`, a DNS A record
+pointing at this machine, and ports 80 and 443 reaching it. Run
+`./docker/preflight.sh your.domain` **before** the first start — Let's Encrypt
+rate-limits failed attempts, and `ACME_STAGING=1` rehearses without spending them.
 
 Three services: PostGIS, the application, and Caddy in front of it. The application
 serves the map at `/`, the service under `/api`, and `/health` and `/ready` at the
