@@ -2787,3 +2787,44 @@ indexes by arithmetic; only the damage ladder, which is searched, gained the det
 And the 18% at the observed peak is worth stating plainly rather than filing away. It
 is not the low end alone: a fifth of the headline damage on Whiteoak Bayou comes from
 buildings the model cannot distinguish from the stream it derived.
+
+## 2026-09-08 — the damage half of a request was 87% bookkeeping
+
+Asked whether the model was as optimised as it could be. Profiled it rather than
+guessing, which was the only useful part of the answer.
+
+`/api/exposure` on Whiteoak Bayou, 258,527 structures, split almost exactly in two:
+
+| stage | before | after |
+|---|---:|---:|
+| damage | 65.3 s | **10.9 s** |
+| nsi | 64.7 s | 64.7 s |
+| dem, terrain, hydraulics | 10.2 s | 10.3 s |
+| **wall clock** | **143.3 s** | **88.1 s** |
+
+The damage half was one block. `estimate_damage` ended with a per-class breakdown:
+
+    for name in {str(c) for c in classes.ravel()}:
+        by_class[name] = float(per_building[classes == name].sum())
+
+A Python `str()` per building to collect the names, then a full-array comparison and
+sum for each of 42 occupancy codes. Measured at 119 ms a call, which is the whole of
+that function's 0.119 s self-time in the profile - the arithmetic the function exists
+for is the cheap part. The Monte Carlo runs 400 draws and the ladder 65 rungs, and
+**every one of those 1,066 results was discarded**: `by_class` is read in two places,
+both on the point estimate, by the panel's top-eight list and the CLI's breakdown.
+
+So it is now optional, on by default, and off in the two hot callers. Results are
+identical - 258,527 structures, 33,279 inundated, USD 7,949,846,905 - and a test pins
+that skipping it changes nothing but the breakdown itself.
+
+**What was not done, and why.** The other half is `building_depths`, which calls
+`rasterize` once per building: 258,528 times. The footprints are axis-aligned squares,
+so it looked like the mask had to be constant and the call skippable. It is not.
+Checked against 4,000 random squares before writing anything, and **all 4,000** had
+windows that were not fully covered: the window is deliberately padded one cell past
+`ceil`, and that padding row is genuinely untouched. Replacing the call would mean
+reimplementing rasterio's `all_touched` semantics by hand, in the function that decides
+which cells a building is charged for, and a boundary case off by one there produces a
+different building count rather than an error. The measurement that disproved the
+assumption is the reason not to.

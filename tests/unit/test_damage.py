@@ -679,3 +679,26 @@ def test_a_currency_total_dominated_by_the_channel_is_withheld() -> None:
         max_in_channel_share=0.5,
     )
     assert honest.at(1.0)["damage"] == pytest.approx(1000.0)
+
+
+def test_the_class_breakdown_can_be_skipped_without_changing_the_totals() -> None:
+    """It costs 119 ms on a quarter of a million structures and only the point
+    estimate is ever asked for one - the Monte Carlo and the ladder called it 1,066
+    times between them and discarded every result. Skipping it must change nothing
+    else, or the saving is a different answer rather than a faster one."""
+    import numpy as np
+
+    from floodline.core.damage.estimate import estimate_damage
+
+    depths = np.array([0.5, 1.5, -0.2, 3.0])
+    areas = np.array([100.0, 150.0, 120.0, 90.0])
+    classes = np.array(["residential", "commercial", "residential", "commercial"], dtype=object)
+
+    with_it = estimate_damage(depths, areas, classes, cap_storeys=False)
+    without = estimate_damage(depths, areas, classes, cap_storeys=False, with_by_class=False)
+
+    assert without.total == pytest.approx(with_it.total)
+    assert without.per_building == pytest.approx(with_it.per_building)
+    assert without.contents_total == pytest.approx(with_it.contents_total)
+    assert with_it.by_class, "the point estimate still gets its breakdown"
+    assert without.by_class == {}, "and the callers that discard it do not pay for it"

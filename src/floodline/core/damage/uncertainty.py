@@ -306,6 +306,9 @@ def monte_carlo_damage(
             drawn,
             areas,
             classes,
+            # The per-class breakdown costs 119 ms a call here and nothing reads it:
+            # only the point estimate below is ever asked for one.
+            with_by_class=False,
             storeys=counts,
             config=damage_config,
             curves=sets[family],

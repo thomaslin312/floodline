@@ -167,6 +167,8 @@ def damage_ladder(
             above_floor,
             floor_area_m2,
             building_class,
+            # Sixty-five rungs, none of which is asked for a class breakdown.
+            with_by_class=False,
             storeys=storeys,
             config=damage_config,
             curves=curves,

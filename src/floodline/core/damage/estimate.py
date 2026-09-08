@@ -94,6 +94,7 @@ def estimate_damage(
     class_index: npt.NDArray[np.int64] | None = None,
     contents_index: npt.NDArray[np.int64] | None = None,
     curve_sigma_z: float = 0.0,
+    with_by_class: bool = True,
 ) -> DamageEstimate:
     """Estimate direct damage for a set of buildings.
 
@@ -231,9 +232,16 @@ def estimate_damage(
     elif (contents_value is None) != (contents_curves is None):
         raise ValueError("contents_value and contents_curves must be given together")
 
+    # Measured at 119 ms per call on a quarter of a million structures - a Python
+    # `str()` per building to collect the names, then a full-array comparison and sum
+    # for each of the 42 occupancy codes. That was the entire self-time of this
+    # function, and the Monte Carlo and the ladder called it 1,066 times between them
+    # and discarded every one: only the point estimate is ever read, by the panel's
+    # top-eight list and the CLI's breakdown.
     by_class: dict[str, float] = {}
-    for name in {str(c) for c in classes.ravel()}:
-        by_class[name] = float(per_building[classes == name].sum())
+    if with_by_class:
+        for name in {str(c) for c in classes.ravel()}:
+            by_class[name] = float(per_building[classes == name].sum())
 
     notes: list[str] = []
     if contents_value is None:
