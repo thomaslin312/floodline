@@ -2483,10 +2483,19 @@ file granularity is not.
 
 **Deployment configuration moved to `settings.py`,** pydantic-settings over `.env`,
 prefix `FLOODLINE_`. Thirty-five settings: nine paths, sixteen upstream endpoints, five
-HTTP behaviours, five service limits. `.env.example` is generated from the model itself
-so the two cannot drift. The line drawn is between what the model *is* - Manning's
-roughness, an accumulation threshold, a curve family, all still in `core.config` and
-versioned with the code that reads them - and where it *runs*.
+HTTP behaviours, five service limits. `.env.example` is written by hand against the
+model. The line drawn is between what the model *is* - Manning's roughness, an
+accumulation threshold, a curve family, all still in `core.config` and versioned with
+the code that reads them - and where it *runs*.
+
+> **Correction, 2026-09-07.** This entry originally said `.env.example` "is generated
+> from the model itself so the two cannot drift". That was not true when it was
+> written and it did drift: forty fields on the model against thirty-six in the file,
+> with `FLOODLINE_DATABASE_URL` - the one setting a deployment most needs - among the
+> missing. The generator exists now (`floodline env-template`, enforced by
+> `test_env_example.py`), so the claim holds from that commit forward. It is corrected
+> in place rather than quietly fixed because a decisions log describing a safeguard
+> that does not exist is worse than one that says nothing: the sentence was believed.
 
 **`storage/` is an interface with one implementation.** Three methods, keyed on the
 watershed and a hash of the terrain parameters, computed from the values rather than

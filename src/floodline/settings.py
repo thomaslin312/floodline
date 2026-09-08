@@ -23,12 +23,22 @@ from __future__ import annotations
 
 from functools import lru_cache
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 __all__ = ["Settings", "settings"]
+
+
+def section(title: str, note: str = "") -> dict[str, Any]:
+    """Mark a field as opening a new block of `.env.example`.
+
+    The grouping lives on the model rather than in the generator, so a new setting
+    lands in the section it is declared in and there is no second list to keep in
+    step. Only the first field of a block carries this.
+    """
+    return {"section": {"title": title, "note": note}}
 
 
 class Settings(BaseSettings):
@@ -50,6 +60,7 @@ class Settings(BaseSettings):
     data_raw: Path = Field(
         default=Path("data/raw"),
         description="Downloaded source data. Never committed; deletable and refetched.",
+        json_schema_extra=section("Where things live"),
     )
     data_interim: Path = Field(default=Path("data/interim"))
     data_processed: Path = Field(default=Path("data/processed"))
@@ -85,6 +96,12 @@ class Settings(BaseSettings):
     tnm_products_url: str = Field(
         default="https://tnmaccess.nationalmap.gov/api/v1/products",
         description="USGS National Map product search, for 3DEP elevation tiles.",
+        json_schema_extra=section(
+            "Upstream services (public, keyless)",
+            "Every one of these is a public, keyless endpoint. They are settings "
+            "rather than constants because agencies move them: three changed host or "
+            "format during development, and each time it was a code change.",
+        ),
     )
     nwis_instantaneous_url: str = Field(
         default="https://waterservices.usgs.gov/nwis/iv/",
@@ -158,6 +175,7 @@ class Settings(BaseSettings):
         default="floodline/0.1 (+https://github.com/thomaslin312/floodline)",
         description="Sent on every request. Agencies block anonymous bulk readers, and "
         "identifying the client is the difference between being throttled and blocked.",
+        json_schema_extra=section("How to talk to them"),
     )
     http_max_attempts: int = Field(
         default=4, ge=1, description="Attempts per request before giving up."
@@ -176,6 +194,7 @@ class Settings(BaseSettings):
         gt=0,
         description="Largest grid the service will attempt. Depression filling is "
         "global, so the whole watershed must be resident in memory.",
+        json_schema_extra=section("Service limits"),
     )
     max_concurrent: int = Field(
         default=2,
@@ -205,6 +224,12 @@ class Settings(BaseSettings):
         description="PostGIS connection string. The compose stack sets this to the db "
         "service; a developer without one can leave it and the API will report itself "
         "not ready rather than failing at the first query.",
+        json_schema_extra=section(
+            "Database",
+            "compose interpolates POSTGRES_USER and POSTGRES_PASSWORD into the URL "
+            "below, so setting those is usually enough and this line is for a "
+            "database compose does not run.",
+        ),
     )
     db_pool_size: int = Field(
         default=5, ge=1, description="Connections held open. Small: requests are seconds, not ms."

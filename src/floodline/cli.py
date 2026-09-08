@@ -783,6 +783,37 @@ def fetch_curves(
     )
 
 
+@app.command("env-template")
+def env_template(
+    write: Annotated[bool, typer.Option("--write", help="Rewrite .env.example in place.")] = False,
+) -> None:
+    """Render `.env.example` from the settings model.
+
+    Without `--write` the file is printed and the command exits non-zero if what is
+    committed differs, which is what CI and the test suite check. The decisions log
+    claimed this generator existed long before it did, and the file had drifted by
+    four settings - `FLOODLINE_DATABASE_URL` among them.
+    """
+    from floodline.env_template import ENV_EXAMPLE, render_env_example
+
+    rendered = render_env_example()
+    if write:
+        ENV_EXAMPLE.write_text(rendered)
+        typer.echo(f"wrote {ENV_EXAMPLE} ({len(rendered.splitlines())} lines)")
+        return
+
+    current = ENV_EXAMPLE.read_text() if ENV_EXAMPLE.exists() else ""
+    if current == rendered:
+        typer.echo(f"{ENV_EXAMPLE} is up to date")
+        return
+    typer.secho(
+        f"{ENV_EXAMPLE} does not match the settings model. Run: floodline env-template --write",
+        fg=typer.colors.RED,
+        err=True,
+    )
+    raise typer.Exit(code=1)
+
+
 @app.command("prewarm")
 def prewarm(
     cache: Annotated[Path | None, typer.Option(help="Curve library cache directory.")] = None,
