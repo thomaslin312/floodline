@@ -2,7 +2,11 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    # `rebuild` is a from-scratch history with no ancestor in common with main, so
+    # GitHub will not open a pull request between the two and the `pull_request`
+    # trigger below can never fire for it. Naming it here is what gets the work that
+    # is actually being done through the gate.
+    branches: [main, rebuild]
   pull_request:
   workflow_dispatch:
 
