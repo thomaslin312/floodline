@@ -24,6 +24,32 @@ NonNegative = Annotated[float, Field(ge=0)]
 Fraction = Annotated[float, Field(ge=0.0, le=1.0)]
 
 
+PEAK_BYTES_PER_CELL = 125
+"""Peak memory to assume per grid cell, for refusing work before it is attempted.
+
+Deliberately about twice what is measured, and that is the point: this number decides
+whether a fetch is refused, so it is a bound rather than an estimate. Erring high
+refuses a run that might have fitted; erring low fills the machine, and depression
+filling is global, so there is no partial answer to fall back on.
+
+Three measurements, three methods, on the same watershed:
+
+* 401 MiB fixed + **57.7 bytes per cell** - the container's cgroup high-water mark
+  across a whole request, 1.10M cells at 30 m against 9.94M at 10 m. The number to
+  size a memory limit against, because it is what the kernel counts.
+* 245.8 MiB + 59.5 bytes per cell - the same request sampled through `docker stats`.
+  Agrees on the slope, which is what says the sampling was not missing the peak.
+* 295 MiB + **69.3 bytes per cell** - `ru_maxrss` around `route_terrain` alone on
+  synthetic grids from 1.44M to 12.96M cells. Higher per cell than the request as a
+  whole because it is only the routing, with no bundle encoding to average against.
+
+So the real figure is 58 to 70 bytes per cell depending on what is being asked, and
+125 is roughly double the top of that. It was carried as a bare literal in four places
+for months, which is how it came to sit in the repository next to a measured 59.5 and
+look like a contradiction. It is neither wrong nor measured: it is a margin.
+"""
+
+
 class Frozen(BaseModel):
     """Base for every config model: immutable, no unknown fields, validated on assignment."""
 
@@ -672,8 +698,8 @@ class CaseConfig(Frozen):
     dem_max_download_gb: Positive = Field(
         default=10.0,
         description="Refuse a DEM fetch whose planned total exceeds this. The full "
-        "AOI at 1 m is about 57 GB, which is easy to start by accident and, at "
-        "roughly 125 bytes per cell of peak memory, far past what the global "
+        "AOI at 1 m is about 57 GB, which is easy to start by accident and, at the "
+        "conservative PEAK_BYTES_PER_CELL bound, far past what the global "
         "priority-flood can hold in one pass. Raise it deliberately, or shrink the AOI.",
     )
     huc_level: int = Field(

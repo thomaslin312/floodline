@@ -37,7 +37,7 @@ from typing import Any
 
 import httpx
 
-from floodline.core.config import CaseConfig, Config, SourcesConfig
+from floodline.core.config import PEAK_BYTES_PER_CELL, CaseConfig, Config, SourcesConfig
 from floodline.settings import settings
 
 __all__ = [
@@ -457,8 +457,9 @@ def fetch_usgs_dem(context: FetchContext) -> list[Artifact]:
             raise SourceError(
                 f"{resolution} m DEM over this AOI is {len(items)} tiles and "
                 f"{planned / 1e9:.1f} GB, over the {context.case.dem_max_download_gb:g} GB "
-                "budget in case.dem_max_download_gb. At roughly 125 bytes of peak memory "
-                "per cell, that is also well past what the global priority-flood can hold "
+                "budget in case.dem_max_download_gb. At the conservative "
+                f"{PEAK_BYTES_PER_CELL} bytes of peak memory per cell this model sizes "
+                "against, that is also well past what the global priority-flood can hold "
                 "in one pass. Shrink case.aoi_bbox_wgs84, drop this resolution, or raise "
                 "the budget deliberately."
             )

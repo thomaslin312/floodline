@@ -180,6 +180,7 @@ def watersheds(
     because flow accumulation depends on contributing area the box cannot see. A
     watershed is hydrologically complete, so it is the right unit to run over.
     """
+    from floodline.core.config import PEAK_BYTES_PER_CELL
     from floodline.io.ingest import load_watersheds
 
     resolved = load_config(config)
@@ -197,11 +198,12 @@ def watersheds(
         cells = unit.cells_at(resolution)
         typer.echo(
             f"{unit.huc:<13}{unit.name[:36]:<38}{unit.area_km2:>7.0f}"
-            f"{cells / 1e6:>9.1f}{cells * 125 / 1e9:>8.1f}G"
+            f"{cells / 1e6:>9.1f}{cells * PEAK_BYTES_PER_CELL / 1e9:>8.1f}G"
         )
     typer.echo(
         f"\n{len(units)} units at {resolution:g} m; "
-        f"peak memory is roughly 125 bytes per cell for the global fill."
+        f"peak is a conservative {PEAK_BYTES_PER_CELL} bytes per cell, about twice "
+        "the 58-70 measured, because it is used to refuse work rather than to plan it."
     )
 
 

@@ -2649,3 +2649,40 @@ Verified on a stack built from nothing, `down -v` first:
 One thing left open rather than fixed: `postgis/postgis:16-3.4` is amd64 only, so on an
 arm64 host it runs under emulation. It works and it is slow, and a real deployment
 should pin a platform deliberately rather than discover this.
+
+## 2026-09-07 — two memory figures, reconciled by measuring
+
+The repository carried `125 bytes per cell` in four places and a measured
+`59.5 bytes per cell` in the compose file, with nothing saying how they related.
+Either one of them was wrong or they were answering different questions, and a reader
+had no way to tell which.
+
+Three measurements on Whiteoak Bayou, three methods:
+
+| method | fixed | per cell |
+|---|---:|---:|
+| cgroup `memory.peak`, whole request, 1.10M and 9.94M cells | 401 MiB | **57.7 B** |
+| `docker stats` sampled, same request | 245.8 MiB | 59.5 B |
+| `ru_maxrss` around `route_terrain` alone, synthetic 1.44M-12.96M | 295 MiB | **69.3 B** |
+
+The first two agreeing on the slope is the useful part: it says the polling was not
+missing the peak between samples, which was the obvious way for the compose figure to
+have been wrong. The third is higher because it is the routing on its own, with no
+bundle encoding to average against, and it is the one to quote for the fill.
+
+So the answer is 58 to 70 bytes per cell depending on what is being asked, and 125 is
+neither wrong nor measured: it is a margin of roughly two. That is defensible, because
+every place it appears is refusing work before anything has run - a DEM fetch over
+budget, a watershed too large to attempt. Erring high refuses a run that might have
+fitted; erring low fills a machine, and depression filling is global, so there is no
+partial answer to fall back on.
+
+It is now `core.config.PEAK_BYTES_PER_CELL`, imported by the three call sites that had
+their own copy of the literal, and its docstring carries the table above. Sitting as a
+bare `125` in four files is how it came to look like a contradiction rather than a
+choice.
+
+The compose limit was re-derived from the cgroup number rather than the sampled one -
+a limit must cover the peak between two samples - which moves the worst case from
+4.67 to 4.69 GiB against a 6 GiB cap. No change to the limit; the reasoning behind it
+is now the right kind of measurement.

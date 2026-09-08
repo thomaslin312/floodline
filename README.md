@@ -737,9 +737,10 @@ Two things worth knowing before running it:
 
 - **The full AOI at 1 m is 158 tiles and 56.6 GB.** A fetch over
   `case.dem_max_download_gb` (10 GB by default) is refused rather than started.
-  At roughly 125 bytes of peak memory per cell that volume is also well past what
-  the global priority-flood can hold in one pass, so the AOI needs narrowing for a
-  1 m run regardless of disk.
+  At the conservative 125 bytes of peak memory per cell the model sizes against —
+  about twice the 58 to 70 measured, because it refuses work rather than plans it —
+  that volume is also well past what the global priority-flood can hold in one pass,
+  so the AOI needs narrowing for a 1 m run regardless of disk.
 - **NWIS reports gauge height in feet.** `hydraulics.gauge_reading_unit` has no
   default for the same reason the datum offset has none: the real Harvey peak at
   Buffalo Bayou is 41.90 ft, and reading that as metres would put three times the
