@@ -1,5 +1,12 @@
 # ruff, mypy and pytest run as local hooks through `uv run` so the versions the
 # hooks enforce are exactly the versions in uv.lock — no second source of truth.
+# Generated output is not source, and hooks that tidy source corrupt it. The
+# `trailing-whitespace` hook rewrote a minified bundle here, which changes the bytes
+# CI compares against a fresh `npm run build` - a formatting hook quietly breaking the
+# check that the committed build is real. The TypeScript it is built from is linted by
+# `tsc` and tested by vitest in their own job.
+exclude: '^src/floodline/web/dist/'
+
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v5.0.0

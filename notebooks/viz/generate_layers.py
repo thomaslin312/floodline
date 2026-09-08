@@ -3,9 +3,6 @@ import subprocess
 from pathlib import Path
 
 import numpy as np
-from pyproj import Transformer
-from shapely.geometry import Point
-
 from floodline.config import Config
 from floodline.hydraulics.inundate import inundate
 from floodline.hydraulics.rating import (
@@ -14,10 +11,13 @@ from floodline.hydraulics.rating import (
     reach_catchments,
 )
 from floodline.hydraulics.stage import stage_field_from_discharge
-from floodline.io.ingest import ingest_dem, load_watersheds
-from floodline.report.figures import render_layers
 from floodline.terrain.route import route_terrain
 from floodline.terrain.streams import link_raster
+from pyproj import Transformer
+from shapely.geometry import Point
+
+from floodline.io.ingest import ingest_dem, load_watersheds
+from floodline.report.figures import render_layers
 
 CFS = 0.0283168
 FT = 0.3048

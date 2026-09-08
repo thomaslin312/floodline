@@ -9,18 +9,18 @@ import json
 from pathlib import Path
 
 import numpy as np
-from matplotlib import colormaps
-from matplotlib import image as mpimg
-from matplotlib.colors import Normalize
-from pyproj import Transformer
-from shapely.geometry import Point
-
 from floodline.config import Config
 from floodline.hydraulics.rating import (
     build_rating_curves,
     discharge_by_area_ratio,
     reach_catchments,
 )
+from matplotlib import colormaps
+from matplotlib import image as mpimg
+from matplotlib.colors import Normalize
+from pyproj import Transformer
+from shapely.geometry import Point
+
 from floodline.io.ingest import ingest_dem, load_watersheds
 from floodline.report.bundle import (
     UnitBundle,
