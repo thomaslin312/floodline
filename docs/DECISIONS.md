@@ -2686,3 +2686,52 @@ The compose limit was re-derived from the cgroup number rather than the sampled 
 a limit must cover the peak between two samples - which moves the worst case from
 4.67 to 4.69 GiB against a 6 GiB cap. No change to the limit; the reasoning behind it
 is now the right kind of measurement.
+
+## 2026-09-08 — TLS, and the disk that kept taking Docker down
+
+Caddy in front, the application on loopback, no authentication. The last is a choice
+rather than an omission: this is a public model over public data, and a password on it
+would defeat the demonstration. What protects the upstream agencies is the service's
+own per-client rate limit.
+
+That limit is the part worth recording, because a proxy breaks it silently. Every
+visitor arrives as the proxy's address unless the application is told to read the
+forwarded header, so the 30-per-minute budget becomes one bucket shared by everyone
+and a single caller can spend all of it against USGS. Both halves are needed and
+neither is visible in a passing test: Caddy forwards, and the entrypoint starts
+uvicorn with `--proxy-headers --forwarded-allow-ips`. Trusting any forwarder is safe
+only because the port is published on loopback, which makes those one decision rather
+than two. Verified by address: the proxy sits on 172.18.0.3 and the application logs
+192.168.65.1, with an injected `X-Forwarded-For` not winning.
+
+The Caddyfile began as a bind mount and is now built into an image. Mounting a single
+file was the only thing in this stack reaching out of an image into the host
+filesystem, and it bought nothing for configuration that is versioned beside the code.
+Building it in also allowed `caddy validate` at build time, which immediately failed:
+`email {$ACME_EMAIL:}` is a parse error when the variable is empty and Caddy has no
+conditionals, so compose composes the whole directive from two substitutions. Both
+paths are now validated - with an address and without.
+
+The variable was `FLOODLINE_DOMAIN` until the `.env.example` drift test rejected it.
+That prefix belongs to the settings model and a test enforces it; this one is read by
+compose. Renamed `PUBLIC_DOMAIN`. The generator written this morning caught a naming
+mistake made the same afternoon, which is about the best argument for it available.
+
+**Docker Desktop was not crashing.** It wedged five times across two days and the
+cause was the host disk, which its own log states plainly: "Docker Desktop cannot
+continue because the disk is full." No crash report was ever written for any Docker
+process. The signature - reads answering, builds and container starts hanging forever,
+one build failing with `read-only file system` from the snapshotter - is what ENOSPC
+looks like from the outside.
+
+The mechanism is worth knowing before this runs unattended. `Docker.raw` grows and
+does not shrink when images are deleted, and build cache is not covered by any budget
+in this repository: the caches bounded in `floodline.cache` are what the *application*
+writes. Rebuilding the image roughly eight times in an afternoon left **22.84 GB of
+build cache**, which was most of a 228 GB volume's remaining space. `docker builder
+prune -af` returned all of it, and on this Docker version returned it to macOS as well
+- host free space went from 11 GB to 32 GB.
+
+So a deploy step on the target machine should end with `docker image prune -f && docker
+builder prune -f`. A redeploy otherwise leaves the previous image's layers and its
+build cache behind, every time, for months.

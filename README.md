@@ -489,6 +489,17 @@ runs without them silently degraded:
 It is idempotent, so a redeploy costs two conditional requests, and it exits non-zero if
 either fetch fails.
 
+Finish a deploy by reclaiming what the build left behind:
+
+```bash
+docker image prune -f && docker builder prune -f
+```
+
+Docker's build cache is outside every budget this repository sets — those bound what
+the application writes, not what the image build does — and `Docker.raw` grows without
+shrinking. Eight rebuilds in one afternoon produced 22.8 GB of it here, which is enough
+to fill a disk and take the daemon down with it.
+
 ## Any watershed in the United States
 
 ```bash
