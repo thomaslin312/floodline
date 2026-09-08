@@ -97,7 +97,11 @@ services:
         max-size: "10m"
         max-file: "3"
     ports:
-      - "8000:8000"
+      # Loopback only. Caddy reaches this over the compose network; publishing it on
+      # every interface put an unauthenticated endpoint that fetches from USGS on the
+      # LAN. Bound here rather than removed so `docker/smoke.sh` and a local curl
+      # still work on the machine itself.
+      - "127.0.0.1:8000:8000"
     volumes:
       # The terrain cache is the point of the whole split; losing it on every restart
       # would mean paying for elevation again on every deploy.
@@ -137,6 +141,50 @@ services:
       retries: 5
       start_period: 15s
 
+  proxy:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.proxy
+    restart: unless-stopped
+    environment:
+      # The hostname to serve, and where Let's Encrypt sends expiry warnings. Unset,
+      # this is `localhost` on Caddy's internal CA - a browser warning, and fine for a
+      # check on the machine itself.
+      PUBLIC_DOMAIN: ${PUBLIC_DOMAIN:-localhost}
+      # Two substitutions rather than one so the directive disappears entirely when
+      # ACME_EMAIL is unset: `email ` only when there is a value, then the value.
+      # Caddy cannot parse a bare `email`, and a placeholder address would mean
+      # registering a fake contact with Let's Encrypt.
+      ACME_EMAIL_LINE: ${ACME_EMAIL:+email }${ACME_EMAIL:-}
+    ports:
+      - "80:80"
+      - "443:443"
+      # HTTP/3. Harmless if the router does not forward UDP; the client falls back.
+      - "443:443/udp"
+    volumes:
+      # Certificates and ACME account keys. On a named volume because Let's Encrypt
+      # rate-limits issuance per week, and a proxy that re-requests on every recreate
+      # will hit that limit and then serve nothing.
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      api:
+        condition: service_healthy
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    healthcheck:
+      # Caddy's admin API, which is bound to loopback inside the container.
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:2019/config/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
 volumes:
   pgdata:
   floodline-data:
+  caddy-data:
+  caddy-config:

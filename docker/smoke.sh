@@ -18,6 +18,8 @@ set -eu
 
 BASE="${1:-http://127.0.0.1:8000}"
 COMPOSE="${COMPOSE:-docker compose}"
+PROXY="${PROXY:-https://localhost}"
+PROXY_PLAIN="${PROXY_PLAIN:-http://localhost}"
 failures=0
 
 pass() { printf '  ok    %s\n' "$1"; }
@@ -112,6 +114,37 @@ if $COMPOSE exec -T api sh -c \
   pass "the data volume is writable by uid 10001"
 else
   fail "the data volume is not writable by the container's user"
+fi
+
+# --- the proxy, if this stack has one ----------------------------------------
+# `-k` because a local stack has no domain, so Caddy serves localhost from its own
+# internal CA. On a real deployment the certificate is from Let's Encrypt and this
+# would pass without it.
+if [ "${SMOKE_PROXY:-1}" = "1" ]; then
+  code=$(curl -sk -o /dev/null -w '%{http_code}' -m 20 "$PROXY/health" || true)
+  if [ "$code" = "200" ]; then
+    pass "the proxy serves HTTPS"
+  else
+    fail "GET $PROXY/health returned $code"
+  fi
+
+  # Caddy redirects rather than serving plaintext. A deployment that quietly answered
+  # on http would send the whole map, and every request to it, in the clear.
+  code=$(curl -s -o /dev/null -w '%{http_code}' -m 20 "$PROXY_PLAIN/" || true)
+  if [ "$code" = "308" ] || [ "$code" = "301" ] || [ "$code" = "302" ]; then
+    pass "plain HTTP redirects to HTTPS ($code)"
+  else
+    fail "GET $PROXY_PLAIN/ returned $code, expected a redirect to HTTPS"
+  fi
+
+  # The app must not be reachable except through the proxy and on loopback. This is
+  # what makes --forwarded-allow-ips '*' safe.
+  bindings=$($COMPOSE ps --format json api 2>/dev/null | tr ',' '\n' | grep -c '0.0.0.0:8000' || true)
+  if [ "${bindings:-0}" = "0" ]; then
+    pass "the application is not published on every interface"
+  else
+    fail "the application is published on 0.0.0.0; only the proxy should be"
+  fi
 fi
 
 printf '\n'

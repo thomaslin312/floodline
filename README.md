@@ -452,14 +452,29 @@ uv run pre-commit install
 ## Deploy
 
 ```bash
-cp .env.example .env      # then set POSTGRES_PASSWORD; compose refuses to start without it
+cp .env.example .env      # set POSTGRES_PASSWORD, PUBLIC_DOMAIN and ACME_EMAIL
 docker compose up -d --build
 docker compose exec api floodline prewarm
 ```
 
-One stack: PostGIS, and a container serving the map at `/`, the service under `/api`,
-and `/health` and `/ready` at the root. Migrations run from the entrypoint, so the
-schema is applied on first boot and on every deploy after it.
+Three services: PostGIS, the application, and Caddy in front of it. The application
+serves the map at `/`, the service under `/api`, and `/health` and `/ready` at the
+root; migrations run from the entrypoint, so the schema is applied on first boot and
+on every deploy after it.
+
+**TLS is automatic and nothing renews it by hand.** Point `PUBLIC_DOMAIN` at a
+hostname that already resolves to the machine, make sure ports 80 and 443 reach it,
+and Caddy obtains and renews a Let's Encrypt certificate on its own. Certificates live
+on a named volume, so recreating the container does not re-request them — Let's
+Encrypt rate-limits issuance per week. Leave `PUBLIC_DOMAIN` unset and it serves
+`localhost` from Caddy's internal CA, which is right for a check on the machine itself
+and a browser warning anywhere else.
+
+There is **no login, deliberately**: this is a public model built from public data, and
+a password on it would defeat the point. What protects the upstream agencies is the
+service's own per-client rate limit — which is why the application is published on
+loopback only and started with `--proxy-headers`, so it sees the visitor rather than
+the proxy. Without both halves every visitor would share one rate-limit bucket.
 
 **`prewarm` is not optional, and it is the one step nothing does for you.** Two national
 datasets belong to no watershed, so no request ever pulls them, and a fresh container

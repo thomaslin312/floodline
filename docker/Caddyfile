@@ -1,0 +1,49 @@
+# TLS in front of the map.
+#
+# Caddy gets and renews Let's Encrypt certificates on its own, which is the whole
+# reason it is here rather than nginx: a certificate that expires in ninety days on a
+# machine nobody is watching is a scheduled outage. Renewal needs no cron and no
+# reminder, and the certificates live on a named volume so recreating the container
+# does not re-request them - Let's Encrypt rate-limits that, and the limit is measured
+# in certificates per week.
+#
+# No authentication, deliberately. This is a public demonstration of a public-data
+# model; a password on it would defeat the point. What guards the upstream agencies is
+# the service's own per-client rate limit, and that only works per client if the app
+# can see who the client is - Caddy forwards it, and the entrypoint starts uvicorn with
+# --proxy-headers so it is read. Both halves or neither.
+#
+# PUBLIC_DOMAIN is the hostname to serve. Left unset it is `localhost`, where Caddy
+# issues from its own internal CA: fine for a local check, and a browser warning.
+
+{
+	# Expands to `email you@example.com` when ACME_EMAIL is set and to an empty line
+	# when it is not. Caddy has no conditionals and a bare `email` with no argument is
+	# a parse error, so compose composes the whole directive - see ACME_EMAIL_LINE
+	# there. Without it Caddy registers an ACME account with no contact address, which
+	# is allowed; you simply get no warning if renewal ever starts failing.
+	{$ACME_EMAIL_LINE:}
+}
+
+{$PUBLIC_DOMAIN:localhost} {
+	encode zstd gzip
+
+	# The bundles are large and highly compressible JSON and PNG; the map is the only
+	# thing served, so there is nothing here that should not be cached by the client.
+	header {
+		# The model says what it is on the page. These are the headers that cost
+		# nothing and close the obvious holes.
+		X-Content-Type-Options nosniff
+		Referrer-Policy strict-origin-when-cross-origin
+		-Server
+	}
+
+	reverse_proxy api:8000 {
+		# Caddy sets X-Forwarded-For; the application is started with
+		# --forwarded-allow-ips so it reads it. Without both halves every visitor
+		# arrives as this container's address, the service's per-client rate limit
+		# collapses into one shared bucket, and a single caller can spend everyone
+		# else's budget against USGS.
+		header_up X-Real-IP {remote_host}
+	}
+}

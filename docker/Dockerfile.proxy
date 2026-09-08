@@ -1,0 +1,14 @@
+# The proxy, with its configuration baked in.
+#
+# The Caddyfile was a bind mount to begin with. Mounting a single file is the one
+# thing in this stack that reaches out of the container image and into the host's
+# filesystem, and it buys nothing here: the configuration is version-controlled beside
+# the code and changes only when the code does. Building it in makes the running proxy
+# a property of the image tag rather than of whatever is on disk at that path, which is
+# the same argument as the rest of this deployment.
+FROM caddy:2-alpine
+
+COPY docker/Caddyfile /etc/caddy/Caddyfile
+
+# Fail the build rather than the deploy if the configuration is malformed.
+RUN caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile

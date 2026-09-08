@@ -20,4 +20,14 @@ set -eu
 
 python -c 'import sys; from floodline.db.migrate import upgrade_to_head; print("floodline: " + upgrade_to_head(), file=sys.stderr)'
 
-exec uvicorn floodline.api.asgi:app --host 0.0.0.0 --port 8000 --workers 1
+# --proxy-headers with --forwarded-allow-ips is what makes the per-client rate limit
+# per *client* once Caddy is in front. Without it every visitor arrives as the proxy's
+# address, the 30/minute budget becomes one bucket shared by everyone, and one caller
+# can spend the whole of it against USGS on everybody else's behalf.
+#
+# Trusting every source is safe only because this port is not reachable from outside
+# the compose network - the host publishes it on loopback and nothing else - so the
+# only thing that can set the header is the proxy.
+exec uvicorn floodline.api.asgi:app \
+  --host 0.0.0.0 --port 8000 --workers 1 \
+  --proxy-headers --forwarded-allow-ips '*'

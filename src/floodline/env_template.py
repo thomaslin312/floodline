@@ -62,6 +62,24 @@ _HEADER = """\
 POSTGRES_USER=floodline
 POSTGRES_PASSWORD=
 POSTGRES_DB=floodline
+
+# --------------------------------------------------------------------------
+# Compose: the public address
+# --------------------------------------------------------------------------
+# Unprefixed, like POSTGRES_*, because the FLOODLINE_ prefix belongs to the
+# application's settings model: anything carrying it should be a field on
+# `floodline.settings.Settings`, and a test enforces that. These are read by
+# compose.
+#
+# The hostname Caddy serves and gets a Let's Encrypt certificate for. It must
+# already resolve to this machine, and ports 80 and 443 must reach it, before
+# the first request - that is how the certificate is issued.
+#
+# Left unset this is `localhost`, served from Caddy's own internal CA: right
+# for a check on the machine itself, and a browser warning anywhere else.
+PUBLIC_DOMAIN=
+# Where Let's Encrypt sends expiry warnings if renewal ever stops working.
+ACME_EMAIL=
 """
 
 
