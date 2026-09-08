@@ -453,6 +453,7 @@ uv run pre-commit install
 
 ```bash
 cp .env.example .env      # set POSTGRES_PASSWORD, PUBLIC_DOMAIN and ACME_EMAIL
+./docker/preflight.sh your.domain      # before the first start, not after
 docker compose up -d --build
 docker compose exec api floodline prewarm
 ```
@@ -461,6 +462,17 @@ Three services: PostGIS, the application, and Caddy in front of it. The applicat
 serves the map at `/`, the service under `/api`, and `/health` and `/ready` at the
 root; migrations run from the entrypoint, so the schema is applied on first boot and
 on every deploy after it.
+
+**Rehearse the first certificate.** Let's Encrypt issues by connecting to the machine
+from outside, and it rate-limits failures — five per hostname per hour — so a
+misconfigured first attempt locks the name out and leaves no certificate behind.
+`docker/preflight.sh` checks what can be checked locally: that the name resolves, that
+it resolves to *this* machine, that nothing else holds 80 or 443, and that `.env` says
+what you think it does. It also names carrier-grade NAT when it sees it, which is the
+usual reason a home connection cannot be reached at all and no amount of port
+forwarding will help. Then set `ACME_STAGING=1` for a first run against Let's Encrypt's
+staging CA: same failure modes, no meaningful rate limit, and an untrusted certificate
+that proves the path works. Unset it and restart to get a real one.
 
 **TLS is automatic and nothing renews it by hand.** Point `PUBLIC_DOMAIN` at a
 hostname that already resolves to the machine, make sure ports 80 and 443 reach it,

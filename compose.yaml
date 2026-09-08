@@ -156,6 +156,10 @@ services:
       # Caddy cannot parse a bare `email`, and a placeholder address would mean
       # registering a fake contact with Let's Encrypt.
       ACME_EMAIL_LINE: ${ACME_EMAIL:+email }${ACME_EMAIL:-}
+      # Set ACME_STAGING=1 in .env to rehearse against Let's Encrypt's staging CA,
+      # which does not spend the production rate limit. Unset it once a staging
+      # certificate has been issued, and Caddy will fetch a real one.
+      ACME_CA_LINE: ${ACME_STAGING:+acme_ca https://acme-staging-v02.api.letsencrypt.org/directory}
     ports:
       - "80:80"
       - "443:443"

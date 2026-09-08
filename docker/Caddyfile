@@ -23,6 +23,13 @@
 	# there. Without it Caddy registers an ACME account with no contact address, which
 	# is allowed; you simply get no warning if renewal ever starts failing.
 	{$ACME_EMAIL_LINE:}
+	# `acme_ca <staging directory>` when ACME_STAGING is set, empty otherwise. Let's
+	# Encrypt rate-limits failed authorisations - five per hostname per hour - and a
+	# misconfigured first attempt burns them on a certificate nobody gets. The staging
+	# CA has the same failure modes and no meaningful limit, so the first run of a new
+	# domain should use it: the certificate it issues is untrusted by browsers, which
+	# is exactly what you want from a rehearsal.
+	{$ACME_CA_LINE:}
 }
 
 {$PUBLIC_DOMAIN:localhost} {
