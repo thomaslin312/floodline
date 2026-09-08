@@ -15,7 +15,21 @@ name: floodline
 
 services:
   db:
-    image: postgis/postgis:16-3.4
+    # arm64-native. `postgis/postgis` publishes amd64 only - 16-3.4 is a single-arch
+    # image and even 17-3.5 has no arm64 manifest - so on Apple Silicon it runs under
+    # emulation. Measured on this basin, ST_Intersects over 258,527 structures ran
+    # 1,310 ms emulated against 502 ms native, and planning 55 ms against 17 ms - so
+    # roughly 2.6x on the query the whole table exists to serve. (The images also
+    # differ in PostGIS point release, 3.4.3 against 3.5.2, so that ratio is the
+    # image change rather than the architecture alone.) This deployment is an
+    # unattended Mac mini, where the emulation layer is a standing failure surface
+    # bought for nothing.
+    #
+    # baosystems/postgis publishes linux/amd64 and linux/arm64 from the same source,
+    # and stays on PostgreSQL 16, so this is an image change rather than a major
+    # version upgrade: an existing data directory is readable and no pg_upgrade is
+    # involved.
+    image: ghcr.io/baosystems/postgis:16
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER in .env}
