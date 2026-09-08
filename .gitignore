@@ -10,6 +10,10 @@ __pycache__/
 *.egg-info/
 build/
 dist/
+# ...except the built map. It is committed so `uv sync && uv run floodline serve`
+# works from a fresh checkout with no Node installed, which is the first thing
+# anyone does with this repository. CI rebuilds it and fails on a diff.
+!src/floodline/web/dist/
 
 # tooling
 .pytest_cache/
@@ -38,3 +42,8 @@ outputs/
 # POSTGRES_PASSWORD, and the application reads it for FLOODLINE_ settings.
 # .env.example is the committed template; this file never is.
 .env
+
+# Frontend toolchain. `web/` is the source; the build it emits into
+# src/floodline/web/dist IS committed, so `floodline serve` works from a checkout
+# without Node installed.
+web/node_modules/

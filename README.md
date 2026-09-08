@@ -449,6 +449,18 @@ uv sync --all-extras --all-groups
 uv run pre-commit install
 ```
 
+The map is a React and TypeScript app under [`web/`](web). Its build output is
+committed, so `uv run floodline serve` works from a fresh checkout with no Node
+installed. To change the interface you need Node 22:
+
+```bash
+npm --prefix web install
+npm --prefix web run build      # typechecks, then emits into src/floodline/web/dist
+npm --prefix web test           # the pure logic: the ladder, the grid, the ramps
+```
+
+CI rebuilds it and fails if the committed output has drifted from the source.
+
 ## Deploy
 
 ```bash

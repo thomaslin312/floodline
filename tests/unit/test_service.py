@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 import httpx
@@ -96,10 +97,26 @@ def test_health(client: TestClient) -> None:
 
 
 def test_index_is_served(client: TestClient) -> None:
+    """The map's document, which is now a built artefact rather than a written file.
+
+    This used to assert the word "leaflet" appeared, and passed for years after the
+    page stopped using Leaflet - the only remaining mention was in a comment
+    explaining where a coordinate conversion came from. An assertion that a bundler
+    would have stripped is not an assertion about behaviour.
+
+    What is worth pinning is that the served document is the shell the build emits,
+    naming a hashed bundle: a stale `dist/`, or a `dist/` that was never built, fails
+    here rather than in a browser.
+    """
     response = client.get("/")
     assert response.status_code == 200
-    assert "floodline" in response.text
-    assert "leaflet" in response.text.lower()
+    assert '<div id="root">' in response.text, "the app has nothing to mount into"
+    assert re.search(r'src="/assets/index-\w+\.js"', response.text), "no hashed bundle"
+
+    referenced = re.findall(r"/assets/[\w.-]+", response.text)
+    assert referenced, "the document references no build output at all"
+    for asset in referenced:
+        assert client.get(asset).status_code == 200, f"{asset} is referenced but not served"
 
 
 def test_zip_code_geocodes_via_the_census_zcta_layer(client: TestClient) -> None:

@@ -1,0 +1,271 @@
+/* Ported verbatim from the single-file page this replaced. The design is not
+   what changed; only how it is assembled. Keeping the rules byte-identical is
+   what makes the port reviewable - any visual difference is a regression
+   rather than a decision. */
+:root{
+    color-scheme:light;
+    /* Neutrals carry a slight teal bias so the chrome reads as chosen rather than
+       inherited, and stays distinct from the grey basemap it floats over. */
+    --bg:#e9edee;
+    --glass:#fffffff2; --glass-2:#ffffffdb; --solid:#ffffff;
+    --hair:#0a1c2214; --hair-2:#0a1c220a;
+    --ink:#07161b; --ink-2:#3a4f57; --ink-3:#788d94;
+    --accent:#0a7d8c; --on-accent:#ffffff; --accent-2:#0a7d8c14; --accent-3:#0a7d8c33;
+    --good:#3c8659; --warn:#a3722a; --bad:#b04d38;
+    --shadow:0 0 0 1px #0a1c220f, 0 1px 1px #0a1c220a, 0 12px 32px -12px #0a1c2229;
+    --sheen:inset 0 1px 0 #ffffffcc;
+    --display:"Archivo",system-ui,sans-serif; --body:"Public Sans",system-ui,sans-serif;
+    --mono:"IBM Plex Mono",ui-monospace,Menlo,monospace;
+    --r:13px; --r-sm:9px; --pill:999px;
+    --ease:cubic-bezier(.2,.8,.25,1);
+    --ctrl-icon:opacity(.55); --ctrl-icon-hi:none;
+  }
+  @media (prefers-color-scheme:dark){:root{
+    color-scheme:dark;
+    --bg:#061216;
+    --glass:#0c1f26f2; --glass-2:#0c1f26db; --solid:#0f242c;
+    --hair:#ffffff18; --hair-2:#ffffff0b;
+    --ink:#e7f1f3; --ink-2:#a3b9bf; --ink-3:#6f858c;
+    --accent:#3ecad8; --on-accent:#042127; --accent-2:#3ecad81c; --accent-3:#3ecad840;
+    --good:#5cba7e; --warn:#ddaa5c; --bad:#e3866a;
+    --shadow:0 0 0 1px #ffffff0f, 0 1px 1px #00000066, 0 14px 34px -14px #000000aa;
+    --sheen:inset 0 1px 0 #ffffff12;
+    --ctrl-icon:invert(1) opacity(.7); --ctrl-icon-hi:invert(1);
+  }}
+  *{box-sizing:border-box}
+  [hidden]{display:none!important}
+  html,body{height:100%;margin:0;overflow:hidden}
+  body{background:var(--bg);color:var(--ink);font-family:var(--body);font-size:14px;
+    -webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+  #map{position:absolute;inset:0;background:var(--bg)}
+  .maplibregl-map{font-family:var(--body)}
+  .maplibregl-canvas{outline:none}
+
+  /* ---------- maplibre chrome, restyled to match the panels ---------- */
+  .maplibregl-ctrl-attrib{background:var(--glass-2)!important;color:var(--ink-3)!important;
+    font-size:9.5px!important;padding:2px 8px!important;border-radius:var(--r-sm) 0 0 0;
+    -webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px);box-shadow:var(--sheen)}
+  .maplibregl-ctrl-attrib a{color:var(--ink-3)!important;text-decoration:none}
+  .maplibregl-ctrl-attrib a:hover{color:var(--accent)!important}
+  .maplibregl-ctrl-attrib-button{display:none!important}
+  .maplibregl-ctrl-group{border:0!important;border-radius:var(--r-sm)!important;overflow:hidden;
+    background:var(--glass)!important;-webkit-backdrop-filter:blur(20px) saturate(180%);
+    backdrop-filter:blur(20px) saturate(180%);box-shadow:var(--shadow),var(--sheen)!important}
+  .maplibregl-ctrl-group button{width:34px!important;height:34px!important;background:transparent!important;
+    border-bottom:1px solid var(--hair)!important;
+    transition:background .15s var(--ease)}
+  .maplibregl-ctrl-group button+button{border-top:0!important}
+  .maplibregl-ctrl-group button:last-child{border-bottom:0!important}
+  .maplibregl-ctrl-group button:hover{background:var(--accent-2)!important}
+  /* The control glyphs ship as black SVG data URIs, invisible on the dark panel. */
+  .maplibregl-ctrl-group button .maplibregl-ctrl-icon{filter:var(--ctrl-icon)}
+  .maplibregl-ctrl-group button:hover .maplibregl-ctrl-icon{filter:var(--ctrl-icon-hi)}
+
+  /* ---------- floating panels ---------- */
+  .panel{position:absolute;z-index:1000;background:var(--glass);
+    -webkit-backdrop-filter:blur(22px) saturate(180%);backdrop-filter:blur(22px) saturate(180%);
+    border-radius:var(--r);box-shadow:var(--shadow),var(--sheen);
+    animation:rise .45s var(--ease) both}
+  @keyframes rise{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:none}}
+  #search{top:16px;left:16px;width:362px;padding:13px 14px 12px}
+  #info{top:16px;right:16px;width:334px;max-height:calc(100vh - 32px);overflow-y:auto;padding:15px;
+    animation-delay:.06s;scrollbar-width:thin;scrollbar-color:var(--hair) transparent}
+  #info::-webkit-scrollbar{width:7px}
+  #info::-webkit-scrollbar-track{background:transparent}
+  #info::-webkit-scrollbar-thumb{background:var(--hair);border-radius:4px;
+    border:2px solid transparent;background-clip:padding-box}
+  #info::-webkit-scrollbar-thumb:hover{background:var(--ink-3);background-clip:padding-box}
+  #legend{left:16px;bottom:16px;padding:11px 13px 10px;font-size:11.5px;color:var(--ink-2);
+    animation-delay:.12s;min-width:186px}
+  @media (max-width:900px){
+    #search{left:10px;right:10px;top:10px;width:auto}
+    #info{left:10px;right:10px;top:auto;bottom:10px;width:auto;max-height:48vh}
+    #legend{display:none}
+  }
+  @media (prefers-reduced-motion:reduce){
+    .panel{animation:none}
+    *{transition-duration:.01ms!important}
+  }
+
+  /* ---------- command bar ---------- */
+  .brand{display:flex;align-items:center;gap:8px;margin-bottom:11px}
+  .mark{width:16px;height:16px;flex:none;fill:none;stroke:var(--accent);stroke-width:1.5;
+    stroke-linecap:round;stroke-linejoin:round}
+  .brand b{font-family:var(--display);font-weight:700;font-size:15.5px;letter-spacing:-.02em}
+  .brand span{font-family:var(--mono);font-size:9px;letter-spacing:.15em;text-transform:uppercase;
+    color:var(--ink-3);margin-left:auto}
+  .brand #helpbtn{margin-left:7px}
+  #methodlink{margin-left:auto;font-family:var(--mono);font-size:9px;letter-spacing:.12em;
+    text-transform:uppercase;color:var(--ink-3);text-decoration:none;padding:3px 8px;
+    border-radius:var(--pill);border:1px solid var(--hair);white-space:nowrap}
+  #methodlink:hover{color:var(--accent);border-color:var(--accent-3);background:var(--accent-2)}
+  .searchrow{display:flex;gap:8px}
+  input[type=text]{flex:1;min-width:0;padding:9px 12px;border:1px solid var(--hair);
+    border-radius:var(--r-sm);background:var(--solid);color:var(--ink);font-family:var(--body);
+    font-size:13.5px;transition:border-color .15s var(--ease),box-shadow .15s var(--ease)}
+  input[type=text]::placeholder{color:var(--ink-3)}
+  input[type=text]:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-2)}
+
+  button{border:0;border-radius:var(--r-sm);background:var(--accent);color:var(--on-accent);
+    font-family:var(--body);font-weight:600;font-size:13px;padding:9px 14px;cursor:pointer;
+    white-space:nowrap;transition:filter .15s var(--ease),transform .08s var(--ease),
+    box-shadow .15s var(--ease),background .15s var(--ease),color .15s var(--ease)}
+  button:hover:not(:disabled){filter:brightness(1.07)}
+  button:active:not(:disabled){transform:translateY(.5px)}
+  button:disabled{opacity:.38;cursor:default}
+  button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+  button.wide{width:100%;padding:11px;font-size:13.5px;margin-top:3px;letter-spacing:-.005em;
+    box-shadow:0 1px 2px #0a1c2214, 0 8px 20px -10px var(--accent-3)}
+  button.quiet{background:transparent;color:var(--ink-2);border:1px solid var(--hair);
+    font-weight:500;box-shadow:none}
+  button.quiet:hover:not(:disabled){background:var(--accent-2);color:var(--accent);
+    border-color:var(--accent-3);filter:none}
+
+  .row{display:flex;align-items:center;gap:9px;margin-top:11px}
+  .micro{font-family:var(--mono);font-size:9px;letter-spacing:.14em;text-transform:uppercase;
+    color:var(--ink-3);flex:none}
+  /* A segmented control rather than a native select: three fixed choices, all worth
+     showing at once, and it keeps its own look across platforms. */
+  .seg{display:inline-flex;padding:2px;gap:2px;background:var(--hair-2);
+    border:1px solid var(--hair);border-radius:var(--pill)}
+  .seg button{background:transparent;color:var(--ink-3);font-size:11.5px;font-weight:600;
+    padding:4px 11px;border-radius:var(--pill);box-shadow:none;letter-spacing:0}
+  .seg button:hover{color:var(--ink-2);filter:none}
+  .seg button[aria-pressed="true"]{background:var(--solid);color:var(--ink);
+    box-shadow:0 1px 2px #0a1c2214, 0 0 0 1px var(--hair)}
+
+  .chips{display:flex;gap:6px;margin-top:9px;flex-wrap:wrap}
+  .chip{display:inline-flex;align-items:center;gap:6px;padding:5px 10px;border:1px solid var(--hair);
+    border-radius:var(--pill);font-size:11.5px;color:var(--ink-3);cursor:pointer;user-select:none;
+    background:transparent;transition:all .15s var(--ease)}
+  .chip:hover{color:var(--ink-2);border-color:var(--ink-3)}
+  .chip input{display:none}
+  .chip i{width:6px;height:6px;border-radius:50%;background:currentColor;opacity:.45;
+    transition:all .15s var(--ease)}
+  .chip.on{border-color:var(--accent-3);color:var(--accent);background:var(--accent-2)}
+  .chip.on i{opacity:1;box-shadow:0 0 0 3px var(--accent-2)}
+
+  /* ---------- readout column ---------- */
+  .eyebrow{font-family:var(--mono);font-size:9px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-3)}
+  h2.name{font-family:var(--display);font-size:18px;font-weight:600;line-height:1.2;
+    margin:4px 0 5px;letter-spacing:-.018em;text-wrap:balance}
+  .meta{font-family:var(--mono);font-size:10.5px;color:var(--ink-3);line-height:1.65}
+  .meta code{font-family:var(--mono)}
+  .status{margin:12px 0;padding:9px 11px;border-radius:var(--r-sm);background:var(--hair-2);
+    border-left:2px solid var(--hair);font-size:12.5px;color:var(--ink-2);line-height:1.45}
+  .status.bad{background:#b04d3814;color:var(--bad);border-left-color:var(--bad)}
+  .status.warn{background:#a3722a14;color:var(--warn);border-left-color:var(--warn)}
+  .spin{display:inline-block;width:10px;height:10px;border:2px solid var(--hair);
+    border-top-color:var(--accent);border-radius:50%;animation:sp .7s linear infinite;
+    vertical-align:-1px;margin-right:7px}
+  @keyframes sp{to{transform:rotate(360deg)}}
+  @media (prefers-reduced-motion:reduce){.spin{animation:none}}
+
+  .qhead{display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-top:14px}
+  .qval{font-family:var(--display);font-weight:700;font-size:33px;letter-spacing:-.035em;
+    font-variant-numeric:tabular-nums;line-height:1;display:inline-block}
+  /* No text-transform here: SI symbols are case-sensitive, and uppercasing the
+     unit turns m3/s into M3/S, which is a different quantity. */
+  .qunit{font-family:var(--mono);font-size:10px;color:var(--ink-3);letter-spacing:.04em;margin-left:4px}
+  .src{display:inline-flex;align-items:center;gap:5px;font-family:var(--mono);font-size:9px;
+    letter-spacing:.1em;text-transform:uppercase;padding:3px 8px;border-radius:var(--pill);margin-top:2px}
+  .src.obs{background:var(--accent-2);color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent-3)}
+  .src.est{background:#a3722a14;color:var(--warn);box-shadow:inset 0 0 0 1px #a3722a3d}
+
+  /* Custom track and thumb: the browser default range is the one control that gives
+     away an unstyled page, and accent-color alone cannot reach the track. */
+  input[type=range]{-webkit-appearance:none;appearance:none;width:100%;height:20px;
+    background:transparent;margin:10px 0 5px;cursor:pointer;display:block}
+  input[type=range]:focus{outline:none}
+  input[type=range]::-webkit-slider-runnable-track{height:4px;border-radius:2px;
+    background:linear-gradient(90deg,var(--accent) 0 var(--pct,33%),var(--hair) var(--pct,33%) 100%)}
+  input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:15px;height:15px;
+    border-radius:50%;background:var(--solid);border:2px solid var(--accent);margin-top:-5.5px;
+    box-shadow:0 1px 4px #0a1c2233;transition:transform .12s var(--ease),box-shadow .12s var(--ease)}
+  input[type=range]:hover::-webkit-slider-thumb{transform:scale(1.12)}
+  input[type=range]:active::-webkit-slider-thumb{transform:scale(1.2)}
+  input[type=range]:focus-visible::-webkit-slider-thumb{box-shadow:0 0 0 4px var(--accent-2)}
+  input[type=range]::-moz-range-track{height:4px;border-radius:2px;background:var(--hair)}
+  input[type=range]::-moz-range-progress{height:4px;border-radius:2px;background:var(--accent)}
+  input[type=range]::-moz-range-thumb{width:13px;height:13px;border-radius:50%;
+    background:var(--solid);border:2px solid var(--accent);box-shadow:0 1px 4px #0a1c2233}
+  .qnote{font-size:11.5px;color:var(--ink-3);line-height:1.5}
+  .qnote b{color:var(--ink-2);font-weight:600}
+
+  /* Hairline rows, not boxes. Six figures in a card-inside-a-card flattens the
+     hierarchy; ruled cells let the numbers themselves carry it. */
+  .grid{display:grid;grid-template-columns:1fr 1fr;margin:14px 0 0;border-top:1px solid var(--hair)}
+  .grid div{padding:9px 0 8px;border-bottom:1px solid var(--hair);min-width:0}
+  .grid div:nth-child(odd){padding-right:11px}
+  .grid div:nth-child(even){padding-left:12px;border-left:1px solid var(--hair)}
+  .grid dt{font-family:var(--mono);font-size:8.5px;letter-spacing:.13em;text-transform:uppercase;color:var(--ink-3)}
+  .grid dd{margin:3px 0 0;font-family:var(--mono);font-size:14px;font-variant-numeric:tabular-nums;
+    letter-spacing:-.01em}
+  .grid dd.na{color:var(--ink-3)}
+  .grid dd.good{color:var(--good)} .grid dd.warn{color:var(--warn)} .grid dd.bad{color:var(--bad)}
+
+  /* ---------- legend ---------- */
+  .ramp{height:7px;border-radius:4px;margin:7px 0 4px;box-shadow:inset 0 0 0 1px var(--hair);
+    background:linear-gradient(90deg,#cfe6f2,#7fb8dc,#3d8fc0,#1a6098,#0b3f73,#062242)}
+  /* Damage runs warm so it never reads as more water. */
+  .ramp.dmg{background:linear-gradient(90deg,#fde3c7,#f7b267,#ef7b45,#d64933,#8c1c13)}
+  .rampax{display:flex;justify-content:space-between;font-family:var(--mono);font-size:9px;
+    color:var(--ink-3);font-variant-numeric:tabular-nums}
+  .keyrow{display:flex;flex-direction:column;gap:5px;margin-top:10px;padding-top:9px;
+    border-top:1px solid var(--hair)}
+  .keyrow span{display:inline-flex;align-items:center;gap:7px;font-size:11px;color:var(--ink-3)}
+  .keyrow i{width:9px;height:9px;border-radius:50%;display:inline-block;flex:none}
+
+  /* ---------- first-run tour ---------- */
+  .scrim{position:fixed;inset:0;z-index:2000;display:flex;align-items:center;
+    justify-content:center;padding:20px;background:#0a1c2266;
+    -webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);
+    animation:fade .28s var(--ease) both}
+  @keyframes fade{from{opacity:0}to{opacity:1}}
+  .tour{width:min(560px,100%);max-height:calc(100vh - 40px);overflow-y:auto;
+    background:var(--glass);border-radius:var(--r);box-shadow:var(--shadow),var(--sheen);
+    -webkit-backdrop-filter:blur(24px) saturate(180%);backdrop-filter:blur(24px) saturate(180%);
+    padding:22px 24px 18px;animation:pop .34s var(--ease) both}
+  @keyframes pop{from{opacity:0;transform:translateY(10px) scale(.985)}
+                 to{opacity:1;transform:none}}
+  .tour .brand{margin-bottom:16px}
+  .tour h3{font-family:var(--display);font-size:20px;font-weight:600;letter-spacing:-.02em;
+    margin:10px 0 6px;line-height:1.25;text-wrap:balance}
+  .tour p{margin:0;color:var(--ink-2);font-size:14px;line-height:1.55;max-width:52ch}
+  .tour p + p{margin-top:9px}
+  .tour .aside{color:var(--ink-3);font-size:12.5px}
+  .tour figure{margin:0 0 4px;padding:14px;border-radius:var(--r-sm);
+    background:var(--hair-2);border:1px solid var(--hair)}
+  /* Only the illustration stretches. The brand mark next to it is 16px and was
+     being blown up to the full panel width by a bare `.tour svg` rule. */
+  .tour figure svg{display:block;width:100%;height:auto}
+  .tourfoot{display:flex;align-items:center;gap:12px;margin-top:18px;
+    padding-top:14px;border-top:1px solid var(--hair)}
+  .dots{display:flex;gap:6px;margin-right:auto}
+  .dots button{width:7px;height:7px;padding:0;border-radius:50%;background:var(--hair);
+    box-shadow:none;transition:background .18s var(--ease),width .18s var(--ease)}
+  .dots button[aria-current="true"]{background:var(--accent);width:18px;border-radius:4px}
+  .tourfoot .skip{background:transparent;color:var(--ink-3);font-weight:500;padding:8px 4px;
+    box-shadow:none}
+  .tourfoot .skip:hover{color:var(--ink-2);filter:none}
+  /* Lives in the header rather than floating over the map: bottom-right belongs to
+     the zoom control and bottom-left to the legend, and a floating button would have
+     landed on one of them at some width. */
+  #helpbtn{width:20px;height:20px;padding:0;border-radius:50%;background:transparent;
+    color:var(--ink-3);border:1px solid var(--hair);font-size:11px;font-weight:600;
+    line-height:1;flex:none}
+  #helpbtn:hover{color:var(--accent);border-color:var(--accent-3);
+    background:var(--accent-2);filter:none}
+
+  .bar{position:absolute;top:0;left:0;height:2px;width:0;z-index:1200;
+    background:linear-gradient(90deg,var(--accent),var(--accent));
+    box-shadow:0 0 10px var(--accent-3);transition:width .35s var(--ease)}
+  .gauge-dot{width:13px;height:13px;border-radius:50%;background:var(--accent);
+    border:2px solid #fff;box-shadow:0 1px 4px #00000059;cursor:pointer}
+  .maplibregl-popup-content{background:var(--glass);box-shadow:var(--shadow),var(--sheen);
+    color:var(--ink);font-family:var(--body);font-size:12px;border-radius:var(--r-sm);padding:7px 10px;
+    -webkit-backdrop-filter:blur(20px) saturate(180%);backdrop-filter:blur(20px) saturate(180%)}
+  .maplibregl-popup-tip{display:none}
+  .maplibregl-popup{will-change:transform}
+  .tt b{font-family:var(--display);font-size:12.5px;letter-spacing:-.01em}
+  .tt code{font-family:var(--mono);font-size:10.5px;color:var(--ink-2)}

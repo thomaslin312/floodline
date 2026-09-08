@@ -27,6 +27,7 @@ import httpx
 import numpy as np
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 from rasterio.errors import RasterioIOError
 
 from floodline.api.app import API_DESCRIPTION, API_SUMMARY, attach_api, version_string
@@ -76,6 +77,10 @@ def _fresh(payload: dict[str, Any]) -> bool:
 
 
 WEB_ROOT = Path(__file__).parent / "web"
+# The map is a built artefact now: `web/` at the repository root is the TypeScript
+# source, and `npm run build` emits here. `methodology.html` is still hand-written and
+# still lives beside it, which is why the build does not own the whole directory.
+WEB_DIST = WEB_ROOT / "dist"
 # The layer path is part of the query, not of the deployment: a different TIGERweb
 # host still serves layer 2 of tigerWMS_Current. Only the base is a setting.
 ZCTA = f"{settings().tigerweb_url}/tigerWMS_Current/MapServer/2/query"
@@ -261,9 +266,14 @@ def create_app(
     def evict() -> int:
         return evict_cache(cache, cache_budget_mb)
 
+    # Hashed filenames, so they are immutable and can be cached hard. The document
+    # itself is not: it names this build's bundle, and a stale one would ask for a
+    # file that no longer exists.
+    app.mount("/assets", StaticFiles(directory=WEB_DIST / "assets"), name="assets")
+
     @app.get("/")
     def index() -> FileResponse:
-        return FileResponse(WEB_ROOT / "index.html")
+        return FileResponse(WEB_DIST / "index.html")
 
     @app.get("/methodology")
     def methodology() -> FileResponse:

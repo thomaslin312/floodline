@@ -10,3 +10,4 @@ outputs/
 **/*.pyc
 docs/figures/
 *.bundle
+web/node_modules/

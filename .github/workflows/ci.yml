@@ -65,6 +65,42 @@ jobs:
           NUMBA_DISABLE_JIT: ${{ matrix.jit == 'off' && '1' || '0' }}
         run: uv run pytest -q
 
+  web:
+    name: frontend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install
+        working-directory: web
+        run: npm ci
+
+      - name: tsc --noEmit
+        working-directory: web
+        run: npm run typecheck
+
+      - name: vitest
+        working-directory: web
+        run: npm test
+
+      # The built map is committed so `floodline serve` works from a checkout without
+      # Node. That only stays true if it is rebuilt when the source changes, so this
+      # rebuilds and fails on a diff - the same drift guard `.env.example` has.
+      - name: The committed build matches the source
+        run: |
+          npm --prefix web run build
+          if ! git diff --quiet -- src/floodline/web/dist; then
+            echo "src/floodline/web/dist is stale. Run: npm --prefix web run build" >&2
+            git diff --stat -- src/floodline/web/dist >&2
+            exit 1
+          fi
+
   docker:
     name: image + stack
     runs-on: ubuntu-latest

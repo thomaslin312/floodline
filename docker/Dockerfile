@@ -1,3 +1,20 @@
+# The map is a TypeScript build now, so the image is two stages: node compiles the
+# frontend, python carries it. Node does not appear in the runtime image - only the
+# handful of files vite emits - so the deployed container is still a Python one.
+FROM node:22-alpine AS web
+
+WORKDIR /web
+# Dependencies first, so a change to a component does not reinstall the toolchain.
+COPY web/package.json web/package-lock.json ./
+RUN npm ci
+
+COPY web/tsconfig.json web/vite.config.ts web/index.html ./
+COPY web/src ./src
+# `npm run build` typechecks before it bundles, so a type error fails the image build
+# rather than shipping.
+RUN npm run build
+
+
 # GDAL, PROJ and GEOS come from wheels, so a slim base is enough and there is no
 # apt-get of a geospatial stack to go stale.
 FROM python:3.12-slim AS base
@@ -28,6 +45,9 @@ RUN uv sync --frozen --no-install-project --extra serve --extra db --extra repor
 # README is copied because pyproject declares it; the build backend reads it
 # when it installs the project itself.
 COPY src ./src
+# The built map, from the node stage. It lands inside the package because that is what
+# `floodline serve` hands to FastAPI, and what the wheel force-includes.
+COPY --from=web /src/floodline/web/dist ./src/floodline/web/dist
 COPY alembic.ini README.md ./
 RUN uv sync --frozen --extra serve --extra db --extra report
 
