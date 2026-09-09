@@ -142,8 +142,18 @@ class FetchContext:
         """
         settings = self.settings
         last: Exception | None = None
+        deadline = time.monotonic() + settings.request_budget_s
         for attempt in range(settings.max_attempts):
             if attempt:
+                # Between attempts is the one place giving up is free: no request is in
+                # flight, so the budget is enforced by simply not starting another one.
+                # Interrupting an attempt would need the read to be cancellable, which
+                # a synchronous httpx call is not.
+                if time.monotonic() >= deadline:
+                    raise SourceError(
+                        f"{method} {url} gave up after {settings.request_budget_s:g}s "
+                        f"and {attempt} attempts ({last})"
+                    ) from last
                 time.sleep(settings.backoff_seconds * (2 ** (attempt - 1)))
             try:
                 response = self.client.request(method, url, **kwargs)
@@ -243,9 +253,16 @@ def download(
     partial = dest.with_suffix(dest.suffix + ".part")
     settings = context.settings
     last: Exception | None = None
+    deadline = time.monotonic() + settings.request_budget_s
 
     for attempt in range(settings.max_attempts):
         if attempt:
+            # As in `FetchContext.request`: checked here because here it costs nothing.
+            if time.monotonic() >= deadline:
+                raise SourceError(
+                    f"{name}: fetching {url} gave up after "
+                    f"{settings.request_budget_s:g}s and {attempt} attempts ({last})"
+                ) from last
             time.sleep(settings.backoff_seconds * (2 ** (attempt - 1)))
         digest = hashlib.sha256()
         size = 0

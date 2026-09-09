@@ -666,6 +666,15 @@ class SourcesConfig(Frozen):
         description="HTTP statuses worth retrying. 4xx other than 429 will not "
         "improve on a second attempt.",
     )
+    request_budget_s: Positive = Field(
+        default=180.0,
+        description="Wall-clock ceiling on one URL including every retry and backoff. "
+        "The per-attempt timeouts above bound an attempt, not a request: four attempts "
+        "at a 300 s read plus backoff is 20 minutes on one URL, and the service allows "
+        "two computations in flight, so one slow agency could take the whole deployment "
+        "down for that long. This is checked between attempts, where giving up is free "
+        "and needs no cancellation.",
+    )
 
 
 class TileVintage(StrEnum):

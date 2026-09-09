@@ -9,6 +9,7 @@ that fails for reasons unrelated to the code.
 from __future__ import annotations
 
 import json
+import time
 from pathlib import Path
 from typing import Any
 
@@ -403,3 +404,56 @@ def test_manifest_records_failures_rather_than_omitting_them(tmp_path: Path) -> 
 def test_manifest_handles_an_empty_run(tmp_path: Path) -> None:
     text = write_manifest(tmp_path / "MANIFEST.md", []).read_text()
     assert "nothing retrieved yet" in text
+
+
+def test_a_slow_url_gives_up_on_the_budget_rather_than_on_the_attempt_count(
+    tmp_path: Path,
+) -> None:
+    """The wall-clock budget has to bind before `max_attempts` does.
+
+    The per-attempt timeouts bound an attempt, not a request. At the shipped defaults -
+    four attempts, a 300 s read, 2 s doubling backoff - one URL can hold a slot for
+    20 minutes, and the service allows two computations in flight, so a single slow
+    agency could take the whole deployment down for that long. `request_budget_s` is
+    what stops that, and this asserts it stops it early: three attempts are allowed
+    here and the budget must cut in before they are spent.
+    """
+    calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        time.sleep(0.05)
+        return httpx.Response(503)
+
+    context = FetchContext(
+        config=fast_config(
+            sources={"backoff_seconds": 0.0, "max_attempts": 3, "request_budget_s": 0.04}
+        ),
+        dest=tmp_path,
+        client=client_returning(handler),
+    )
+    with pytest.raises(SourceError, match="gave up after"):
+        context.request("GET", "https://example.test/slow")
+    # One attempt made, then the budget refused the second - not all three.
+    assert calls == 1
+
+
+def test_the_budget_does_not_interfere_with_a_request_that_succeeds(tmp_path: Path) -> None:
+    """A generous budget must leave the retry behaviour exactly as it was."""
+    seen = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal seen
+        seen += 1
+        return httpx.Response(503 if seen == 1 else 200, content=b"ok")
+
+    context = FetchContext(
+        config=fast_config(
+            sources={"backoff_seconds": 0.0, "max_attempts": 3, "request_budget_s": 60.0}
+        ),
+        dest=tmp_path,
+        client=client_returning(handler),
+    )
+    assert context.request("GET", "https://example.test/flaky").content == b"ok"
+    assert seen == 2

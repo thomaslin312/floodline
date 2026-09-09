@@ -371,3 +371,28 @@ def test_service_limits_come_from_the_environment(monkeypatch: pytest.MonkeyPatc
             assert http.get("/api/health").json()["max_cells"] == 1_234_567
     finally:
         settings.cache_clear()
+
+
+def test_no_setting_is_advertised_and_then_ignored() -> None:
+    """Every field on `Settings` must be read by something outside `settings.py`.
+
+    `.env.example` is generated from this model, so every field in it is a promise to
+    an operator that setting it will do something. Five fields broke that promise at
+    once and none of them failed a test, because an unread setting behaves exactly like
+    a correctly applied one until the day it needs to bite:
+
+    - four `http_*` fields duplicating `core.config.SourcesConfig` with its own
+      defaults, so the copy that took effect was always the one in core;
+    - `request_timeout_s`, which described a ceiling on a synchronous request that
+      nothing anywhere implemented.
+
+    Textual rather than by import graph, deliberately: this has to fail for a field
+    that is defined and never mentioned again, which is exactly the case no runtime
+    check can see.
+    """
+    src = Path(__file__).resolve().parents[2] / "src" / "floodline"
+    body = "\n".join(
+        path.read_text() for path in sorted(src.rglob("*.py")) if path.name != "settings.py"
+    )
+    unread = sorted(name for name in Settings.model_fields if name not in body)
+    assert not unread, f"settings generated into .env.example but read by nothing: {unread}"

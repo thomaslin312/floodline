@@ -177,17 +177,15 @@ class Settings(BaseSettings):
         "identifying the client is the difference between being throttled and blocked.",
         json_schema_extra=section("How to talk to them"),
     )
-    http_max_attempts: int = Field(
-        default=4, ge=1, description="Attempts per request before giving up."
-    )
-    http_backoff_seconds: float = Field(
-        default=2.0, ge=0.0, description="Base for exponential backoff between attempts."
-    )
-    http_connect_timeout_s: float = Field(default=30.0, gt=0)
-    http_read_timeout_s: float = Field(
-        default=300.0, gt=0, description="Generous: some DEM tiles are hundreds of MB."
-    )
-
+    # The retry and timeout policy that `io.sources` actually uses lives on
+    # `core.config.SourcesConfig`, not here. Four fields duplicating it - attempts,
+    # backoff, connect and read timeouts - used to sit at this point in the file with
+    # exactly the settings' defaults, and were read by nothing: an operator who set
+    # FLOODLINE_HTTP_READ_TIMEOUT_S got no change and no error, because the copy that
+    # took effect was the one in core. They are removed rather than wired, because
+    # `SourcesConfig` is loaded from the config file that already carries the rest of
+    # the fetch policy, and two places to set one timeout is how they drifted apart.
+    #
     # ---- service limits ----------------------------------------------------------
     max_cells: int = Field(
         default=40_000_000,
@@ -225,14 +223,10 @@ class Settings(BaseSettings):
         "are evicted. About 16 MB per watershed. Evicting one costs a refetch from "
         "NSI, which is minutes, so this wants to be generous.",
     )
-    request_timeout_s: float = Field(
-        default=180.0,
-        gt=0,
-        description="Ceiling on one synchronous /scenario request. A cache miss must "
-        "fetch a DEM, which is the slow part; past this the caller is told to retry "
-        "rather than left holding a socket open.",
-    )
-
+    # `request_timeout_s` was here, describing a ceiling on one synchronous request.
+    # Nothing implemented it. It is now `SourcesConfig.request_budget_s`, enforced
+    # between retry attempts in `io.sources`, which is where the time was being spent.
+    #
     # ---- database ----------------------------------------------------------------
     database_url: str = Field(
         default="postgresql+psycopg://floodline:floodline@localhost:5432/floodline",
