@@ -93,6 +93,20 @@ services:
       # numbers are tied. Refusing a grid names the resolution and suggests a coarser
       # one, where an OOM kill takes every request in flight with it.
       FLOODLINE_MAX_CELLS: "15000000"
+      # Cache budgets, also sized to this host. The defaults total 18 GiB, against
+      # 24 GiB free on the host disk - and the eviction that enforces them cannot see
+      # that, because inside the VM `df` reports 223 G with 200 G free. That number is
+      # a sparse file growing against the host's 24 GiB, so the caches would evict on
+      # schedule while the disk filled underneath them. A full disk is this machine's
+      # documented failure mode: it wedged Docker five times during the build-out, and
+      # Docker's own message was that it could not continue.
+      #
+      # 8 GiB total, leaving the host roughly 16 GiB for image and VM growth. Evicting
+      # terrain costs a refetch of tens of seconds and inventory a refetch of minutes,
+      # which is the right thing to spend to keep the disk from filling.
+      FLOODLINE_TERRAIN_CACHE_BUDGET_MB: "4096"
+      FLOODLINE_INVENTORY_CACHE_BUDGET_MB: "3072"
+      FLOODLINE_BUNDLE_CACHE_BUDGET_MB: "1024"
     # json-file with no options is unbounded, and this machine is expected to run
     # for months. Uvicorn logs a line per request, so the ceiling is set by traffic
     # rather than by anything in the image - 30 MB per service, which is enough to
