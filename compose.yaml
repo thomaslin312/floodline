@@ -87,6 +87,12 @@ services:
       # the working directory, which is inside the image rather than on the volume -
       # every restart would recompute what a visitor had already waited for.
       FLOODLINE_BUNDLE_CACHE_DIR: /var/lib/floodline/bundles
+      # The largest grid this host will accept, against a default of 40M chosen for a
+      # machine with far more memory than this one. Depression filling is global, so a
+      # request holds its whole watershed resident; see mem_limit below for how the two
+      # numbers are tied. Refusing a grid names the resolution and suggests a coarser
+      # one, where an OOM kill takes every request in flight with it.
+      FLOODLINE_MAX_CELLS: "15000000"
     # json-file with no options is unbounded, and this machine is expected to run
     # for months. Uvicorn logs a line per request, so the ceiling is set by traffic
     # rather than by anything in the image - 30 MB per service, which is enough to
@@ -116,9 +122,17 @@ services:
     # after a single request, on the same basin at two resolutions: 484 MiB at 1.10M
     # cells, 994 MiB at 9.94M, which fits 401 MiB fixed plus 57.7 bytes per cell.
     #
-    # At the service's own max_cells ceiling of 40M with its concurrency cap of 2,
-    # that is 401 MiB + 2 x 2.20 GiB = 4.69 GiB, so 6 GiB is about 28% headroom for
-    # allocator fragmentation and the transient copies inside the fill.
+    # This was 6 GiB, from the same measurement carried to the service's own max_cells
+    # ceiling of 40M: 401 MiB + 2 x 2.20 GiB = 4.69 GiB, plus headroom. That is sound
+    # arithmetic about the software and says nothing about the machine, and the machine
+    # is a Mac mini with 8 GB whose Docker VM gets 3.825 GiB. A limit larger than the VM
+    # can never engage - the kernel OOM-kills the container first, which is the exact
+    # failure the limit exists to replace with a refusal - so the cap was decorative.
+    #
+    # 2500 MiB is what fits beside PostGIS, cloudflared and the VM's own overhead inside
+    # 3.825 GiB. FLOODLINE_MAX_CELLS above is lowered to 15M to match: 401 MiB + 2 x
+    # 825 MiB = 2.00 GiB, about 19% under the cap. The two numbers have to move
+    # together, or the service accepts work the cgroup will not let it finish.
     #
     # `core.config.PEAK_BYTES_PER_CELL` is 125 rather than 58, and deliberately: it
     # refuses work before anything has been measured, where erring high costs a run
@@ -128,7 +142,7 @@ services:
     # OOM-killed: past the cap the concurrency limiter returns 503 with a Retry-After,
     # which a caller can act on, where the kernel's killer takes the whole process and
     # every request already in it.
-    mem_limit: 6g
+    mem_limit: 2500m
     depends_on:
       db:
         condition: service_healthy
