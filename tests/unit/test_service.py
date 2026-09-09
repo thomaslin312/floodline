@@ -10,6 +10,7 @@ from fastapi.testclient import TestClient
 
 from floodline.core.config import Config
 from floodline.service import create_app, evict_cache
+from floodline.settings import Settings, settings
 
 
 @pytest.fixture
@@ -341,3 +342,32 @@ def test_eviction_leaves_a_cache_inside_its_budget_alone(tmp_path: Path) -> None
     (tmp_path / "a_30m.json").write_text("x" * 10)
     assert evict_cache(tmp_path, budget_mb=1.0) == 0
     assert (tmp_path / "a_30m.json").exists()
+
+
+def test_service_limits_come_from_the_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A limit set in the environment has to reach the application uvicorn serves.
+
+    This is a regression test with a deployment behind it. Every limit here was once a
+    literal default on `create_app`, duplicating the default on `Settings` one import
+    away. The two agreed, so nothing ever failed - but `api/asgi.py` builds the served
+    application as `create_app()` with no arguments, so the literal won and the
+    environment variable did nothing, while `.env.example` was generated from the same
+    settings model and so advertised it as working.
+
+    Asserted through `create_app` and over HTTP rather than on `Settings`, because
+    reading the setting back proves only that pydantic works; what broke was the wiring
+    between the model and the application, and only the served value shows that.
+    """
+    monkeypatch.setenv("FLOODLINE_MAX_CELLS", "15000000")
+    monkeypatch.setenv("FLOODLINE_MAX_CONCURRENT", "1")
+    settings.cache_clear()
+    try:
+        app = create_app(config=Config())
+        with TestClient(app) as http:
+            assert http.get("/api/health").json()["max_cells"] == 15_000_000
+        # An explicit argument still wins, which is what `floodline serve` relies on.
+        explicit = create_app(config=Config(), max_cells=1_234_567)
+        with TestClient(explicit) as http:
+            assert http.get("/api/health").json()["max_cells"] == 1_234_567
+    finally:
+        settings.cache_clear()

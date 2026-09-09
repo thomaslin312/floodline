@@ -192,14 +192,27 @@ def create_app(
     *,
     config: Config | None = None,
     cache_dir: Path | None = None,
-    max_cells: int = 40_000_000,
+    max_cells: int | None = None,
     marks_path: Path | None = None,
-    max_concurrent: int = 2,
-    rate_per_minute: float = 30.0,
-    rate_burst: int = 10,
-    cache_budget_mb: float = 2048.0,
+    max_concurrent: int | None = None,
+    rate_per_minute: float | None = None,
+    rate_burst: int | None = None,
+    cache_budget_mb: float | None = None,
 ) -> FastAPI:
     """Build the application.
+
+    Every limit below defaults to `None`, meaning "read it from `Settings`". They used
+    to default to literals - 40M cells, 2 in flight, 30 a minute - which were copies of
+    the settings defaults sitting one import away. Copies of a default are invisible
+    while they agree, and these did agree, so nothing failed. What they cost is that
+    `asgi.py` builds the deployed application with `create_app()` and no arguments, so
+    the literals won every time and `FLOODLINE_MAX_CELLS` and its neighbours did
+    nothing in the container - while still being generated into `.env.example` from the
+    same model, which told an operator they worked. A setting that is documented and
+    ignored is worse than one that does not exist.
+
+    An explicit argument still wins over the environment, which is what `floodline
+    serve` and the demo command rely on.
 
     Parameters
     ----------
@@ -226,7 +239,13 @@ def create_app(
         failure that looks nothing like its cause.
     """
     base = config or Config()
-    cache = cache_dir or settings().bundle_cache_dir
+    limits = settings()
+    max_cells = limits.max_cells if max_cells is None else max_cells
+    max_concurrent = limits.max_concurrent if max_concurrent is None else max_concurrent
+    rate_per_minute = limits.rate_per_minute if rate_per_minute is None else rate_per_minute
+    rate_burst = limits.rate_burst if rate_burst is None else rate_burst
+    cache_budget_mb = limits.bundle_cache_budget_mb if cache_budget_mb is None else cache_budget_mb
+    cache = cache_dir or limits.bundle_cache_dir
     cache.mkdir(parents=True, exist_ok=True)
     marks = marks_path or (base.paths.raw / "validation" / "high_water_marks_national.json")
     app = FastAPI(
